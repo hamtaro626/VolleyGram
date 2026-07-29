@@ -84,7 +84,8 @@ function boot(seedJson) {
     globalThis.__peek = () => ({ store, saved, currentRotation });
     globalThis.__call = { load, render, rebuild, useLineup, addLineup,
       duplicateLineup, deleteLineup, normaliseLineup, slotFor, rosterSize,
-      describeRotation, setRotation };
+      describeRotation, setRotation, roleFor, hasRoleOverride, overrideCount,
+      buildRosterRows };
     globalThis.__status = () => document.getElementById('status').textContent;
   `;
   vm.runInNewContext(source + expose, context, { filename: 'script.js' });
@@ -338,6 +339,91 @@ console.log('\n12. Unknown role downgrades to unset, not to a guessed position')
   check('roles became NONE', saved.roster.every((p) => p.role === 'NONE'),
     saved.roster.map((p) => p.role).join(','));
   check('names still preserved', saved.roster[0].name === 'Keep 0', saved.roster[0].name);
+}
+
+console.log('\n13. Per-rotation roles');
+{
+  // Old saves have no roleOverrides field at all.
+  const legacy = boot(JSON.stringify({ system: '4-2', roster: null }));
+  check('roleOverrides defaults to empty',
+    JSON.stringify(legacy.peek().saved.roleOverrides) === '{}');
+  check('no overrides counted', legacy.call.overrideCount() === 0);
+
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const { saved } = app.peek();
+  const players = saved.roster;
+
+  // Rotation 1 of a 4-2 at entry zone 1: row 3 is the front-row setter.
+  app.call.setRotation(1);
+  const baseline = app.status();
+  check('a setter is named with no overrides', /sets/.test(baseline), baseline);
+
+  // Demote that setter to an outside hitter, for rotation 1 only.
+  saved.roleOverrides['1'] = { [players[3].id]: 'OH' };
+
+  check('roleFor honours the override',
+    app.call.roleFor(players[3], 1) === 'OH', app.call.roleFor(players[3], 1));
+  check('base role untouched', players[3].role === 'S', players[3].role);
+  check('other rotations unaffected',
+    app.call.roleFor(players[3], 2) === 'S', app.call.roleFor(players[3], 2));
+  check('override is detectable', app.call.hasRoleOverride(players[3], 1) === true);
+  check('override counted once', app.call.overrideCount() === 1);
+
+  app.call.setRotation(1);
+  check('status line notices the setter is gone',
+    /no setter/.test(app.status()), app.status());
+
+  app.call.setRotation(2);
+  check('rotation 2 still names its setter', /sets/.test(app.status()), app.status());
+
+  // Promoting a stand-in only helps if they're front row -- a 4-2 sets from
+  // there. Row 0 is in zone 1 (back row) in rotation 1, so promoting them
+  // should change nothing.
+  saved.roleOverrides['1'][players[0].id] = 'S';
+  app.call.setRotation(1);
+  check('a back-row stand-in does not become the setter',
+    /no setter/.test(app.status()), app.status());
+
+  // Row 2 is in zone 3 (middle front), so that one should take over.
+  delete saved.roleOverrides['1'][players[0].id];
+  saved.roleOverrides['1'][players[2].id] = 'S';
+  app.call.setRotation(1);
+  check('a front-row stand-in does become the setter',
+    app.status().includes(displayNameOf(players[2])) && /sets/.test(app.status()),
+    app.status());
+  check('two overrides counted', app.call.overrideCount() === 2);
+
+  function displayNameOf(player) { return player.name || player.fallback; }
+
+  // Rendering with overrides in place must not throw.
+  let rendered = true;
+  try { app.call.render(); } catch (e) { rendered = false; }
+  check('renders with overrides applied', rendered);
+}
+
+console.log('\n14. Overrides survive a save/load round trip');
+{
+  const app = boot(JSON.stringify({
+    version: 2, activeId: 'a', showLabels: true, roleScope: 'rotation',
+    lineups: { a: { name: 'T', system: '4-2', entrySlot: 1, layouts: {},
+      roleOverrides: { 3: { S1: 'MB' } },
+      roster: [
+        { id: 'S1', role: 'S', name: '', fallback: 'Setter 1' },
+        { id: 'MB1', role: 'MB', name: '', fallback: 'Middle 1' },
+        { id: 'OH1', role: 'OH', name: '', fallback: 'Outside 1' },
+        { id: 'S2', role: 'S', name: '', fallback: 'Setter 2' },
+        { id: 'MB2', role: 'MB', name: '', fallback: 'Middle 2' },
+        { id: 'OH2', role: 'OH', name: '', fallback: 'Outside 2' }] } },
+  }));
+  const { store, saved } = app.peek();
+  check('override loaded', saved.roleOverrides['3'].S1 === 'MB');
+  check('roleScope preference loaded', store.roleScope === 'rotation', store.roleScope);
+  check('applied by roleFor', app.call.roleFor(saved.roster[0], 3) === 'MB');
+
+  const written = JSON.parse(app.memory['volleyball-rotations-v1']);
+  check('override persisted on rewrite',
+    written.lineups.a.roleOverrides['3'].S1 === 'MB');
+  check('roleScope persisted', written.roleScope === 'rotation');
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

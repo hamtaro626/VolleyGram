@@ -172,10 +172,47 @@ text and the court looked inconsistent. Every role now sits in a 5.5–6.7:1 ban
 Hues stay 58°+ apart so roles remain tellable apart. "No role" is deliberately
 neutral grey — unset shouldn't look like a position.
 
+## v0.8 — per-rotation roles, image export, black text
+
+- Roster button reads **Show roster** / **Hide roster**
+- **Per-rotation roles.** A "Role edits apply to" setting in the roster panel
+  switches between *All rotations* (the base role) and *This rotation only* (an
+  override). Overridden players get a ring on their swatch, and a button clears
+  all overrides. Useful for a 6-2 setter who hits when front row, or a libero
+  covering a middle in the back row.
+- **Save as image.** Redraws the current rotation onto a canvas and downloads a
+  PNG, captioned with the lineup name and rotation.
+
+### Colour palette, corrected
+
+v0.7 darkened the fills so white text would pass contrast. That was the wrong
+direction — bright fills with near-black text get *more* contrast, and keep the
+palette vivid. The setter's gold reaches **7.59:1** this way versus 2.34:1 with
+white text. Only indigo and magenta needed lightening.
+
+| Role | Colour | Contrast with `#16181d` |
+|------|--------|------------------------|
+| Setter | `#d8a029` | 7.59:1 |
+| Middle | `#2f9e8f` | 5.42:1 |
+| Outside | `#8494e6` | 6.22:1 |
+| Opposite | `#d47cbd` | 6.27:1 |
+| No role | `#a8a8a8` | 7.47:1 |
+
+### Known cost of the export
+
+Drawing to a canvas describes the court a second time, so a CSS change can leave
+the exported image looking different from the screen. Colours are read back out
+of the live stylesheet with `getComputedStyle` to limit the drift, but geometry
+(net, attack line, bench strip) is duplicated. Worth remembering when editing
+either one.
+
+`roleOverrides` was added without a version bump — an extra optional field that
+defaults to `{}` breaks nothing, so old saves need no special handling.
+
 ## Tests
 
 ```
-node test/migration.js    # 48 checks — storage, migration, corrupt input
+node test/migration.js    # 72 checks — storage, migration, roles, corrupt input
 node test/contrast.js     # colour contrast and hue separation
 ```
 

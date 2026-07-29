@@ -48,8 +48,12 @@
     </div>
 
     <div class="actions two">
-      <button id="toggleRoster" aria-expanded="false">Roster</button>
+      <button id="toggleRoster" aria-expanded="false">Show roster</button>
       <button id="toggleLabels" aria-pressed="true">Labels: on</button>
+    </div>
+
+    <div class="actions one">
+      <button id="exportImage">Save as image</button>
     </div>
 
     <section class="roster" id="roster" hidden>
@@ -63,6 +67,16 @@
         <span>Subs enter at</span>
         <select id="entrySlot"><!-- filled by script.js --></select>
       </label>
+
+      <label class="setting">
+        <span>Role edits apply to</span>
+        <select id="roleScope">
+          <option value="all">All rotations</option>
+          <option value="rotation">This rotation only</option>
+        </select>
+      </label>
+
+      <button id="clearRoleOverrides">Clear per-rotation roles</button>
 
       <div class="lineup-actions">
         <button id="newLineup">New lineup</button>

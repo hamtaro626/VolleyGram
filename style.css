@@ -133,8 +133,9 @@ h1 {
   min-width: 52px;
   aspect-ratio: 1 / 1;
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.35);
-  color: #ffffff; /* every role, no exceptions -- see the palette below */
+  /* Dark ring, since the fills are light -- a white border vanishes on them. */
+  border: 2px solid rgba(0, 0, 0, 0.3);
+  color: #16181d; /* every role, no exceptions -- see the palette below */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -198,31 +199,31 @@ body.hide-labels .player .label {
 
 /* --- Colour by role --------------------------------------------------- */
 
-/* All five sit in a 5.5-6.8:1 contrast band against the white text set on
-   .player, so every name is equally readable and the roles read as one family.
-   The earlier gold and teal were far too light for white text -- 2.3:1 and
-   3.3:1 -- which is why those two used dark text instead.
-   Hues are kept 50+ degrees apart so the roles stay tellable apart, except
+/* Bright fills with near-black text. This direction gets *more* contrast than
+   dark fills with white text did -- the gold reaches 7.59:1 here versus 2.34:1
+   the other way round -- so the palette can stay vivid and still be readable.
+   All five sit in a 5.4-7.6:1 band so no role reads as harder than another.
+   Hues are kept 58+ degrees apart so the roles stay tellable apart, except
    NONE, which is deliberately neutral grey: unset shouldn't look like a
    position. Re-check with: node test/contrast.js */
 .role-S {
-  background: #8f5f10; /* 5.51:1 */
+  background: #d8a029; /* 7.59:1 */
 }
 
 .role-MB {
-  background: #116b5f; /* 6.38:1 */
+  background: #2f9e8f; /* 5.42:1 */
 }
 
 .role-OH {
-  background: #4055b8; /* 6.54:1 */
+  background: #8494e6; /* 6.22:1 */
 }
 
 .role-OPP {
-  background: #9c4285; /* 5.95:1 */
+  background: #d47cbd; /* 6.27:1 */
 }
 
 .role-NONE {
-  background: #5c5c5c; /* 6.79:1 */
+  background: #a8a8a8; /* 7.47:1 */
 }
 
 /* --- Controls --------------------------------------------------------- */
@@ -357,6 +358,12 @@ button.danger {
   width: 1rem;
   height: 1rem;
   border-radius: 50%;
+}
+
+/* Marks a player whose role was set for this rotation only, so the panel isn't
+   silently showing something different from their base role. */
+.roster-row.overridden .swatch {
+  box-shadow: 0 0 0 2px #f2f4f8;
 }
 
 .roster input,

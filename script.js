@@ -143,8 +143,9 @@ function newLineup(name) {
     name,
     system: DEFAULT_SYSTEM,
     roster: rosterFromSystem(DEFAULT_SYSTEM),
-    layouts: {},   // rotation -> { player id -> {x, y} }
-    entrySlot: 1,  // the zone off-court players sub in at
+    layouts: {},        // rotation -> { player id -> {x, y} }
+    roleOverrides: {},  // rotation -> { player id -> role }
+    entrySlot: 1,       // the zone off-court players sub in at
   };
 }
 
@@ -156,6 +157,7 @@ let store = {
   activeId: 'first',
   lineups: { first: newLineup('My team') },
   showLabels: true,
+  roleScope: 'all',   // whether a role edit hits every rotation or just this one
 };
 
 // A live reference into store.lineups, so the rest of the code can go on
@@ -223,6 +225,26 @@ function slotFor(rosterIndex, rotation) {
 
 function displayName(player) {
   return player.name || player.fallback;
+}
+
+// The role a player is filling in a given rotation. A per-rotation override
+// beats their base role from the roster, which is how someone can play middle
+// in one rotation and right side in another -- or how a 6-2 setter can be shown
+// hitting when they're front row.
+function roleFor(player, rotation) {
+  const overrides = saved.roleOverrides[rotation];
+  const override = overrides && overrides[player.id];
+  return override && ROLE_LABELS[override] ? override : player.role;
+}
+
+function hasRoleOverride(player, rotation) {
+  const overrides = saved.roleOverrides[rotation];
+  return Boolean(overrides && overrides[player.id]);
+}
+
+function overrideCount() {
+  return Object.values(saved.roleOverrides)
+    .reduce((total, map) => total + Object.keys(map || {}).length, 0);
 }
 
 // The untouched, straight-off-the-rulebook position for one player.
@@ -350,6 +372,10 @@ function normaliseLineup(raw, fallbackName) {
     system,
     roster,
     layouts: raw.layouts && typeof raw.layouts === 'object' ? raw.layouts : {},
+    // Added in v0.8. Absent in every earlier save, hence the default rather
+    // than a version bump -- an extra optional field breaks nothing.
+    roleOverrides: raw.roleOverrides && typeof raw.roleOverrides === 'object'
+      ? raw.roleOverrides : {},
     entrySlot: TRAVEL_ORDER.includes(raw.entrySlot) ? raw.entrySlot : 1,
   };
 }
@@ -384,6 +410,7 @@ function load() {
       activeId: lineups[activeId] ? activeId : ids[0],
       lineups,
       showLabels: parsed.showLabels !== false,
+      roleScope: parsed.roleScope === 'rotation' ? 'rotation' : 'all',
     };
     saved = store.lineups[store.activeId];
   } catch (error) {
@@ -436,11 +463,16 @@ function buildRosterRows() {
   rosterRows.replaceChildren();
 
   saved.roster.forEach((player, index) => {
+    // The panel shows what's on court right now, so it reflects any override
+    // for the rotation you're looking at rather than the underlying base role.
+    const effectiveRole = roleFor(player, currentRotation);
+    const overridden = hasRoleOverride(player, currentRotation);
+
     const row = document.createElement('div');
-    row.className = 'roster-row';
+    row.className = overridden ? 'roster-row overridden' : 'roster-row';
 
     const swatch = document.createElement('span');
-    swatch.className = `swatch role-${player.role}`;
+    swatch.className = `swatch role-${effectiveRole}`;
 
     const nameInput = document.createElement('input');
     nameInput.type = 'text';
@@ -460,15 +492,26 @@ function buildRosterRows() {
       const option = document.createElement('option');
       option.value = code;
       option.textContent = label;
-      option.selected = code === player.role;
+      option.selected = code === effectiveRole;
       roleSelect.appendChild(option);
     });
+    roleSelect.title = overridden
+      ? `Set for rotation ${currentRotation} only — base role is ${ROLE_LABELS[player.role]}`
+      : ROLE_LABELS[effectiveRole];
+
     roleSelect.addEventListener('change', () => {
       pushHistory();
-      player.role = roleSelect.value;
-      swatch.className = `swatch role-${player.role}`;
-      playerElements[player.id].className = `player role-${player.role}`;
+      if (store.roleScope === 'rotation') {
+        if (!saved.roleOverrides[currentRotation]) saved.roleOverrides[currentRotation] = {};
+        saved.roleOverrides[currentRotation][player.id] = roleSelect.value;
+      } else {
+        player.role = roleSelect.value;
+        // Drop this player's overrides, or the new base role would be masked in
+        // exactly the rotations you'd previously customised.
+        Object.values(saved.roleOverrides).forEach((map) => { delete map[player.id]; });
+      }
       save();
+      buildRosterRows();
       render();
     });
 
@@ -494,6 +537,13 @@ function buildRosterRows() {
   });
 
   document.getElementById('addPlayer').disabled = rosterSize() >= MAX_PLAYERS;
+
+  const clearButton = document.getElementById('clearRoleOverrides');
+  const overrides = overrideCount();
+  clearButton.disabled = overrides === 0;
+  clearButton.textContent = overrides === 0
+    ? 'No per-rotation roles set'
+    : `Clear ${overrides} per-rotation role${overrides === 1 ? '' : 's'}`;
 }
 
 function syncLineupSelect() {
@@ -656,17 +706,23 @@ function render() {
 
     // Setting left/top is all it takes to move a player. The CSS transition
     // handles the actual sliding.
+    const role = roleFor(player, currentRotation);
+
     el.style.left = `${position.x}%`;
     el.style.top = `${position.y}%`;
-    el.classList.toggle('benched', slot === null);
+
+    // Rebuilt rather than toggled, because the role -- and so the colour -- can
+    // differ from one rotation to the next.
+    el.className = `player role-${role}`;
+    if (slot === null) el.classList.add('benched');
 
     el.querySelector('.name').textContent = displayName(player);
-    el.querySelector('.label').textContent = roleBadge(player.role);
+    el.querySelector('.label').textContent = roleBadge(role);
 
-    const role = roleBadge(player.role) ? `${ROLE_LABELS[player.role]}, ` : '';
+    const prefix = roleBadge(role) ? `${ROLE_LABELS[role]}, ` : '';
     el.title = slot === null
-      ? `${displayName(player)} — ${role}off court`
-      : `${displayName(player)} — ${role}zone ${slot}`;
+      ? `${displayName(player)} — ${prefix}off court`
+      : `${displayName(player)} — ${prefix}zone ${slot}`;
   });
 
   // No point drawing an empty bench strip when everyone's on court.
@@ -697,7 +753,7 @@ function describeRotation() {
 
   const onCourtSetters = saved.roster
     .map((player, index) => ({ player, slot: slotFor(index, currentRotation) }))
-    .filter(({ player, slot }) => player.role === 'S' && slot !== null);
+    .filter(({ player, slot }) => roleFor(player, currentRotation) === 'S' && slot !== null);
 
   const eligible = onCourtSetters.filter(({ slot }) => {
     if (setsFrom === 'front') return FRONT_ROW_SLOTS.includes(slot);
@@ -725,6 +781,9 @@ function describeRotation() {
 
 function setRotation(rotation) {
   currentRotation = rotation;
+  // The roster panel shows roles for the rotation you're looking at, so it has
+  // to be rebuilt when that changes.
+  buildRosterRows();
   render();
 }
 
@@ -792,6 +851,135 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(value, max));
 }
 
+// --- Export to image --------------------------------------------------
+
+// Drawing to a canvas means redescribing the court in a second place, which is
+// a real maintenance cost: change the CSS and the export can silently drift.
+// Reading every colour back out of the live stylesheet keeps at least the
+// palette honest -- there's still only one definition of what a Setter looks
+// like, and it's in style.css.
+const colourCache = {};
+
+function roleColours(role) {
+  if (!colourCache[role]) {
+    const probe = document.createElement('div');
+    probe.className = `player role-${role}`;
+    probe.style.position = 'absolute';
+    probe.style.visibility = 'hidden';
+    document.body.appendChild(probe);
+    const computed = getComputedStyle(probe);
+    colourCache[role] = { fill: computed.backgroundColor, text: computed.color };
+    probe.remove();
+  }
+  return colourCache[role];
+}
+
+function exportImage() {
+  const EDGE = 1000; // court edge in pixels; everything else scales off it
+  const hasBench = rosterSize() > COURT_SPOTS;
+  const contentHeight = hasBench ? Math.round(EDGE * 1.24) : EDGE;
+  const pad = Math.round(EDGE * 0.045);
+
+  const canvas = document.createElement('canvas');
+  canvas.width = EDGE + pad * 2;
+  canvas.height = contentHeight + pad * 2;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.translate(pad, pad);
+
+  // Court, attack line, net.
+  ctx.fillStyle = getComputedStyle(court).backgroundColor;
+  ctx.fillRect(0, 0, EDGE, EDGE);
+  ctx.strokeStyle = '#f2f4f8';
+  ctx.lineWidth = EDGE * 0.005;
+  ctx.strokeRect(0, 0, EDGE, EDGE);
+
+  ctx.beginPath();
+  ctx.moveTo(0, EDGE / 3);
+  ctx.lineTo(EDGE, EDGE / 3);
+  ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+  ctx.lineWidth = EDGE * 0.003;
+  ctx.stroke();
+
+  ctx.strokeStyle = '#f2f4f8';
+  ctx.lineWidth = EDGE * 0.012;
+  ctx.setLineDash([EDGE * 0.007, EDGE * 0.007]);
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.lineTo(EDGE, 0);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  if (hasBench) {
+    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.lineWidth = EDGE * 0.003;
+    ctx.setLineDash([EDGE * 0.012, EDGE * 0.012]);
+    ctx.strokeRect(0, EDGE * 1.04, EDGE, EDGE * 0.16);
+    ctx.setLineDash([]);
+  }
+
+  // Players, at whatever positions the current rotation actually holds.
+  const layout = layoutFor(currentRotation);
+  const radius = EDGE * 0.115;
+
+  saved.roster.forEach((player, index) => {
+    const position = layout[player.id] || defaultPosition(index, currentRotation);
+    const role = roleFor(player, currentRotation);
+    const { fill, text } = roleColours(role);
+    const cx = (position.x / 100) * EDGE;
+    const cy = (position.y / 100) * EDGE;
+
+    ctx.globalAlpha = slotFor(index, currentRotation) === null ? 0.45 : 1;
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, radius, 0, Math.PI * 2);
+    ctx.fillStyle = fill;
+    ctx.fill();
+    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.lineWidth = EDGE * 0.005;
+    ctx.stroke();
+
+    const badge = store.showLabels ? roleBadge(role) : '';
+    ctx.fillStyle = text;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `700 ${Math.round(EDGE * 0.038)}px -apple-system, system-ui, sans-serif`;
+    ctx.fillText(displayName(player), cx, badge ? cy - EDGE * 0.019 : cy, radius * 1.7);
+    if (badge) {
+      ctx.font = `500 ${Math.round(EDGE * 0.027)}px -apple-system, system-ui, sans-serif`;
+      ctx.fillText(badge, cx, cy + EDGE * 0.023, radius * 1.7);
+    }
+    ctx.globalAlpha = 1;
+  });
+
+  // Caption in the bottom margin, so the image explains itself once it's out of
+  // the app and sitting in a camera roll or a Premiere bin.
+  ctx.fillStyle = '#a9b2c6';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = `600 ${Math.round(EDGE * 0.026)}px -apple-system, system-ui, sans-serif`;
+  ctx.fillText(`${saved.name} — ${describeRotation()}`, 0, contentHeight + pad * 0.5, EDGE);
+
+  downloadCanvas(canvas);
+}
+
+function downloadCanvas(canvas) {
+  const stem = `${saved.name}-rotation-${currentRotation}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '');
+
+  const link = document.createElement('a');
+  link.download = `${stem || 'rotation'}.png`;
+  link.href = canvas.toDataURL('image/png');
+  // Some browsers ignore a click on a link that isn't in the document.
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+}
+
 // --- Controls ---------------------------------------------------------
 
 document.getElementById('prev').addEventListener('click', () => step(-1));
@@ -849,12 +1037,35 @@ holdButton.addEventListener('pointerup', cancelHold);
 holdButton.addEventListener('pointerleave', cancelHold);
 holdButton.addEventListener('pointercancel', cancelHold);
 
+document.getElementById('exportImage').addEventListener('click', exportImage);
+
+const roleScopeSelect = document.getElementById('roleScope');
+roleScopeSelect.addEventListener('change', () => {
+  store.roleScope = roleScopeSelect.value === 'rotation' ? 'rotation' : 'all';
+  save();
+  buildRosterRows();
+});
+
+document.getElementById('clearRoleOverrides').addEventListener('click', () => {
+  if (overrideCount() === 0) return;
+  pushHistory();
+  saved.roleOverrides = {};
+  save();
+  buildRosterRows();
+  render();
+});
+
 const rosterButton = document.getElementById('toggleRoster');
 rosterButton.addEventListener('click', () => {
-  const opening = rosterPanel.hidden;
-  rosterPanel.hidden = !opening;
-  rosterButton.setAttribute('aria-expanded', String(opening));
+  rosterPanel.hidden = !rosterPanel.hidden;
+  syncRosterButton();
 });
+
+function syncRosterButton() {
+  const open = !rosterPanel.hidden;
+  rosterButton.textContent = open ? 'Hide roster' : 'Show roster';
+  rosterButton.setAttribute('aria-expanded', String(open));
+}
 
 const labelsButton = document.getElementById('toggleLabels');
 labelsButton.addEventListener('click', () => {
@@ -873,7 +1084,9 @@ function syncLabelsButton() {
 
 load();
 syncLabelsButton();
+syncRosterButton();
 syncUndoButton();
+roleScopeSelect.value = store.roleScope;
 rebuild();
 
 // Write straight back after loading, so data saved by an older version gets
