@@ -73,47 +73,81 @@ h1 {
 .player {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 20%;
-  min-width: 44px; /* Apple's minimum comfortable touch target */
+  width: 23%;
+  min-width: 52px;
   aspect-ratio: 1 / 1;
   border-radius: 50%;
-  background: #2b3040;
-  border: 2px solid #6d7891;
-  color: #f2f4f8;
+  border: 2px solid rgba(255, 255, 255, 0.35);
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 1px;
-  font-size: 0.8rem;
-  font-weight: 700;
+  padding: 0 4px;
+  overflow: hidden;
+  text-align: center;
   cursor: grab;
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
 }
 
-.player .slot {
-  font-size: 0.6rem;
-  font-weight: 500;
-  opacity: 0.65;
-}
-
-/* The setter who's front row this rotation -- the thing you're checking for. */
-.player.setter-front {
-  background: #d8a029;
-  border-color: #ffd464;
-  color: #16181d;
-}
-
-.player.setter-back {
-  border-color: #d8a029;
+/* The slide between rotations. The class goes on after the first paint so
+   players don't fly in from the corner on load; .dragging switches it back off
+   so a finger drag tracks instantly instead of lagging behind. */
+.court.animate .player {
+  transition: left 450ms cubic-bezier(0.4, 0, 0.2, 1),
+              top 450ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .player.dragging {
+  transition: none;
   cursor: grabbing;
   z-index: 10;
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25);
+}
+
+.player .name {
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.1;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player .label {
+  font-size: 0.55rem;
+  font-weight: 500;
+  line-height: 1.2;
+  opacity: 0.75;
+}
+
+body.hide-labels .player .label {
+  display: none;
+}
+
+/* --- Colour by role --------------------------------------------------- */
+
+.role-S {
+  background: #d8a029;
+  color: #16181d;
+}
+
+.role-MB {
+  background: #2f9e8f;
+  color: #06201c;
+}
+
+.role-OH {
+  background: #5468d4;
+  color: #f2f4f8;
+}
+
+/* The setter who's front row this rotation -- the thing you're checking for.
+   A ring rather than a fill, so it doesn't fight the role colour. */
+.player.setting {
+  border-color: #ffffff;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3);
 }
 
 /* --- Controls --------------------------------------------------------- */
@@ -137,6 +171,11 @@ h1 {
   display: grid;
   grid-template-columns: 1fr 1fr 1fr;
   gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.actions.two {
+  grid-template-columns: 1fr 1fr;
 }
 
 button {
@@ -159,4 +198,49 @@ button:active {
   background: #f2f4f8;
   border-color: #f2f4f8;
   color: #16181d;
+}
+
+button.danger {
+  width: 100%;
+  color: #ff9f9f;
+  border-color: #59323a;
+}
+
+/* --- Roster panel ----------------------------------------------------- */
+
+.roster {
+  border: 1px solid #3a4152;
+  border-radius: 10px;
+  padding: 0.75rem;
+  display: grid;
+  gap: 0.5rem;
+}
+
+.roster-row {
+  display: grid;
+  grid-template-columns: 1rem 1fr auto;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.swatch {
+  width: 1rem;
+  height: 1rem;
+  border-radius: 50%;
+}
+
+.roster input {
+  font: inherit;
+  font-size: 16px; /* under 16px, iOS zooms the page when you tap in */
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: 1px solid #3a4152;
+  background: #16181d;
+  color: #f2f4f8;
+  min-width: 0;
+}
+
+.roster-role {
+  font-size: 0.8rem;
+  color: #a9b2c6;
 }

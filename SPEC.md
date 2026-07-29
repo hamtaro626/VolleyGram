@@ -52,15 +52,28 @@ Players rotate clockwise: 2→1, 1→6, 6→5, 5→4, 4→3, 3→2.
 - Highlight which setter is front row
 - Drag a player to adjust, and reset back to base
 
-## v0.1 does NOT do — on purpose
+## v0.2 — the whiteboard
 
-These are all good ideas. They are not v0.1.
+Added after using v0.1 and forming an opinion about it.
+
+- Dragged positions save **per rotation**, so all six are independent diagrams
+- Players slide between rotations, so the movement is visible
+- Editable roster — real player names instead of S1/MB1/OH1
+- Colour-coded by role: setters gold, middles teal, outsides indigo
+- Small role label under each name, toggleable
+- Everything survives a refresh (localStorage — still no server)
+- Reset the current rotation, or reset all six
+
+## Still does NOT do — on purpose
+
+These are all good ideas. They are not next.
 
 - Serve receive formations
 - Defensive formations
 - The setter's switch to the setting position after contact
 - Overlap-legality checking
-- Editing the lineup or naming real players
-- Saving anything between sessions
+- Reordering the lineup (who starts in which slot)
+- Multiple teams or saved lineups
+- Sharing a diagram with someone else
 - 5-1 or 6-2 systems
 - Export to image
