@@ -44,6 +44,7 @@ function stubElement(tag = 'div') {
     setPointerCapture() {},
     getBoundingClientRect() { return { left: 0, top: 0, width: 300, height: 300 }; },
     querySelector() { return stubElement('span'); },
+    closest() { return null; },
   };
   return el;
 }
@@ -60,6 +61,7 @@ function boot(seedJson) {
       return byId[id];
     },
     createElement: (tag) => stubElement(tag),
+    addEventListener() {},
   };
 
   const warnings = [];
@@ -85,12 +87,14 @@ function boot(seedJson) {
     globalThis.__call = { load, render, rebuild, useLineup, addLineup,
       duplicateLineup, deleteLineup, normaliseLineup, slotFor, rosterSize,
       describeRotation, setRotation, roleFor, hasRoleOverride, overrideCount,
-      buildRosterRows };
+      buildRosterRows, defaultPosition, rotationCount };
+    globalThis.__const = { ZONE_LABEL_POSITIONS, SERVE_SLOT, SLOT_POSITIONS,
+      COURT_SPOTS };
     globalThis.__status = () => document.getElementById('status').textContent;
   `;
   vm.runInNewContext(source + expose, context, { filename: 'script.js' });
   return { ...context, memory, warnings, peek: context.__peek, call: context.__call,
-           status: context.__status };
+           consts: context.__const, status: context.__status };
 }
 
 let failures = 0;
@@ -424,6 +428,100 @@ console.log('\n14. Overrides survive a save/load round trip');
   check('override persisted on rewrite',
     written.lineups.a.roleOverrides['3'].S1 === 'MB');
   check('roleScope persisted', written.roleScope === 'rotation');
+}
+
+console.log('\n15. Zone numbers');
+{
+  const app = boot(undefined);
+  const { ZONE_LABEL_POSITIONS, SLOT_POSITIONS } = app.consts;
+  const zones = Object.keys(ZONE_LABEL_POSITIONS).map(Number).sort((a, b) => a - b);
+  check('all six zones labelled', zones.join(',') === '1,2,3,4,5,6', zones.join(','));
+
+  // A label sitting under a player circle would be invisible. Circles are 23%
+  // wide, so radius is 11.5% of the court.
+  let clear = true;
+  for (const [zone, label] of Object.entries(ZONE_LABEL_POSITIONS)) {
+    for (const spot of Object.values(SLOT_POSITIONS)) {
+      const distance = Math.hypot(label.x - spot.x, label.y - spot.y);
+      if (distance < 11.5) { clear = false; console.log(`      zone ${zone} label is ${distance.toFixed(1)}% from a player spot`); }
+    }
+  }
+  check('no label sits under a player circle', clear);
+
+  // Each label should be in the same half of the court as its zone.
+  const front = [2, 3, 4];
+  let sided = true;
+  for (const [zone, label] of Object.entries(ZONE_LABEL_POSITIONS)) {
+    const isFront = front.includes(Number(zone));
+    if (isFront !== (label.y < 33.33)) { sided = false; }
+  }
+  check('front-row labels above the attack line, back-row below', sided);
+
+  // Back row belongs down in its own zone, not crowded against the attack line.
+  // That region runs 33.33% to 100%, so a label should be past its midpoint.
+  check('back-row labels sit low in their zone',
+    [1, 5, 6].every((z) => ZONE_LABEL_POSITIONS[z].y > 66.7),
+    [1, 5, 6].map((z) => `${z}@${ZONE_LABEL_POSITIONS[z].y}`).join(' '));
+
+  check('front-row labels sit high in their zone',
+    [2, 3, 4].every((z) => ZONE_LABEL_POSITIONS[z].y < 16.7),
+    [2, 3, 4].map((z) => `${z}@${ZONE_LABEL_POSITIONS[z].y}`).join(' '));
+
+  // Shared heights per row, so the six read as a grid rather than scattered.
+  check('each row of labels shares one height',
+    new Set([1, 5, 6].map((z) => ZONE_LABEL_POSITIONS[z].y)).size === 1 &&
+    new Set([2, 3, 4].map((z) => ZONE_LABEL_POSITIONS[z].y)).size === 1);
+}
+
+console.log('\n16. Serve indicator');
+{
+  for (const size of [6, 7, 9]) {
+    const app = boot(JSON.stringify({
+      system: '4-2', entrySlot: 1, roster: null,
+    }));
+    const { saved } = app.peek();
+    while (saved.roster.length < size) {
+      saved.roster.push({ id: 'X' + saved.roster.length, role: 'NONE', name: '', fallback: 'X' });
+    }
+    const { SERVE_SLOT } = app.consts;
+    let ok = true;
+    for (let r = 1; r <= app.call.rotationCount(); r++) {
+      const serving = saved.roster.filter((_, i) => app.call.slotFor(i, r) === SERVE_SLOT);
+      if (serving.length !== 1) { ok = false; }
+    }
+    check(`exactly one server per rotation with ${size} players`, ok);
+  }
+}
+
+console.log('\n17. Reading other rotations must not write to storage');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const { saved } = app.peek();
+
+  // Startup renders rotation 1, which does populate that one layout.
+  saved.layouts = {};
+
+  // What the batch export does: read every rotation without opening it.
+  for (let r = 1; r <= app.call.rotationCount(); r++) {
+    app.call.describeRotation(r);
+    saved.roster.forEach((_, i) => app.call.defaultPosition(i, r));
+  }
+
+  check('layouts still empty after reading all rotations',
+    Object.keys(saved.layouts).length === 0,
+    JSON.stringify(Object.keys(saved.layouts)));
+}
+
+console.log('\n18. describeRotation describes the rotation it is asked about');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  app.call.setRotation(1);
+  const asked = app.call.describeRotation(4);
+  check('names the requested rotation', asked.startsWith('Rotation 4 of 6'), asked);
+  check('current rotation unchanged', app.peek().currentRotation === 1,
+    String(app.peek().currentRotation));
+  check('status line still shows rotation 1',
+    app.status().startsWith('Rotation 1 of 6'), app.status());
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

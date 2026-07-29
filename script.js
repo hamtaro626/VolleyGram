@@ -43,9 +43,27 @@ const ZONE_NAMES = {
 // The order a player travels through the zones, following the rotation.
 const TRAVEL_ORDER = [1, 6, 5, 4, 3, 2];
 
+// Where the faint zone numbers sit. Front row tucks under the net, back row sits
+// just above the endline, so each number is down inside the zone it names rather
+// than bunched around the attack line. Kept clear of the player circles, which
+// sit at x 22/50/78 and y 26/72 with a radius of 11.5% -- test/migration.js
+// checks the clearance.
+const ZONE_LABEL_POSITIONS = {
+  4: { x: 4, y: 6 },
+  3: { x: 37, y: 6 },
+  2: { x: 70, y: 6 },
+  5: { x: 4, y: 91 },
+  6: { x: 37, y: 91 },
+  1: { x: 70, y: 91 },
+};
+
 const FRONT_ROW_SLOTS = [2, 3, 4];
 const BACK_ROW_SLOTS = [1, 5, 6];
 const COURT_SPOTS = 6;
+const SERVE_SLOT = 1; // zone 1 serves
+
+// Pixels of horizontal travel before a drag across the court counts as a swipe.
+const SWIPE_MIN = 45;
 
 // The bench strip sits below the court. 112% is its middle -- see .bench in
 // style.css, which draws it from 104% to 120%.
@@ -440,6 +458,19 @@ function buildPlayers() {
   });
 }
 
+// Built once and never touched again -- the numbers don't change. They sit
+// before the players in the DOM so circles always draw on top of them.
+function buildZoneLabels() {
+  Object.entries(ZONE_LABEL_POSITIONS).forEach(([zone, position]) => {
+    const label = document.createElement('span');
+    label.className = 'zone-label';
+    label.textContent = zone;
+    label.style.left = `${position.x}%`;
+    label.style.top = `${position.y}%`;
+    court.appendChild(label);
+  });
+}
+
 function buildRotationButtons() {
   rotationButtons.replaceChildren();
   for (let r = 1; r <= rotationCount(); r++) {
@@ -715,6 +746,7 @@ function render() {
     // differ from one rotation to the next.
     el.className = `player role-${role}`;
     if (slot === null) el.classList.add('benched');
+    if (slot === SERVE_SLOT) el.classList.add('serving');
 
     el.querySelector('.name').textContent = displayName(player);
     el.querySelector('.label').textContent = roleBadge(role);
@@ -722,7 +754,7 @@ function render() {
     const prefix = roleBadge(role) ? `${ROLE_LABELS[role]}, ` : '';
     el.title = slot === null
       ? `${displayName(player)} — ${prefix}off court`
-      : `${displayName(player)} — ${prefix}zone ${slot}`;
+      : `${displayName(player)} — ${prefix}zone ${slot}${slot === SERVE_SLOT ? ', serving' : ''}`;
   });
 
   // No point drawing an empty bench strip when everyone's on court.
@@ -744,16 +776,16 @@ function render() {
 // With a roster of exactly six there's always exactly one answer. Add players
 // and that guarantee goes away, so report what's actually true instead of
 // inventing something.
-function describeRotation() {
-  const label = `Rotation ${currentRotation} of ${rotationCount()}`;
+function describeRotation(rotation = currentRotation) {
+  const label = `Rotation ${rotation} of ${rotationCount()}`;
   const { setsFrom } = SYSTEMS[saved.system];
 
   // Simple mode has no roles, so there's nothing to say about who sets.
   if (!setsFrom) return label;
 
   const onCourtSetters = saved.roster
-    .map((player, index) => ({ player, slot: slotFor(index, currentRotation) }))
-    .filter(({ player, slot }) => roleFor(player, currentRotation) === 'S' && slot !== null);
+    .map((player, index) => ({ player, slot: slotFor(index, rotation) }))
+    .filter(({ player, slot }) => roleFor(player, rotation) === 'S' && slot !== null);
 
   const eligible = onCourtSetters.filter(({ slot }) => {
     if (setsFrom === 'front') return FRONT_ROW_SLOTS.includes(slot);
@@ -874,28 +906,16 @@ function roleColours(role) {
   return colourCache[role];
 }
 
-function exportImage() {
-  const EDGE = 1000; // court edge in pixels; everything else scales off it
-  const hasBench = rosterSize() > COURT_SPOTS;
-  const contentHeight = hasBench ? Math.round(EDGE * 1.24) : EDGE;
-  const pad = Math.round(EDGE * 0.045);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = EDGE + pad * 2;
-  canvas.height = contentHeight + pad * 2;
-  const ctx = canvas.getContext('2d');
-
-  ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-  ctx.translate(pad, pad);
-
-  // Court, attack line, net.
+// Draws one rotation at the canvas origin, EDGE pixels wide. Returns how tall
+// the drawing came out, so the caller knows where a caption can go.
+function drawRotation(ctx, rotation, EDGE, hasBench) {
   ctx.fillStyle = getComputedStyle(court).backgroundColor;
   ctx.fillRect(0, 0, EDGE, EDGE);
   ctx.strokeStyle = '#f2f4f8';
   ctx.lineWidth = EDGE * 0.005;
   ctx.strokeRect(0, 0, EDGE, EDGE);
 
+  // Attack line, one third back from the net.
   ctx.beginPath();
   ctx.moveTo(0, EDGE / 3);
   ctx.lineTo(EDGE, EDGE / 3);
@@ -903,6 +923,16 @@ function exportImage() {
   ctx.lineWidth = EDGE * 0.003;
   ctx.stroke();
 
+  // Zone numbers, from the same table the on-screen ones use.
+  ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.font = `700 ${Math.round(EDGE * 0.032)}px -apple-system, system-ui, sans-serif`;
+  Object.entries(ZONE_LABEL_POSITIONS).forEach(([zone, position]) => {
+    ctx.fillText(zone, (position.x / 100) * EDGE, (position.y / 100) * EDGE);
+  });
+
+  // Net along the top.
   ctx.strokeStyle = '#f2f4f8';
   ctx.lineWidth = EDGE * 0.012;
   ctx.setLineDash([EDGE * 0.007, EDGE * 0.007]);
@@ -920,18 +950,20 @@ function exportImage() {
     ctx.setLineDash([]);
   }
 
-  // Players, at whatever positions the current rotation actually holds.
-  const layout = layoutFor(currentRotation);
+  // Read positions directly rather than through layoutFor(), which would write
+  // default layouts into storage for rotations you've never actually opened.
+  const layout = saved.layouts[rotation];
   const radius = EDGE * 0.115;
 
   saved.roster.forEach((player, index) => {
-    const position = layout[player.id] || defaultPosition(index, currentRotation);
-    const role = roleFor(player, currentRotation);
+    const position = (layout && layout[player.id]) || defaultPosition(index, rotation);
+    const role = roleFor(player, rotation);
     const { fill, text } = roleColours(role);
     const cx = (position.x / 100) * EDGE;
     const cy = (position.y / 100) * EDGE;
+    const slot = slotFor(index, rotation);
 
-    ctx.globalAlpha = slotFor(index, currentRotation) === null ? 0.45 : 1;
+    ctx.globalAlpha = slot === null ? 0.45 : 1;
 
     ctx.beginPath();
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
@@ -940,6 +972,15 @@ function exportImage() {
     ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
     ctx.lineWidth = EDGE * 0.005;
     ctx.stroke();
+
+    // Outer ring on the server, matching the on-screen marker.
+    if (slot === SERVE_SLOT) {
+      ctx.beginPath();
+      ctx.arc(cx, cy, radius + EDGE * 0.008, 0, Math.PI * 2);
+      ctx.strokeStyle = '#f2f4f8';
+      ctx.lineWidth = EDGE * 0.006;
+      ctx.stroke();
+    }
 
     const badge = store.showLabels ? roleBadge(role) : '';
     ctx.fillStyle = text;
@@ -954,19 +995,81 @@ function exportImage() {
     ctx.globalAlpha = 1;
   });
 
-  // Caption in the bottom margin, so the image explains itself once it's out of
-  // the app and sitting in a camera roll or a Premiere bin.
+  return hasBench ? EDGE * 1.2 : EDGE;
+}
+
+// Captions let the image explain itself once it's out of the app and sitting in
+// a camera roll or a Premiere bin.
+function drawCaption(ctx, line, EDGE, y) {
   ctx.fillStyle = '#a9b2c6';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.font = `600 ${Math.round(EDGE * 0.026)}px -apple-system, system-ui, sans-serif`;
-  ctx.fillText(`${saved.name} — ${describeRotation()}`, 0, contentHeight + pad * 0.5, EDGE);
-
-  downloadCanvas(canvas);
+  ctx.fillText(line, 0, y, EDGE);
 }
 
-function downloadCanvas(canvas) {
-  const stem = `${saved.name}-rotation-${currentRotation}`
+function newCanvas(width, height) {
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(width);
+  canvas.height = Math.round(height);
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  return { canvas, ctx };
+}
+
+function exportImage() {
+  const EDGE = 1000; // court edge in pixels; everything else scales off it
+  const hasBench = rosterSize() > COURT_SPOTS;
+  const pad = Math.round(EDGE * 0.045);
+  const tall = hasBench ? EDGE * 1.24 : EDGE;
+
+  const { canvas, ctx } = newCanvas(EDGE + pad * 2, tall + pad * 2);
+  ctx.translate(pad, pad);
+  drawRotation(ctx, currentRotation, EDGE, hasBench);
+  drawCaption(ctx, `${saved.name} — ${describeRotation(currentRotation)}`, EDGE,
+    tall + pad * 0.5);
+
+  downloadCanvas(canvas, `${saved.name}-rotation-${currentRotation}`);
+}
+
+// One contact sheet with every rotation, two across. Easier to use than a burst
+// of separate downloads, which browsers block anyway after the first one.
+function exportAllRotations() {
+  const EDGE = 620;
+  const hasBench = rosterSize() > COURT_SPOTS;
+  const pad = Math.round(EDGE * 0.07);
+  const tile = (hasBench ? EDGE * 1.24 : EDGE) + EDGE * 0.09;
+  const cols = Math.min(2, rotationCount());
+  const rows = Math.ceil(rotationCount() / cols);
+  const titleBand = EDGE * 0.13;
+
+  const { canvas, ctx } = newCanvas(
+    cols * EDGE + pad * (cols + 1),
+    rows * tile + pad * (rows + 1) + titleBand,
+  );
+
+  ctx.fillStyle = '#f2f4f8';
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${Math.round(EDGE * 0.06)}px -apple-system, system-ui, sans-serif`;
+  ctx.fillText(`${saved.name} — ${SYSTEMS[saved.system].name}`, pad, titleBand / 2);
+
+  for (let rotation = 1; rotation <= rotationCount(); rotation++) {
+    const col = (rotation - 1) % cols;
+    const row = Math.floor((rotation - 1) / cols);
+    ctx.save();
+    ctx.translate(pad + col * (EDGE + pad), titleBand + pad + row * (tile + pad));
+    const drawn = drawRotation(ctx, rotation, EDGE, hasBench);
+    drawCaption(ctx, describeRotation(rotation), EDGE, drawn + EDGE * 0.055);
+    ctx.restore();
+  }
+
+  downloadCanvas(canvas, `${saved.name}-all-rotations`);
+}
+
+function downloadCanvas(canvas, stemSource) {
+  const stem = stemSource
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
     .replace(/^-+|-+$/g, '');
@@ -1038,6 +1141,42 @@ holdButton.addEventListener('pointerleave', cancelHold);
 holdButton.addEventListener('pointercancel', cancelHold);
 
 document.getElementById('exportImage').addEventListener('click', exportImage);
+document.getElementById('exportAll').addEventListener('click', exportAllRotations);
+
+// Swiping across empty court changes rotation. A swipe that starts on a player
+// is ignored, or dragging someone sideways would flip the rotation out from
+// under you mid-drag.
+let swipeFrom = null;
+
+court.addEventListener('pointerdown', (event) => {
+  const onPlayer = event.target.closest && event.target.closest('.player');
+  swipeFrom = onPlayer ? null : { x: event.clientX, y: event.clientY };
+});
+
+court.addEventListener('pointerup', (event) => {
+  if (!swipeFrom) return;
+  const dx = event.clientX - swipeFrom.x;
+  const dy = event.clientY - swipeFrom.y;
+  swipeFrom = null;
+  // Far enough to be deliberate, and more horizontal than vertical.
+  if (Math.abs(dx) < SWIPE_MIN || Math.abs(dx) <= Math.abs(dy)) return;
+  step(dx < 0 ? 1 : -1);
+});
+
+court.addEventListener('pointercancel', () => { swipeFrom = null; });
+
+document.addEventListener('keydown', (event) => {
+  // Don't hijack the arrows while someone's typing a name or in a dropdown.
+  const tag = event.target && event.target.tagName;
+  if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (event.key === 'ArrowLeft') {
+    step(-1);
+    event.preventDefault();
+  } else if (event.key === 'ArrowRight') {
+    step(1);
+    event.preventDefault();
+  }
+});
 
 const roleScopeSelect = document.getElementById('roleScope');
 roleScopeSelect.addEventListener('change', () => {
@@ -1087,6 +1226,7 @@ syncLabelsButton();
 syncRosterButton();
 syncUndoButton();
 roleScopeSelect.value = store.roleScope;
+buildZoneLabels();
 rebuild();
 
 // Write straight back after loading, so data saved by an older version gets

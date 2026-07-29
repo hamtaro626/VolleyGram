@@ -209,10 +209,31 @@ either one.
 `roleOverrides` was added without a version bump — an extra optional field that
 defaults to `{}` breaks nothing, so old saves need no special handling.
 
+## v0.9 — courtside conveniences
+
+- **Zone numbers** on the court, faint, one per cell. Also drawn in exports.
+- **Swipe** left/right across empty court to change rotation. Swipes starting on
+  a player are ignored, so dragging someone sideways doesn't flip the rotation.
+- **Serve ring** on whoever is in zone 1.
+- **Arrow keys** for prev/next, unless focus is in a field or dropdown.
+- **Save all rotations as one image** — a contact sheet, two across, titled and
+  captioned. A single file rather than a burst of downloads, which browsers block
+  after the first anyway.
+- Labels and Save as image now share a row; roster toggle gets its own.
+
+The export was refactored into `drawRotation(ctx, rotation, EDGE, hasBench)` so
+single and batch export share one drawing routine. `describeRotation(rotation)`
+now takes a rotation rather than always reading the current one.
+
+One trap avoided: the batch export reads `saved.layouts[rotation]` directly
+rather than calling `layoutFor()`, which lazily *writes* default layouts. Going
+through it would have persisted layouts for every rotation the moment you
+exported, whether you'd opened them or not.
+
 ## Tests
 
 ```
-node test/migration.js    # 72 checks — storage, migration, roles, corrupt input
+node test/migration.js    # 82 checks — storage, migration, roles, zones, corrupt input
 node test/contrast.js     # colour contrast and hue separation
 ```
 

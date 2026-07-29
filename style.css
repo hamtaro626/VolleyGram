@@ -85,6 +85,19 @@ h1 {
   background: rgba(255, 255, 255, 0.75);
 }
 
+/* Faint zone numbers, one per cell. pointer-events: none so they never
+   intercept a swipe or a drag aimed at the court underneath. */
+.zone-label {
+  position: absolute;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  color: rgba(255, 255, 255, 0.4);
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
 /* --- The bench -------------------------------------------------------- */
 
 /* Only exists once there are more than six players, so it's hidden until
@@ -195,6 +208,12 @@ body.hide-labels .player .label {
 /* Off court: still readable, clearly not in play. */
 .player.benched {
   opacity: 0.45;
+}
+
+/* Whoever's in zone 1 is serving. A ring outside the circle, so it reads as a
+   marker on the player rather than a change to their role colour. */
+.player.serving {
+  box-shadow: 0 0 0 3px #f2f4f8;
 }
 
 /* --- Colour by role --------------------------------------------------- */
