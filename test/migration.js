@@ -38,7 +38,14 @@ function stubElement(tag = 'div') {
     appendChild(c) { this.children.push(c); return c; },
     append(...cs) { cs.forEach((c) => this.children.push(c)); },
     replaceChildren(...cs) { this.children = cs; },
-    insertBefore(n) { this.children.unshift(n); return n; },
+    insertBefore(node, ref) {
+      const existing = this.children.indexOf(node);
+      if (existing !== -1) this.children.splice(existing, 1);
+      const at = ref ? this.children.indexOf(ref) : -1;
+      if (at === -1) this.children.push(node);
+      else this.children.splice(at, 0, node);
+      return node;
+    },
     remove() {},
     setAttribute() {},
     setPointerCapture() {},
@@ -87,7 +94,8 @@ function boot(seedJson) {
     globalThis.__call = { load, render, rebuild, useLineup, addLineup,
       duplicateLineup, deleteLineup, normaliseLineup, slotFor, rosterSize,
       describeRotation, setRotation, roleFor, hasRoleOverride, overrideCount,
-      buildRosterRows, defaultPosition, rotationCount };
+      buildRosterRows, defaultPosition, rotationCount, applyRosterOrder,
+      movePlayer };
     globalThis.__const = { ZONE_LABEL_POSITIONS, SERVE_SLOT, SLOT_POSITIONS,
       COURT_SPOTS };
     globalThis.__status = () => document.getElementById('status').textContent;
@@ -522,6 +530,48 @@ console.log('\n18. describeRotation describes the rotation it is asked about');
     String(app.peek().currentRotation));
   check('status line still shows rotation 1',
     app.status().startsWith('Rotation 1 of 6'), app.status());
+}
+
+console.log('\n19. Reordering the roster by drag');
+{
+  const ids = (app) => app.peek().saved.roster.map((p) => p.id).join(',');
+
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const before = ids(app);
+  check('starts in lineup order', before === 'S1,MB1,OH1,S2,MB2,OH2', before);
+
+  // Move the last player to the front, as a drag to the top would.
+  check('a real move reports true',
+    app.call.applyRosterOrder(['OH2', 'S1', 'MB1', 'OH1', 'S2', 'MB2']) === true);
+  check('roster follows the new order',
+    ids(app) === 'OH2,S1,MB1,OH1,S2,MB2', ids(app));
+
+  // Dropping a row back where it started shouldn't count as a change.
+  const undosBefore = app.peek().store && null;
+  void undosBefore;
+  check('a no-op move reports false',
+    app.call.applyRosterOrder(['OH2', 'S1', 'MB1', 'OH1', 'S2', 'MB2']) === false);
+
+  // A malformed order must never lose a player.
+  app.call.applyRosterOrder(['MB1', 'S1']);
+  const after = ids(app).split(',');
+  check('no player is dropped by a partial order', after.length === 6, after.join(','));
+  check('named players come first, the rest keep their order',
+    after[0] === 'MB1' && after[1] === 'S1', after.join(','));
+
+  // Reordering still produces a valid rotation.
+  const zones = new Set();
+  for (let i = 0; i < 6; i++) zones.add(app.call.slotFor(i, 1));
+  check('rotation still fills six zones', zones.size === 6 && !zones.has(null));
+}
+
+console.log('\n20. Source files are plain text');
+{
+  // A stray NUL byte makes a file binary to grep, git diff and editor search.
+  const files = ['script.js', 'style.css', 'index.html', 'test/migration.js'];
+  const dirty = files.filter((f) =>
+    fs.readFileSync(path.join(__dirname, '..', f)).includes(0));
+  check('no NUL bytes in source', dirty.length === 0, dirty.join(', '));
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

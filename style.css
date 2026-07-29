@@ -154,7 +154,8 @@ h1 {
   align-items: center;
   justify-content: center;
   padding: 0 4px;
-  overflow: hidden;
+  /* No overflow: hidden -- the Server tag deliberately hangs off the bottom
+     edge. Long names are clipped by .name's own ellipsis instead. */
   text-align: center;
   cursor: grab;
   touch-action: none;
@@ -210,10 +211,36 @@ body.hide-labels .player .label {
   opacity: 0.45;
 }
 
-/* Whoever's in zone 1 is serving. A ring outside the circle, so it reads as a
-   marker on the player rather than a change to their role colour. */
+/* Whoever's in zone 1 is serving: a ring plus a labelled pill sitting on it,
+   the way a legend sits on a fieldset border. The ring alone was too easy to
+   miss, and text curved around the circle would be about five pixels tall on a
+   phone -- less readable than what it replaced. z-index lifts the serving
+   player so a neighbouring circle can't cover the tag. */
 .player.serving {
   box-shadow: 0 0 0 3px #f2f4f8;
+  z-index: 2;
+}
+
+.player .serve-tag {
+  display: none;
+  position: absolute;
+  left: 50%;
+  bottom: -0.4rem;
+  transform: translateX(-50%);
+  padding: 0.14rem 0.32rem;
+  border-radius: 999px;
+  background: #f2f4f8;
+  color: #16181d;
+  font-size: 0.48rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.player.serving .serve-tag {
+  display: block;
 }
 
 /* --- Colour by role --------------------------------------------------- */
@@ -363,14 +390,34 @@ button.danger {
   gap: 0.5rem;
 }
 
-/* swatch | name | role | up | down | remove. minmax(0, 1fr) on the name is
-   what lets it shrink -- a plain 1fr refuses to go below its content width and
-   pushes the buttons off screen on a phone. */
+/* handle | swatch | name | role | remove. minmax(0, 1fr) on the name is what
+   lets it shrink -- a plain 1fr refuses to go below its content width and
+   pushes the controls off screen on a phone. */
 .roster-row {
   display: grid;
-  grid-template-columns: 0.9rem minmax(0, 1fr) auto 1.4rem 1.4rem 1.4rem;
+  grid-template-columns: 1.3rem 0.9rem minmax(0, 1fr) auto 1.4rem;
   align-items: center;
   gap: 0.35rem;
+  background: #232833;
+  border-radius: 6px;
+}
+
+.roster button.icon.handle {
+  cursor: grab;
+  font-size: 0.9rem;
+  /* Without this, dragging the handle scrolls the page instead. */
+  touch-action: none;
+}
+
+/* Lifted and faded while it's being moved, so it reads as detached from the
+   list it's being dropped back into. */
+.roster-row.row-dragging {
+  opacity: 0.85;
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
+}
+
+.roster-row.row-dragging .handle {
+  cursor: grabbing;
 }
 
 .swatch {

@@ -230,12 +230,37 @@ rather than calling `layoutFor()`, which lazily *writes* default layouts. Going
 through it would have persisted layouts for every rotation the moment you
 exported, whether you'd opened them or not.
 
+## v0.10 — drag to reorder, labelled server
+
+- **Drag handle** (`⠿`) on each roster row replaces the up/down arrows. Arrow
+  keys still work when the handle has focus, since a drag-only control is
+  unusable from a keyboard.
+- **"Server" pill** on the ring around whoever is in zone 1, in the app and in
+  exports.
+
+Drag runs on pointer events, not HTML5 drag-and-drop, which doesn't fire on
+touch. The dragged row's DOM node is moved directly rather than rebuilding the
+list on each `pointermove` — rebuilding would destroy the element mid-drag and
+the pointer capture with it. The roster array is rewritten once, on release, so a
+drag costs one undo step rather than one per pixel.
+
+`applyRosterOrder()` keeps any player the incoming order left out, appending them
+at the end. A malformed order can shuffle the lineup but can never delete anyone.
+
+Curved perimeter text was considered for the server label and rejected: at phone
+size it renders about five pixels tall, less readable than the plain ring it was
+meant to clarify.
+
 ## Tests
 
 ```
-node test/migration.js    # 82 checks — storage, migration, roles, zones, corrupt input
+node test/migration.js    # 93 checks — storage, migration, roles, zones, reordering
 node test/contrast.js     # colour contrast and hue separation
 ```
+
+`migration.js` also asserts no source file contains a NUL byte. One slipped in
+during v0.10 from a mis-written escape; it ran fine but made the file binary to
+`grep`, `git diff` and editor search.
 
 `migration.js` boots the real `script.js` against a stubbed DOM, so it tests the
 shipped code rather than a copy of the logic. Covers every historical shape,

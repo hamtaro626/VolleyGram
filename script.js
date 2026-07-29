@@ -448,7 +448,8 @@ function buildPlayers() {
     const el = document.createElement('div');
     el.className = `player role-${player.role}`;
     el.dataset.playerId = player.id;
-    el.innerHTML = '<span class="name"></span><span class="label"></span>';
+    el.innerHTML = '<span class="name"></span><span class="label"></span>'
+      + '<span class="serve-tag">Server</span>';
     el.addEventListener('pointerdown', startDrag);
     el.addEventListener('pointermove', onDrag);
     el.addEventListener('pointerup', endDrag);
@@ -501,6 +502,7 @@ function buildRosterRows() {
 
     const row = document.createElement('div');
     row.className = overridden ? 'roster-row overridden' : 'roster-row';
+    row.dataset.playerId = player.id;
 
     const swatch = document.createElement('span');
     swatch.className = `swatch role-${effectiveRole}`;
@@ -546,15 +548,29 @@ function buildRosterRows() {
       render();
     });
 
-    const up = iconButton('icon', '▲', `Move ${displayName(player)} earlier`,
-      () => movePlayer(index, -1));
-    up.disabled = index === 0;
+    // Drag handle. HTML5 drag-and-drop doesn't fire on touch, so this runs on
+    // pointer events instead -- same code path for finger and mouse. Arrow keys
+    // still work when the handle has focus, since a drag-only control would be
+    // unusable from a keyboard.
+    const handle = document.createElement('button');
+    handle.className = 'icon handle';
+    handle.textContent = '⠿';
+    handle.title = `Drag to reorder ${displayName(player)}, or use the arrow keys`;
+    handle.addEventListener('pointerdown', (event) => startRowDrag(event, row));
+    handle.addEventListener('pointermove', onRowDragMove);
+    handle.addEventListener('pointerup', endRowDrag);
+    handle.addEventListener('pointercancel', endRowDrag);
+    handle.addEventListener('keydown', (event) => {
+      if (event.key === 'ArrowUp') {
+        event.preventDefault();
+        movePlayer(index, -1);
+      } else if (event.key === 'ArrowDown') {
+        event.preventDefault();
+        movePlayer(index, 1);
+      }
+    });
 
-    const down = iconButton('icon', '▼', `Move ${displayName(player)} later`,
-      () => movePlayer(index, 1));
-    down.disabled = index === rosterSize() - 1;
-
-    row.append(swatch, nameInput, roleSelect, up, down);
+    row.append(handle, swatch, nameInput, roleSelect);
 
     // Only the extras can be removed -- the first six are the rotation.
     if (index >= COURT_SPOTS) {
@@ -712,6 +728,69 @@ function movePlayer(index, delta) {
     const [player] = saved.roster.splice(index, 1);
     saved.roster.splice(target, 0, player);
   });
+}
+
+// --- Reordering by drag -----------------------------------------------
+
+// The dragged row's DOM node gets moved directly instead of rebuilding the list
+// on every pointermove -- rebuilding would destroy the element mid-drag, and the
+// pointer capture with it. The roster array is only rewritten on release, which
+// also means one undo step per drag rather than one per pixel.
+let rowDrag = null;
+
+function startRowDrag(event, row) {
+  rowDrag = row;
+  row.classList.add('row-dragging');
+  event.currentTarget.setPointerCapture(event.pointerId);
+}
+
+function onRowDragMove(event) {
+  if (!rowDrag) return;
+
+  const rows = [...rosterRows.children];
+  const dragIndex = rows.indexOf(rowDrag);
+
+  for (const other of rows) {
+    if (other === rowDrag) continue;
+    const box = other.getBoundingClientRect();
+    const middle = box.top + box.height / 2;
+    const above = rows.indexOf(other) < dragIndex;
+
+    // Crossing a neighbour's midpoint moves past it.
+    if (above && event.clientY < middle) {
+      rosterRows.insertBefore(rowDrag, other);
+      return;
+    }
+    if (!above && event.clientY > middle) {
+      rosterRows.insertBefore(rowDrag, other.nextSibling);
+      return;
+    }
+  }
+}
+
+function endRowDrag() {
+  if (!rowDrag) return;
+  rowDrag.classList.remove('row-dragging');
+  rowDrag = null;
+  applyRosterOrder([...rosterRows.children].map((row) => row.dataset.playerId));
+}
+
+// Rewrites the roster to match a list of player ids. Returns whether anything
+// actually moved, so a tap on the handle that went nowhere doesn't burn an undo
+// step or wipe the layouts.
+function applyRosterOrder(order) {
+  const current = saved.roster.map((player) => player.id);
+  if (order.join(' ') === current.join(' ')) return false;
+
+  changeLineup(() => {
+    const byId = new Map(saved.roster.map((player) => [player.id, player]));
+    const reordered = order.map((id) => byId.get(id)).filter(Boolean);
+    // Anyone the incoming list left out keeps their place at the end, so a bad
+    // order can never silently delete a player.
+    const missing = saved.roster.filter((player) => !order.includes(player.id));
+    saved.roster = [...reordered, ...missing];
+  });
+  return true;
 }
 
 function rebuild() {
@@ -906,6 +985,16 @@ function roleColours(role) {
   return colourCache[role];
 }
 
+// Traces a fully rounded rectangle. ctx.roundRect exists in current browsers but
+// not older ones, and this is three lines.
+function pill(ctx, x, y, width, height) {
+  const r = height / 2;
+  ctx.beginPath();
+  ctx.arc(x + r, y + r, r, Math.PI / 2, Math.PI * 1.5);
+  ctx.arc(x + width - r, y + r, r, Math.PI * 1.5, Math.PI / 2);
+  ctx.closePath();
+}
+
 // Draws one rotation at the canvas origin, EDGE pixels wide. Returns how tall
 // the drawing came out, so the caller knows where a caption can go.
 function drawRotation(ctx, rotation, EDGE, hasBench) {
@@ -992,6 +1081,25 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
       ctx.font = `500 ${Math.round(EDGE * 0.027)}px -apple-system, system-ui, sans-serif`;
       ctx.fillText(badge, cx, cy + EDGE * 0.023, radius * 1.7);
     }
+
+    // The Server pill, drawn last so it sits on top of the ring and the circle.
+    if (slot === SERVE_SLOT) {
+      const label = 'SERVER';
+      ctx.font = `700 ${Math.round(EDGE * 0.021)}px -apple-system, system-ui, sans-serif`;
+      const boxWidth = ctx.measureText(label).width + EDGE * 0.026;
+      const boxHeight = EDGE * 0.036;
+      const boxTop = cy + radius - boxHeight / 2;
+
+      ctx.fillStyle = '#f2f4f8';
+      pill(ctx, cx - boxWidth / 2, boxTop, boxWidth, boxHeight);
+      ctx.fill();
+
+      ctx.fillStyle = '#16181d';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(label, cx, boxTop + boxHeight / 2);
+    }
+
     ctx.globalAlpha = 1;
   });
 
