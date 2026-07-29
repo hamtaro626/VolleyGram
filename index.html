@@ -13,13 +13,14 @@
     <div class="court" id="court">
       <div class="net"></div>
       <div class="attack-line"></div>
-      <!-- The six players get created by script.js -->
+      <div class="bench"><span>Off court</span></div>
+      <!-- The players get created by script.js -->
     </div>
 
     <p class="status" id="status"></p>
 
     <div class="rotations" id="rotationButtons">
-      <!-- The six rotation buttons get created by script.js -->
+      <!-- The rotation buttons get created by script.js -->
     </div>
 
     <div class="actions">
@@ -34,7 +35,10 @@
     </div>
 
     <section class="roster" id="roster" hidden>
-      <!-- The six name fields get created by script.js -->
+      <div id="rosterRows">
+        <!-- The name fields get created by script.js -->
+      </div>
+      <button id="addPlayer">+ Add player</button>
       <button id="resetAll" class="danger">Reset all rotations</button>
     </section>
   </main>

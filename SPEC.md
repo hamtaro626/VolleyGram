@@ -64,6 +64,23 @@ Added after using v0.1 and forming an opinion about it.
 - Everything survives a refresh (localStorage — still no server)
 - Reset the current rotation, or reset all six
 
+## v0.3 — bigger rosters
+
+- Add players beyond six, up to 12
+- The rotation becomes a ring: the first six spots are the court, the rest are
+  the bench. The server rotates off, the next player returns at middle back.
+- A roster of N players has N rotations, not 6
+- Per-player role dropdown; off-court players dimmed
+- Dropped the front-row-setter ring (the status line still names them)
+- Most recently grabbed player stacks on top
+
+Adding or removing anyone resets all layouts, since who stands where changes in
+every rotation and saved coordinates would no longer mean anything.
+
+Note: beyond six players, "exactly one setter front row" stops being guaranteed
+— that property is specific to a six-person 4-2. The status line reports what's
+actually true rather than pretending.
+
 ## Still does NOT do — on purpose
 
 These are all good ideas. They are not next.

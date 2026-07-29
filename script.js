@@ -1,4 +1,4 @@
-// 4-2 Rotation Reference
+// Volleyball Rotation Reference
 //
 // Court slots use volleyball's numbering, with the net at the top:
 //
@@ -7,9 +7,14 @@
 //
 // Players rotate clockwise: 2->1, 1->6, 6->5, 5->4, 4->3, 3->2.
 //
-// Note that the six circles on screen are *players*, not slots. Each one keeps
-// its identity for the life of the page and moves to a new spot when you
-// rotate, which is what lets the browser animate the trip.
+// The circles on screen are *players*, not slots. Each one keeps its identity
+// for the life of the page and moves to a new spot when you rotate, which is
+// what lets the browser animate the trip.
+//
+// With more than six players the rotation becomes a ring: the first six spots
+// on the ring are the court, everything past that is the bench. Rotating walks
+// everyone one step around it, so the server rotates off and the next player
+// comes back on at middle back -- which is how a rec team subs.
 
 // --- The data ---------------------------------------------------------
 
@@ -25,30 +30,34 @@ const SLOT_POSITIONS = {
 };
 
 const FRONT_ROW_SLOTS = [2, 3, 4];
+const COURT_SPOTS = 6;
 
-// The roster, listed in rotation order: this is who stands in slots 1 through 6
-// when we're in rotation 1. The two setters are three apart, which is what
-// guarantees exactly one is front row in every rotation.
-const ROSTER = [
-  { id: 'S1', role: 'S', defaultName: 'Setter 1' },
-  { id: 'MB1', role: 'MB', defaultName: 'Middle 1' },
-  { id: 'OH1', role: 'OH', defaultName: 'Outside 1' },
-  { id: 'S2', role: 'S', defaultName: 'Setter 2' },
-  { id: 'MB2', role: 'MB', defaultName: 'Middle 2' },
-  { id: 'OH2', role: 'OH', defaultName: 'Outside 2' },
-];
+// The bench strip sits below the court. 112% is its middle -- see .bench in
+// style.css, which draws it from 104% to 120%.
+const BENCH_Y = 112;
+const MAX_DRAG_Y = 120;
+const MAX_PLAYERS = 12;
 
 const ROLE_LABELS = { S: 'Setter', MB: 'Middle', OH: 'Outside' };
+
+// The 4-2: two setters exactly three apart, so one is always front row.
+const DEFAULT_ROSTER = [
+  { id: 'S1', role: 'S', name: '' },
+  { id: 'MB1', role: 'MB', name: '' },
+  { id: 'OH1', role: 'OH', name: '' },
+  { id: 'S2', role: 'S', name: '' },
+  { id: 'MB2', role: 'MB', name: '' },
+  { id: 'OH2', role: 'OH', name: '' },
+];
 
 const STORAGE_KEY = 'volleyball-rotations-v1';
 
 // --- State ------------------------------------------------------------
 
-// Everything the app knows lives here. Anything inside `saved` is yours -- it
-// gets written to localStorage and reloaded next time. Everything outside it
-// is throwaway.
+// Everything inside `saved` is yours -- it gets written to localStorage and
+// reloaded next time. Everything outside it is throwaway.
 let saved = {
-  names: {},     // player id -> the name you typed
+  roster: structuredClone(DEFAULT_ROSTER),
   layouts: {},   // rotation -> { player id -> {x, y} }
   showLabels: true,
 };
@@ -60,6 +69,7 @@ const court = document.getElementById('court');
 const statusLine = document.getElementById('status');
 const rotationButtons = document.getElementById('rotationButtons');
 const rosterPanel = document.getElementById('roster');
+const rosterRows = document.getElementById('rosterRows');
 
 // --- Working out who stands where -------------------------------------
 
@@ -69,22 +79,46 @@ function mod(n, m) {
   return ((n % m) + m) % m;
 }
 
-// Which slot is this player standing in, for a given rotation? In rotation 1
-// the roster sits in slot order; every rotation after that shifts everyone one
-// slot backwards through the list.
+function rosterSize() {
+  return saved.roster.length;
+}
+
+// A full cycle takes as many rotations as there are players, not six.
+function rotationCount() {
+  return rosterSize();
+}
+
+// Where this player sits on the ring: 0-5 are court slots 1-6, anything
+// higher is a bench spot.
+function ringPosition(playerIndex, rotation) {
+  return mod(playerIndex - rotation + 1, rosterSize());
+}
+
+// The court slot this player is in, or null if they're off court.
 function slotFor(playerIndex, rotation) {
-  return mod(playerIndex - rotation + 1, 6) + 1;
+  const ring = ringPosition(playerIndex, rotation);
+  return ring < COURT_SPOTS ? ring + 1 : null;
 }
 
-function nameOf(player) {
-  return saved.names[player.id] || player.defaultName;
+function displayName(player, index) {
+  return player.name || `${ROLE_LABELS[player.role]} ${index + 1}`;
 }
 
-// The untouched, straight-off-the-rulebook positions for one rotation.
+// The untouched, straight-off-the-rulebook position for one player.
+function defaultPosition(playerIndex, rotation) {
+  const ring = ringPosition(playerIndex, rotation);
+  if (ring < COURT_SPOTS) return { ...SLOT_POSITIONS[ring + 1] };
+
+  // On the bench: spread everyone evenly along the strip.
+  const benchIndex = ring - COURT_SPOTS;
+  const benchCount = rosterSize() - COURT_SPOTS;
+  return { x: (100 / (benchCount + 1)) * (benchIndex + 1), y: BENCH_Y };
+}
+
 function defaultLayout(rotation) {
   const layout = {};
-  ROSTER.forEach((player, index) => {
-    layout[player.id] = { ...SLOT_POSITIONS[slotFor(index, rotation)] };
+  saved.roster.forEach((player, index) => {
+    layout[player.id] = defaultPosition(index, rotation);
   });
   return layout;
 }
@@ -114,8 +148,18 @@ function load() {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (!stored) return;
     const parsed = JSON.parse(stored);
+
+    let roster = parsed.roster;
+    if (!Array.isArray(roster)) {
+      // Saved by an older version, which kept names in a separate lookup.
+      roster = structuredClone(DEFAULT_ROSTER).map((player) => ({
+        ...player,
+        name: (parsed.names && parsed.names[player.id]) || '',
+      }));
+    }
+
     saved = {
-      names: parsed.names || {},
+      roster,
       layouts: parsed.layouts || {},
       showLabels: parsed.showLabels !== false,
     };
@@ -124,10 +168,15 @@ function load() {
   }
 }
 
-// --- Building the page once -------------------------------------------
+// --- Building the page ------------------------------------------------
 
-function createPlayers() {
-  ROSTER.forEach((player) => {
+// Rebuilt from scratch whenever the roster changes, since the number of
+// circles and buttons depends on how many players there are.
+function buildPlayers() {
+  Object.values(playerElements).forEach((el) => el.remove());
+  Object.keys(playerElements).forEach((id) => delete playerElements[id]);
+
+  saved.roster.forEach((player) => {
     const el = document.createElement('div');
     el.className = `player role-${player.role}`;
     el.dataset.playerId = player.id;
@@ -141,8 +190,9 @@ function createPlayers() {
   });
 }
 
-function createRotationButtons() {
-  for (let r = 1; r <= 6; r++) {
+function buildRotationButtons() {
+  rotationButtons.replaceChildren();
+  for (let r = 1; r <= rotationCount(); r++) {
     const button = document.createElement('button');
     button.textContent = r;
     button.addEventListener('click', () => setRotation(r));
@@ -150,32 +200,91 @@ function createRotationButtons() {
   }
 }
 
-function createRosterFields() {
-  ROSTER.forEach((player) => {
-    const row = document.createElement('label');
+function buildRosterRows() {
+  rosterRows.replaceChildren();
+
+  saved.roster.forEach((player, index) => {
+    const row = document.createElement('div');
     row.className = 'roster-row';
 
     const swatch = document.createElement('span');
     swatch.className = `swatch role-${player.role}`;
 
-    const input = document.createElement('input');
-    input.type = 'text';
-    input.value = nameOf(player);
-    input.placeholder = player.defaultName;
-    input.maxLength = 14;
-    input.addEventListener('input', () => {
-      saved.names[player.id] = input.value.trim();
+    const nameInput = document.createElement('input');
+    nameInput.type = 'text';
+    nameInput.value = player.name;
+    nameInput.placeholder = displayName(player, index);
+    nameInput.maxLength = 14;
+    nameInput.addEventListener('input', () => {
+      player.name = nameInput.value.trim();
       save();
       render();
     });
 
-    const role = document.createElement('span');
-    role.className = 'roster-role';
-    role.textContent = ROLE_LABELS[player.role];
+    const roleSelect = document.createElement('select');
+    Object.entries(ROLE_LABELS).forEach(([code, label]) => {
+      const option = document.createElement('option');
+      option.value = code;
+      option.textContent = label;
+      option.selected = code === player.role;
+      roleSelect.appendChild(option);
+    });
+    roleSelect.addEventListener('change', () => {
+      player.role = roleSelect.value;
+      swatch.className = `swatch role-${player.role}`;
+      playerElements[player.id].className = `player role-${player.role}`;
+      save();
+      render();
+    });
 
-    row.append(swatch, input, role);
-    rosterPanel.insertBefore(row, rosterPanel.firstChild);
+    row.append(swatch, nameInput, roleSelect);
+
+    // Only the extras can be removed -- the first six are the rotation.
+    if (index >= COURT_SPOTS) {
+      const remove = document.createElement('button');
+      remove.className = 'remove';
+      remove.textContent = '×';
+      remove.title = `Remove ${displayName(player, index)}`;
+      remove.addEventListener('click', () => changeRoster(() => {
+        saved.roster.splice(index, 1);
+      }));
+      row.append(remove);
+    } else {
+      row.append(document.createElement('span'));
+    }
+
+    rosterRows.appendChild(row);
   });
+
+  document.getElementById('addPlayer').disabled = rosterSize() >= MAX_PLAYERS;
+}
+
+// Adding or removing anyone reshuffles who stands where in every rotation, so
+// any positions you dragged no longer mean what they meant. Rather than leave
+// players scattered at coordinates from the old lineup, start clean.
+function changeRoster(mutate) {
+  const hasCustomLayouts = Object.keys(saved.layouts).length > 0;
+  if (hasCustomLayouts &&
+      !confirm('Changing the roster resets all rotations to their default positions. Continue?')) {
+    return;
+  }
+
+  mutate();
+  saved.layouts = {};
+  if (currentRotation > rotationCount()) currentRotation = 1;
+
+  save();
+  rebuild();
+}
+
+function rebuild() {
+  // Drop the animation first, or the rebuilt circles slide in from the corner.
+  court.classList.remove('animate');
+  buildPlayers();
+  buildRotationButtons();
+  buildRosterRows();
+  render();
+  requestAnimationFrame(() => court.classList.add('animate'));
 }
 
 // --- Drawing the current rotation -------------------------------------
@@ -183,29 +292,28 @@ function createRosterFields() {
 function render() {
   const layout = layoutFor(currentRotation);
 
-  ROSTER.forEach((player, index) => {
+  saved.roster.forEach((player, index) => {
     const el = playerElements[player.id];
-    const position = layout[player.id];
+    const position = layout[player.id] || defaultPosition(index, currentRotation);
     const slot = slotFor(index, currentRotation);
 
     // Setting left/top is all it takes to move a player. The CSS transition
     // handles the actual sliding.
     el.style.left = `${position.x}%`;
     el.style.top = `${position.y}%`;
+    el.classList.toggle('benched', slot === null);
 
-    el.querySelector('.name').textContent = nameOf(player);
+    el.querySelector('.name').textContent = displayName(player, index);
     el.querySelector('.label').textContent = ROLE_LABELS[player.role];
-    el.title = `${nameOf(player)} — ${ROLE_LABELS[player.role]}, slot ${slot}`;
+    el.title = slot === null
+      ? `${displayName(player, index)} — ${ROLE_LABELS[player.role]}, off court`
+      : `${displayName(player, index)} — ${ROLE_LABELS[player.role]}, slot ${slot}`;
   });
 
-  // Name the setter who's front row -- the thing you're checking for.
-  const settingIndex = ROSTER.findIndex(
-    (player, index) =>
-      player.role === 'S' && FRONT_ROW_SLOTS.includes(slotFor(index, currentRotation))
-  );
-  const settingSlot = slotFor(settingIndex, currentRotation);
-  statusLine.textContent =
-    `Rotation ${currentRotation} — ${nameOf(ROSTER[settingIndex])} sets from slot ${settingSlot}`;
+  // No point drawing an empty bench strip when everyone's on court.
+  court.classList.toggle('has-bench', rosterSize() > COURT_SPOTS);
+
+  statusLine.textContent = describeRotation();
 
   [...rotationButtons.children].forEach((button, index) => {
     button.classList.toggle('active', index + 1 === currentRotation);
@@ -214,14 +322,31 @@ function render() {
   document.body.classList.toggle('hide-labels', !saved.showLabels);
 }
 
+// Name the setter who's front row. With a roster of exactly six that's always
+// one person; add players and the guarantee goes away, so say so rather than
+// making something up.
+function describeRotation() {
+  const label = `Rotation ${currentRotation} of ${rotationCount()}`;
+
+  const setters = saved.roster.filter((player, index) => {
+    const slot = slotFor(index, currentRotation);
+    return player.role === 'S' && slot !== null && FRONT_ROW_SLOTS.includes(slot);
+  });
+
+  if (setters.length === 0) return `${label} — no setter front row`;
+
+  const names = setters.map((player) => displayName(player, saved.roster.indexOf(player)));
+  return `${label} — ${names.join(' & ')} front row`;
+}
+
 function setRotation(rotation) {
   currentRotation = rotation;
   render();
 }
 
-// Wrap around at both ends: next from 6 goes to 1, prev from 1 goes to 6.
+// Wrap around at both ends: next from the last rotation goes back to 1.
 function step(delta) {
-  setRotation(mod(currentRotation - 1 + delta, 6) + 1);
+  setRotation(mod(currentRotation - 1 + delta, rotationCount()) + 1);
 }
 
 // --- Dragging ---------------------------------------------------------
@@ -257,14 +382,15 @@ function onDrag(event) {
   const x = ((event.clientX - grabOffsetX - courtRect.left) / courtRect.width) * 100;
   const y = ((event.clientY - grabOffsetY - courtRect.top) / courtRect.height) * 100;
 
+  const lowestY = rosterSize() > COURT_SPOTS ? MAX_DRAG_Y : 100;
   dragTarget.style.left = `${clamp(x, 0, 100)}%`;
-  dragTarget.style.top = `${clamp(y, 0, 100)}%`;
+  dragTarget.style.top = `${clamp(y, 0, lowestY)}%`;
 }
 
 function endDrag() {
   if (!dragTarget) return;
 
-  // Write where they ended up into this rotation only. The other five are
+  // Write where they ended up into this rotation only. The others are
   // untouched.
   layoutFor(currentRotation)[dragTarget.dataset.playerId] = {
     x: parseFloat(dragTarget.style.left),
@@ -297,6 +423,10 @@ document.getElementById('resetAll').addEventListener('click', () => {
   render();
 });
 
+document.getElementById('addPlayer').addEventListener('click', () => changeRoster(() => {
+  saved.roster.push({ id: `P${Date.now()}`, role: 'OH', name: '' });
+}));
+
 const rosterButton = document.getElementById('toggleRoster');
 rosterButton.addEventListener('click', () => {
   const opening = rosterPanel.hidden;
@@ -307,24 +437,18 @@ rosterButton.addEventListener('click', () => {
 const labelsButton = document.getElementById('toggleLabels');
 labelsButton.addEventListener('click', () => {
   saved.showLabels = !saved.showLabels;
-  labelsButton.textContent = `Labels: ${saved.showLabels ? 'on' : 'off'}`;
-  labelsButton.setAttribute('aria-pressed', String(saved.showLabels));
+  syncLabelsButton();
   save();
   render();
 });
 
+function syncLabelsButton() {
+  labelsButton.textContent = `Labels: ${saved.showLabels ? 'on' : 'off'}`;
+  labelsButton.setAttribute('aria-pressed', String(saved.showLabels));
+}
+
 // --- Start it up ------------------------------------------------------
 
 load();
-createPlayers();
-createRotationButtons();
-createRosterFields();
-
-labelsButton.textContent = `Labels: ${saved.showLabels ? 'on' : 'off'}`;
-labelsButton.setAttribute('aria-pressed', String(saved.showLabels));
-
-render();
-
-// Turn sliding on only after the first paint, so players appear in place
-// rather than flying in from the corner on load.
-requestAnimationFrame(() => court.classList.add('animate'));
+syncLabelsButton();
+rebuild();
