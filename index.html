@@ -23,10 +23,20 @@
       <!-- The rotation buttons get created by script.js -->
     </div>
 
-    <div class="actions">
+    <div class="actions two">
       <button id="prev">&lsaquo; Prev</button>
-      <button id="reset">Reset</button>
       <button id="next">Next &rsaquo;</button>
+    </div>
+
+    <div class="actions two">
+      <button id="undo" disabled>Undo</button>
+      <button id="reset">Reset rotation</button>
+    </div>
+
+    <div class="actions one">
+      <button id="resetAll" class="hold-reset danger">
+        <span>Hold to reset all</span>
+      </button>
     </div>
 
     <div class="actions two">
@@ -38,8 +48,13 @@
       <div id="rosterRows">
         <!-- The name fields get created by script.js -->
       </div>
+
       <button id="addPlayer">+ Add player</button>
-      <button id="resetAll" class="danger">Reset all rotations</button>
+
+      <label class="setting">
+        <span>Subs enter at</span>
+        <select id="entrySlot"><!-- filled by script.js --></select>
+      </label>
     </section>
   </main>
 

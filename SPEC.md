@@ -81,6 +81,26 @@ Note: beyond six players, "exactly one setter front row" stops being guaranteed
 — that property is specific to a six-person 4-2. The status line reports what's
 actually true rather than pretending.
 
+## v0.4 — undo, reordering, configurable subs
+
+- Undo button, 40 steps deep. Snapshots the whole saved state before any change.
+- Reset-all moved out of the roster panel, and now needs a 1.5s hold
+- Reorder the lineup with ▲▼ in the roster panel
+- "Subs enter at" setting, default **Zone 1 (right back, serve)**
+
+Zone numbering is the standard one: 1 = right back, 2 = right front,
+3 = middle front, 4 = left front, 5 = left back, 6 = middle back. Travel order
+is 1 → 6 → 5 → 4 → 3 → 2 → 1.
+
+The entry setting works by rotating the list of zones and always parking the
+bench at the end of it. Whichever zone leads is where subs walk on; whichever
+trails is where players rotate off. Rotation 1 still puts roster row N in zone N
+whatever the setting is.
+
+Bench seating changed with this version: players rotate off into the leftmost
+seat and advance rightward, walking on from the right end — which sits next to
+Zone 1 at bottom right. Only visible with 8+ players.
+
 ## Still does NOT do — on purpose
 
 These are all good ideas. They are not next.
