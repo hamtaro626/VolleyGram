@@ -100,9 +100,16 @@ h1 {
 }
 
 .player.dragging {
-  transition: none;
   cursor: grabbing;
   z-index: 10;
+}
+
+/* This needs the .court.animate prefix to outweigh the rule above it. Both
+   selectors match a circle you're dragging, so the more specific one wins --
+   and plain `.player.dragging` counts fewer classes, so it loses and the
+   450ms slide stays on, leaving the circle trailing behind the cursor. */
+.court.animate .player.dragging {
+  transition: none;
 }
 
 .player .name {
