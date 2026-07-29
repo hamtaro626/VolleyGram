@@ -150,12 +150,41 @@ It also defends against merely broken data, since the blob is editable in
 devtools and one bad field shouldn't white-screen the app. Startup writes the
 upgraded shape straight back, so old shapes don't linger.
 
-### Tests
+## v0.7 — Simple mode and readable colours
 
-`node test/migration.js` — 41 checks. Boots the real `script.js` against a
-stubbed DOM, so it tests the shipped code rather than a copy of the logic.
-Covers every historical shape, round-tripping, missing `activeId`, and nine
-kinds of corrupt input.
+**Simple** added to the systems dropdown: six numbered spots, no roles. Its
+status line says only which rotation you're on, since there's no setter to name.
+**No role** is also available per-player in any system, so a 4-2 can have an
+undecided seventh. New players default to it rather than guessing a position.
+
+All player names are now white, on every role. The old gold and teal were far
+too light for white text — 2.34:1 and 3.28:1 — which is why those two used dark
+text and the court looked inconsistent. Every role now sits in a 5.5–6.7:1 band:
+
+| Role | Colour | Contrast |
+|------|--------|----------|
+| Setter | `#8f5f10` | 5.51:1 |
+| Middle | `#116b5f` | 6.38:1 |
+| Outside | `#4055b8` | 6.54:1 |
+| Opposite | `#9c4285` | 5.95:1 |
+| No role | `#5c5c5c` | 6.69:1 |
+
+Hues stay 58°+ apart so roles remain tellable apart. "No role" is deliberately
+neutral grey — unset shouldn't look like a position.
+
+## Tests
+
+```
+node test/migration.js    # 48 checks — storage, migration, corrupt input
+node test/contrast.js     # colour contrast and hue separation
+```
+
+`migration.js` boots the real `script.js` against a stubbed DOM, so it tests the
+shipped code rather than a copy of the logic. Covers every historical shape,
+round-tripping, missing `activeId`, Simple mode, and nine kinds of corrupt input.
+
+`contrast.js` parses the colours straight out of `style.css` for the same reason
+— a hand-copied palette in the test would drift from the real one.
 
 ## Planned next
 

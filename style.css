@@ -134,6 +134,7 @@ h1 {
   aspect-ratio: 1 / 1;
   border-radius: 50%;
   border: 2px solid rgba(255, 255, 255, 0.35);
+  color: #ffffff; /* every role, no exceptions -- see the palette below */
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -197,24 +198,31 @@ body.hide-labels .player .label {
 
 /* --- Colour by role --------------------------------------------------- */
 
+/* All five sit in a 5.5-6.8:1 contrast band against the white text set on
+   .player, so every name is equally readable and the roles read as one family.
+   The earlier gold and teal were far too light for white text -- 2.3:1 and
+   3.3:1 -- which is why those two used dark text instead.
+   Hues are kept 50+ degrees apart so the roles stay tellable apart, except
+   NONE, which is deliberately neutral grey: unset shouldn't look like a
+   position. Re-check with: node test/contrast.js */
 .role-S {
-  background: #d8a029;
-  color: #16181d;
+  background: #8f5f10; /* 5.51:1 */
 }
 
 .role-MB {
-  background: #2f9e8f;
-  color: #06201c;
+  background: #116b5f; /* 6.38:1 */
 }
 
 .role-OH {
-  background: #5468d4;
-  color: #f2f4f8;
+  background: #4055b8; /* 6.54:1 */
 }
 
 .role-OPP {
-  background: #b4529b;
-  color: #f2f4f8;
+  background: #9c4285; /* 5.95:1 */
+}
+
+.role-NONE {
+  background: #5c5c5c; /* 6.79:1 */
 }
 
 /* --- Controls --------------------------------------------------------- */

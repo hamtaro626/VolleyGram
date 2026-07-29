@@ -55,7 +55,21 @@ const MAX_PLAYERS = 12;
 const HOLD_MS = 1500;
 const HISTORY_LIMIT = 40;
 
-const ROLE_LABELS = { S: 'Setter', MB: 'Middle', OH: 'Outside', OPP: 'Opposite' };
+// NONE is a real role meaning "not decided yet". Listed first so it's the top
+// option in the roster dropdown.
+const ROLE_LABELS = {
+  NONE: 'No role',
+  S: 'Setter',
+  MB: 'Middle',
+  OH: 'Outside',
+  OPP: 'Opposite',
+};
+
+// What shows under the name on the court. Unset players get nothing rather than
+// the words "No role" cluttering the circle.
+function roleBadge(role) {
+  return role === 'NONE' ? '' : ROLE_LABELS[role];
+}
 
 // The offensive systems. `lineup` is who starts in zones 1 through 6 -- players
 // three apart in that list are opposite each other, which is what puts one of
@@ -65,6 +79,12 @@ const ROLE_LABELS = { S: 'Setter', MB: 'Middle', OH: 'Outside', OPP: 'Opposite' 
 // setters in the same spots, but a 4-2 sets with the front-row one (leaving two
 // front-row attackers) while a 6-2 sets with the back-row one (leaving three).
 const SYSTEMS = {
+  simple: {
+    name: 'Simple',
+    blurb: 'no roles, just six spots',
+    lineup: ['NONE', 'NONE', 'NONE', 'NONE', 'NONE', 'NONE'],
+    setsFrom: null,
+  },
   '4-2': {
     name: '4-2',
     blurb: 'two setters, front-row setter sets',
@@ -94,7 +114,7 @@ const DEFAULT_SYSTEM = '4-2';
 function rosterFromSystem(key) {
   const { lineup } = SYSTEMS[key];
   const seen = {};
-  return lineup.map((role) => {
+  return lineup.map((role, index) => {
     seen[role] = (seen[role] || 0) + 1;
     const total = lineup.filter((r) => r === role).length;
     const suffix = total > 1 ? ` ${seen[role]}` : '';
@@ -102,7 +122,8 @@ function rosterFromSystem(key) {
       id: `${role}${seen[role]}`,
       role,
       name: '',
-      fallback: `${ROLE_LABELS[role]}${suffix}`,
+      // Unset players are numbered rather than called "No role 1".
+      fallback: role === 'NONE' ? `Player ${index + 1}` : `${ROLE_LABELS[role]}${suffix}`,
     };
   });
 }
@@ -314,7 +335,8 @@ function normaliseLineup(raw, fallbackName) {
     .filter((player) => player && typeof player.id === 'string')
     .map((player, index) => ({
       id: player.id,
-      role: ROLE_LABELS[player.role] ? player.role : 'OH',
+      // An unrecognised role becomes unset rather than a guess at a position.
+      role: ROLE_LABELS[player.role] ? player.role : 'NONE',
       name: typeof player.name === 'string' ? player.name : '',
       // Saves before v0.4 predate `fallback`, so derive one from the role.
       fallback: player.fallback || `${ROLE_LABELS[player.role] || 'Player'} ${index + 1}`,
@@ -639,10 +661,12 @@ function render() {
     el.classList.toggle('benched', slot === null);
 
     el.querySelector('.name').textContent = displayName(player);
-    el.querySelector('.label').textContent = ROLE_LABELS[player.role];
+    el.querySelector('.label').textContent = roleBadge(player.role);
+
+    const role = roleBadge(player.role) ? `${ROLE_LABELS[player.role]}, ` : '';
     el.title = slot === null
-      ? `${displayName(player)} — ${ROLE_LABELS[player.role]}, off court`
-      : `${displayName(player)} — ${ROLE_LABELS[player.role]}, zone ${slot}`;
+      ? `${displayName(player)} — ${role}off court`
+      : `${displayName(player)} — ${role}zone ${slot}`;
   });
 
   // No point drawing an empty bench strip when everyone's on court.
@@ -667,6 +691,9 @@ function render() {
 function describeRotation() {
   const label = `Rotation ${currentRotation} of ${rotationCount()}`;
   const { setsFrom } = SYSTEMS[saved.system];
+
+  // Simple mode has no roles, so there's nothing to say about who sets.
+  if (!setsFrom) return label;
 
   const onCourtSetters = saved.roster
     .map((player, index) => ({ player, slot: slotFor(index, currentRotation) }))
@@ -780,7 +807,8 @@ document.getElementById('reset').addEventListener('click', () => {
 
 document.getElementById('addPlayer').addEventListener('click', () => changeLineup(() => {
   const n = rosterSize() + 1;
-  saved.roster.push({ id: `P${Date.now()}`, role: 'OH', name: '', fallback: `Player ${n}` });
+  // Unset rather than a guess -- you haven't said what they play yet.
+  saved.roster.push({ id: `P${Date.now()}`, role: 'NONE', name: '', fallback: `Player ${n}` });
 }));
 
 entrySelect.addEventListener('change', () => {

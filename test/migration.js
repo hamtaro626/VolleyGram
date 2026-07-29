@@ -313,5 +313,32 @@ console.log('\n10. The app actually works after migrating');
   check('status line reads sensibly', /Rotation 6 of 6 .* sets/.test(app.status()), app.status());
 }
 
+console.log('\n11. Simple mode — no roles assigned');
+{
+  const app = boot(JSON.stringify({ system: 'simple', roster: null, entrySlot: 1 }));
+  const { saved } = app.peek();
+  check('system is simple', saved.system === 'simple', saved.system);
+  check('every role unset', saved.roster.every((p) => p.role === 'NONE'),
+    saved.roster.map((p) => p.role).join(','));
+  check('players numbered, not called "No role"',
+    saved.roster[0].fallback === 'Player 1', saved.roster[0].fallback);
+  app.call.setRotation(3);
+  check('status line stays quiet about setters',
+    app.status() === 'Rotation 3 of 6', app.status());
+  const zones = new Set();
+  for (let i = 0; i < 6; i++) zones.add(app.call.slotFor(i, 3));
+  check('rotation still works', zones.size === 6 && !zones.has(null));
+}
+
+console.log('\n12. Unknown role downgrades to unset, not to a guessed position');
+{
+  const app = boot(JSON.stringify({ roster: Array.from({ length: 6 }, (_, i) =>
+    ({ id: 'P' + i, role: 'WIZARD', name: 'Keep ' + i })) }));
+  const { saved } = app.peek();
+  check('roles became NONE', saved.roster.every((p) => p.role === 'NONE'),
+    saved.roster.map((p) => p.role).join(','));
+  check('names still preserved', saved.roster[0].name === 'Keep 0', saved.roster[0].name);
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
