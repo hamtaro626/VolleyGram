@@ -1,0 +1,162 @@
+/* Phone first. Everything sizes off the court, and the court sizes off the
+   screen, so there are no fixed pixel widths to fight on a different device. */
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 1rem;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  background: #16181d;
+  color: #f2f4f8;
+  -webkit-text-size-adjust: 100%;
+}
+
+main {
+  max-width: 30rem;
+  margin: 0 auto;
+}
+
+h1 {
+  font-size: 1.25rem;
+  text-align: center;
+  margin: 0 0 1rem;
+  font-weight: 600;
+}
+
+/* --- The court -------------------------------------------------------- */
+
+/* A volleyball half-court is 9m x 9m, so it's square. aspect-ratio keeps it
+   that way at any width without us doing any math. */
+.court {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  background: #c87a45;
+  border: 3px solid #f2f4f8;
+  border-radius: 2px;
+  touch-action: none; /* stop the browser scrolling the page mid-drag */
+}
+
+/* The net sits along the top edge. */
+.net {
+  position: absolute;
+  top: -3px;
+  left: -3px;
+  right: -3px;
+  height: 10px;
+  background: repeating-linear-gradient(
+    90deg,
+    #f2f4f8 0 3px,
+    #16181d 3px 6px
+  );
+  border-radius: 2px;
+}
+
+/* The 3m attack line: one third of the way back from the net. */
+.attack-line {
+  position: absolute;
+  top: 33.33%;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background: rgba(255, 255, 255, 0.75);
+}
+
+/* --- Players ---------------------------------------------------------- */
+
+/* left/top are set in percentages by script.js. translate(-50%, -50%) shifts
+   the circle so those percentages point at its center, not its top-left
+   corner -- which makes the position math in the JS much simpler. */
+.player {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  width: 20%;
+  min-width: 44px; /* Apple's minimum comfortable touch target */
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: #2b3040;
+  border: 2px solid #6d7891;
+  color: #f2f4f8;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.player .slot {
+  font-size: 0.6rem;
+  font-weight: 500;
+  opacity: 0.65;
+}
+
+/* The setter who's front row this rotation -- the thing you're checking for. */
+.player.setter-front {
+  background: #d8a029;
+  border-color: #ffd464;
+  color: #16181d;
+}
+
+.player.setter-back {
+  border-color: #d8a029;
+}
+
+.player.dragging {
+  cursor: grabbing;
+  z-index: 10;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.25);
+}
+
+/* --- Controls --------------------------------------------------------- */
+
+.status {
+  text-align: center;
+  margin: 0.9rem 0;
+  font-size: 0.9rem;
+  color: #a9b2c6;
+  min-height: 1.2em;
+}
+
+.rotations {
+  display: grid;
+  grid-template-columns: repeat(6, 1fr);
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 0.4rem;
+}
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.85rem 0.25rem;
+  border-radius: 8px;
+  border: 1px solid #3a4152;
+  background: #232833;
+  color: #f2f4f8;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:active {
+  background: #2f3644;
+}
+
+.rotations button.active {
+  background: #f2f4f8;
+  border-color: #f2f4f8;
+  color: #16181d;
+}
