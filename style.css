@@ -99,9 +99,10 @@ h1 {
               top 450ms cubic-bezier(0.4, 0, 0.2, 1);
 }
 
+/* No z-index here -- script.js assigns one per player as you grab them, so
+   the last one you touched stays on top. */
 .player.dragging {
   cursor: grabbing;
-  z-index: 10;
 }
 
 /* This needs the .court.animate prefix to outweigh the rule above it. Both
@@ -148,13 +149,6 @@ body.hide-labels .player .label {
 .role-OH {
   background: #5468d4;
   color: #f2f4f8;
-}
-
-/* The setter who's front row this rotation -- the thing you're checking for.
-   A ring rather than a fill, so it doesn't fight the role colour. */
-.player.setting {
-  border-color: #ffffff;
-  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.3);
 }
 
 /* --- Controls --------------------------------------------------------- */
@@ -221,6 +215,14 @@ button.danger {
   padding: 0.75rem;
   display: grid;
   gap: 0.5rem;
+}
+
+/* The `hidden` attribute hides things by setting display:none -- but the rule
+   above sets display:grid, and an author rule beats the browser's built-in
+   one. So the panel ignored `hidden` entirely and was always open. This puts
+   display:none back where it can win. */
+.roster[hidden] {
+  display: none;
 }
 
 .roster-row {

@@ -195,7 +195,6 @@ function render() {
 
     el.querySelector('.name').textContent = nameOf(player);
     el.querySelector('.label').textContent = ROLE_LABELS[player.role];
-    el.classList.toggle('setting', player.role === 'S' && FRONT_ROW_SLOTS.includes(slot));
     el.title = `${nameOf(player)} — ${ROLE_LABELS[player.role]}, slot ${slot}`;
   });
 
@@ -231,6 +230,10 @@ let dragTarget = null;
 let grabOffsetX = 0;
 let grabOffsetY = 0;
 
+// Bumped every time you grab someone. Without it, overlapping players stack in
+// the order they were created, so the same ones are always buried.
+let topZ = 1;
+
 function startDrag(event) {
   dragTarget = event.currentTarget;
   const rect = dragTarget.getBoundingClientRect();
@@ -244,6 +247,7 @@ function startDrag(event) {
   // slides off it. Without this, fast drags drop the player.
   dragTarget.setPointerCapture(event.pointerId);
   dragTarget.classList.add('dragging');
+  dragTarget.style.zIndex = ++topZ;
 }
 
 function onDrag(event) {
