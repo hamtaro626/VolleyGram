@@ -101,6 +101,33 @@ Bench seating changed with this version: players rotate off into the leftmost
 seat and advance rightward, walking on from the right end — which sits next to
 Zone 1 at bottom right. Only visible with 8+ players.
 
+## v0.5 — offensive systems
+
+A system dropdown at the top: **4-2**, **5-1**, **6-2**. Adds an Opposite role
+(magenta). Switching carries names across by lineup position, so your fourth
+player stays your fourth player even though their role changed; players past the
+sixth are left alone.
+
+The real distinction is which setter sets:
+
+| System | Setters | Sets from | Front-row attackers |
+|--------|---------|-----------|---------------------|
+| 4-2 | 2, opposite | front row | 2 |
+| 6-2 | 2, opposite | back row | 3 |
+| 5-1 | 1 | anywhere | 3 when back row, 2 when front |
+
+4-2 and 6-2 run the *same* lineup — only `setsFrom` differs. The status line
+reports who's setting under the current system, and for a 5-1 also reports the
+front-row hitter count, since that's what changes rotation to rotation.
+
+## Planned next
+
+1. **Formation presets** — base / serve receive / defense per rotation. Needs a
+   real table of serve-receive positions per system, not a formula.
+2. **Saved lineups** — name and switch between rosters ("Tuesday league", "JV").
+   Deliberately last: it wraps the saved document, so it should be built once the
+   shape has settled.
+
 ## Still does NOT do — on purpose
 
 These are all good ideas. They are not next.

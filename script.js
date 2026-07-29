@@ -44,6 +44,7 @@ const ZONE_NAMES = {
 const TRAVEL_ORDER = [1, 6, 5, 4, 3, 2];
 
 const FRONT_ROW_SLOTS = [2, 3, 4];
+const BACK_ROW_SLOTS = [1, 5, 6];
 const COURT_SPOTS = 6;
 
 // The bench strip sits below the court. 112% is its middle -- see .bench in
@@ -54,19 +55,57 @@ const MAX_PLAYERS = 12;
 const HOLD_MS = 1500;
 const HISTORY_LIMIT = 40;
 
-const ROLE_LABELS = { S: 'Setter', MB: 'Middle', OH: 'Outside' };
+const ROLE_LABELS = { S: 'Setter', MB: 'Middle', OH: 'Outside', OPP: 'Opposite' };
 
-// The 4-2: two setters exactly three apart in the cycle, so one is always
-// front row. `fallback` is the name shown until you type a real one -- it's
-// fixed at creation so it doesn't change when you reorder the lineup.
-const DEFAULT_ROSTER = [
-  { id: 'S1', role: 'S', name: '', fallback: 'Setter 1' },
-  { id: 'MB1', role: 'MB', name: '', fallback: 'Middle 1' },
-  { id: 'OH1', role: 'OH', name: '', fallback: 'Outside 1' },
-  { id: 'S2', role: 'S', name: '', fallback: 'Setter 2' },
-  { id: 'MB2', role: 'MB', name: '', fallback: 'Middle 2' },
-  { id: 'OH2', role: 'OH', name: '', fallback: 'Outside 2' },
-];
+// The offensive systems. `lineup` is who starts in zones 1 through 6 -- players
+// three apart in that list are opposite each other, which is what puts one of
+// a pair in the front row whenever the other is in the back.
+//
+// `setsFrom` is the real difference between a 4-2 and a 6-2: both run two
+// setters in the same spots, but a 4-2 sets with the front-row one (leaving two
+// front-row attackers) while a 6-2 sets with the back-row one (leaving three).
+const SYSTEMS = {
+  '4-2': {
+    name: '4-2',
+    blurb: 'two setters, front-row setter sets',
+    lineup: ['S', 'MB', 'OH', 'S', 'MB', 'OH'],
+    setsFrom: 'front',
+  },
+  '5-1': {
+    name: '5-1',
+    blurb: 'one setter all six rotations',
+    lineup: ['S', 'MB', 'OH', 'OPP', 'MB', 'OH'],
+    setsFrom: 'any',
+  },
+  '6-2': {
+    name: '6-2',
+    blurb: 'two setters, back-row setter sets',
+    lineup: ['S', 'MB', 'OH', 'S', 'MB', 'OH'],
+    setsFrom: 'back',
+  },
+};
+
+const DEFAULT_SYSTEM = '4-2';
+
+// Build a starting roster for a system. `fallback` is the name shown until you
+// type a real one; it's fixed at creation so it doesn't change when you reorder
+// the lineup. Roles that appear twice get numbered, roles that appear once
+// don't -- so a 5-1 gets one plain "Setter", not "Setter 1".
+function rosterFromSystem(key) {
+  const { lineup } = SYSTEMS[key];
+  const seen = {};
+  return lineup.map((role) => {
+    seen[role] = (seen[role] || 0) + 1;
+    const total = lineup.filter((r) => r === role).length;
+    const suffix = total > 1 ? ` ${seen[role]}` : '';
+    return {
+      id: `${role}${seen[role]}`,
+      role,
+      name: '',
+      fallback: `${ROLE_LABELS[role]}${suffix}`,
+    };
+  });
+}
 
 const STORAGE_KEY = 'volleyball-rotations-v1';
 
@@ -75,7 +114,8 @@ const STORAGE_KEY = 'volleyball-rotations-v1';
 // Everything inside `saved` is yours -- it gets written to localStorage and
 // reloaded next time. Everything outside it is throwaway.
 let saved = {
-  roster: structuredClone(DEFAULT_ROSTER),
+  system: DEFAULT_SYSTEM,
+  roster: rosterFromSystem(DEFAULT_SYSTEM),
   layouts: {},     // rotation -> { player id -> {x, y} }
   entrySlot: 1,    // the zone off-court players sub in at
   showLabels: true,
@@ -95,6 +135,7 @@ const rosterRows = document.getElementById('rosterRows');
 const undoButton = document.getElementById('undo');
 const holdButton = document.getElementById('resetAll');
 const entrySelect = document.getElementById('entrySlot');
+const systemSelect = document.getElementById('system');
 
 // --- Working out who stands where -------------------------------------
 
@@ -232,7 +273,7 @@ function load() {
     let roster = parsed.roster;
     if (!Array.isArray(roster)) {
       // Saved by an older version, which kept names in a separate lookup.
-      roster = structuredClone(DEFAULT_ROSTER).map((player) => ({
+      roster = rosterFromSystem(DEFAULT_SYSTEM).map((player) => ({
         ...player,
         name: (parsed.names && parsed.names[player.id]) || '',
       }));
@@ -245,6 +286,7 @@ function load() {
     }));
 
     saved = {
+      system: SYSTEMS[parsed.system] ? parsed.system : DEFAULT_SYSTEM,
       roster,
       layouts: parsed.layouts || {},
       entrySlot: TRAVEL_ORDER.includes(parsed.entrySlot) ? parsed.entrySlot : 1,
@@ -360,6 +402,34 @@ function buildRosterRows() {
   document.getElementById('addPlayer').disabled = rosterSize() >= MAX_PLAYERS;
 }
 
+function syncSystemSelect() {
+  systemSelect.replaceChildren();
+  Object.entries(SYSTEMS).forEach(([key, system]) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = `${system.name} — ${system.blurb}`;
+    option.selected = key === saved.system;
+    systemSelect.appendChild(option);
+  });
+}
+
+// Switching system rewrites the six court roles. Names carry across by lineup
+// position, so your fourth player stays your fourth player even though their
+// role changed -- and anyone past the sixth is left alone entirely.
+function applySystem(key) {
+  changeLineup(() => {
+    const previous = saved.roster;
+    saved.system = key;
+    saved.roster = [
+      ...rosterFromSystem(key).map((player, index) => ({
+        ...player,
+        name: previous[index] ? previous[index].name : '',
+      })),
+      ...previous.slice(COURT_SPOTS),
+    ];
+  });
+}
+
 function syncEntrySelect() {
   entrySelect.replaceChildren();
   TRAVEL_ORDER.slice().sort((a, b) => a - b).forEach((zone) => {
@@ -398,6 +468,7 @@ function rebuild() {
   buildPlayers();
   buildRotationButtons();
   buildRosterRows();
+  syncSystemSelect();
   syncEntrySelect();
   render();
   requestAnimationFrame(() => court.classList.add('animate'));
@@ -438,19 +509,43 @@ function render() {
   document.body.classList.toggle('hide-labels', !saved.showLabels);
 }
 
-// Name the setter who's front row. With a roster of exactly six that's always
-// one person; add players and the guarantee goes away, so say so rather than
-// making something up.
+// Name whoever is setting this rotation. Which setter that is depends on the
+// system: a 4-2 sets with the front-row setter, a 6-2 with the back-row one,
+// and a 5-1 has only one setter so it's whoever that is, wherever they are.
+//
+// With a roster of exactly six there's always exactly one answer. Add players
+// and that guarantee goes away, so report what's actually true instead of
+// inventing something.
 function describeRotation() {
   const label = `Rotation ${currentRotation} of ${rotationCount()}`;
+  const { setsFrom } = SYSTEMS[saved.system];
 
-  const setters = saved.roster.filter((player, index) => {
-    const slot = slotFor(index, currentRotation);
-    return player.role === 'S' && slot !== null && FRONT_ROW_SLOTS.includes(slot);
+  const onCourtSetters = saved.roster
+    .map((player, index) => ({ player, slot: slotFor(index, currentRotation) }))
+    .filter(({ player, slot }) => player.role === 'S' && slot !== null);
+
+  const eligible = onCourtSetters.filter(({ slot }) => {
+    if (setsFrom === 'front') return FRONT_ROW_SLOTS.includes(slot);
+    if (setsFrom === 'back') return BACK_ROW_SLOTS.includes(slot);
+    return true;
   });
 
-  if (setters.length === 0) return `${label} — no setter front row`;
-  return `${label} — ${setters.map(displayName).join(' & ')} front row`;
+  if (eligible.length === 0) {
+    const where = setsFrom === 'any' ? 'on court' : `in the ${setsFrom} row`;
+    return `${label} — no setter ${where}`;
+  }
+
+  const who = eligible
+    .map(({ player, slot }) => `${displayName(player)} (zone ${slot})`)
+    .join(' & ');
+
+  // In a 5-1 the setter's row is the thing that changes the offense: back row
+  // means three front-row attackers, front row means two.
+  const suffix = setsFrom === 'any' && eligible.length === 1
+    ? `, ${FRONT_ROW_SLOTS.includes(eligible[0].slot) ? '2' : '3'} front-row hitters`
+    : '';
+
+  return `${label} — ${who} sets${suffix}`;
 }
 
 function setRotation(rotation) {
@@ -543,6 +638,8 @@ document.getElementById('addPlayer').addEventListener('click', () => changeLineu
 entrySelect.addEventListener('change', () => {
   changeLineup(() => { saved.entrySlot = Number(entrySelect.value); });
 });
+
+systemSelect.addEventListener('change', () => applySystem(systemSelect.value));
 
 // Hold to reset all. The bar filling across the button is a CSS transition on
 // width; letting go removes the class, which snaps it back to zero.

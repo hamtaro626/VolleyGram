@@ -22,8 +22,24 @@ main {
 h1 {
   font-size: 1.25rem;
   text-align: center;
-  margin: 0 0 1rem;
+  margin: 0 0 0.6rem;
   font-weight: 600;
+}
+
+.system-picker {
+  display: block;
+  margin-bottom: 0.8rem;
+}
+
+.system-picker select {
+  font: inherit;
+  font-size: 16px; /* under 16px, iOS zooms the page when you tap in */
+  width: 100%;
+  padding: 0.6rem;
+  border-radius: 8px;
+  border: 1px solid #3a4152;
+  background: #232833;
+  color: #f2f4f8;
 }
 
 /* --- The court -------------------------------------------------------- */
@@ -189,6 +205,11 @@ body.hide-labels .player .label {
 
 .role-OH {
   background: #5468d4;
+  color: #f2f4f8;
+}
+
+.role-OPP {
+  background: #b4529b;
   color: #f2f4f8;
 }
 
