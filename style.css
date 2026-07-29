@@ -26,12 +26,16 @@ h1 {
   font-weight: 600;
 }
 
-.system-picker {
+.picker {
   display: block;
+  margin-bottom: 0.4rem;
+}
+
+.picker:last-of-type {
   margin-bottom: 0.8rem;
 }
 
-.system-picker select {
+.picker select {
   font: inherit;
   font-size: 16px; /* under 16px, iOS zooms the page when you tap in */
   width: 100%;
@@ -378,6 +382,14 @@ button.danger {
 
 .roster button.icon.remove:hover:not(:disabled) {
   color: #ff9f9f;
+}
+
+.lineup-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  padding-top: 0.6rem;
+  border-top: 1px solid #3a4152;
 }
 
 .setting {

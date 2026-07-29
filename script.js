@@ -109,17 +109,37 @@ function rosterFromSystem(key) {
 
 const STORAGE_KEY = 'volleyball-rotations-v1';
 
+// Bumped when the saved shape changes. Version 2 wrapped what used to be a
+// single team into a set of named lineups. The key deliberately stays the same
+// so old data can be found and upgraded rather than orphaned.
+const STORAGE_VERSION = 2;
+
 // --- State ------------------------------------------------------------
 
-// Everything inside `saved` is yours -- it gets written to localStorage and
-// reloaded next time. Everything outside it is throwaway.
-let saved = {
-  system: DEFAULT_SYSTEM,
-  roster: rosterFromSystem(DEFAULT_SYSTEM),
-  layouts: {},     // rotation -> { player id -> {x, y} }
-  entrySlot: 1,    // the zone off-court players sub in at
+// One team's worth of setup. Several of these live side by side in the store.
+function newLineup(name) {
+  return {
+    name,
+    system: DEFAULT_SYSTEM,
+    roster: rosterFromSystem(DEFAULT_SYSTEM),
+    layouts: {},   // rotation -> { player id -> {x, y} }
+    entrySlot: 1,  // the zone off-court players sub in at
+  };
+}
+
+// Everything in `store` is yours -- it gets written to localStorage and
+// reloaded next time. showLabels sits at the top level because it's a display
+// preference, not a fact about any particular team.
+let store = {
+  version: STORAGE_VERSION,
+  activeId: 'first',
+  lineups: { first: newLineup('My team') },
   showLabels: true,
 };
+
+// A live reference into store.lineups, so the rest of the code can go on
+// saying `saved.roster` and have the change land in the right lineup.
+let saved = store.lineups[store.activeId];
 
 let currentRotation = 1;
 const playerElements = {}; // player id -> the circle on screen
@@ -136,6 +156,7 @@ const undoButton = document.getElementById('undo');
 const holdButton = document.getElementById('resetAll');
 const entrySelect = document.getElementById('entrySlot');
 const systemSelect = document.getElementById('system');
+const lineupSelect = document.getElementById('lineup');
 
 // --- Working out who stands where -------------------------------------
 
@@ -214,8 +235,10 @@ function layoutFor(rotation) {
 // Called *before* anything changes, so the stack holds "how things were".
 // Snapshots are whole copies of `saved` -- wasteful in theory, but the data is
 // a few hundred numbers, and it means undo can never half-restore something.
+// Snapshots the whole store, not just the active lineup, so undo also covers
+// creating, renaming, switching and deleting a lineup.
 function pushHistory() {
-  history.push(structuredClone(saved));
+  history.push(structuredClone(store));
   if (history.length > HISTORY_LIMIT) history.shift();
   syncUndoButton();
 }
@@ -223,22 +246,22 @@ function pushHistory() {
 function undo() {
   if (history.length === 0) return;
 
-  const previous = history.pop();
-
-  // Rebuilding throws away and recreates every circle, which kills the slide.
-  // If only positions changed we can just redraw and keep the animation.
-  const sameLineup =
-    previous.roster.length === saved.roster.length &&
-    previous.roster.every((player, index) =>
-      player.id === saved.roster[index].id && player.role === saved.roster[index].role);
-
-  saved = previous;
+  const before = saved;
+  store = history.pop();
+  saved = store.lineups[store.activeId];
   if (currentRotation > rotationCount()) currentRotation = 1;
   save();
 
-  if (sameLineup) {
+  // Rebuilding throws away and recreates every circle, which kills the slide.
+  // If the same players are still there we can just redraw and keep it.
+  const samePlayers =
+    saved.roster.length === before.roster.length &&
+    saved.roster.every((player, index) =>
+      player.id === before.roster[index].id && player.role === before.roster[index].role);
+
+  if (samePlayers) {
     buildRosterRows();
-    syncEntrySelect();
+    syncSelects();
     render();
   } else {
     rebuild();
@@ -258,10 +281,55 @@ function syncUndoButton() {
 // rotation diagram is not worth crashing over, so both sides swallow errors.
 function save() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
   } catch (error) {
     console.warn('Could not save:', error);
   }
+}
+
+// Turn whatever shape a lineup was saved in into the current one, filling any
+// gaps with defaults. Every version of this app that has ever written to
+// localStorage has to survive coming through here:
+//
+//   v0.2  { names: {id: name}, layouts }        -- names in a side lookup
+//   v0.3  { roster: [...], layouts }            -- names moved onto the roster
+//   v0.4  { ..., entrySlot }
+//   v0.5  { ..., system }
+//
+// It also guards against data that's merely broken, since a stored blob is
+// user-editable in devtools and one bad field shouldn't white-screen the app.
+function normaliseLineup(raw, fallbackName) {
+  const system = SYSTEMS[raw.system] ? raw.system : DEFAULT_SYSTEM;
+
+  let roster = raw.roster;
+  if (!Array.isArray(roster)) {
+    // Oldest saves kept names in a separate lookup keyed by player id.
+    roster = rosterFromSystem(system).map((player) => ({
+      ...player,
+      name: (raw.names && raw.names[player.id]) || '',
+    }));
+  }
+
+  roster = roster
+    .filter((player) => player && typeof player.id === 'string')
+    .map((player, index) => ({
+      id: player.id,
+      role: ROLE_LABELS[player.role] ? player.role : 'OH',
+      name: typeof player.name === 'string' ? player.name : '',
+      // Saves before v0.4 predate `fallback`, so derive one from the role.
+      fallback: player.fallback || `${ROLE_LABELS[player.role] || 'Player'} ${index + 1}`,
+    }));
+
+  // A rotation needs six players. Anything less isn't recoverable, so start over.
+  if (roster.length < COURT_SPOTS) roster = rosterFromSystem(system);
+
+  return {
+    name: raw.name || fallbackName,
+    system,
+    roster,
+    layouts: raw.layouts && typeof raw.layouts === 'object' ? raw.layouts : {},
+    entrySlot: TRAVEL_ORDER.includes(raw.entrySlot) ? raw.entrySlot : 1,
+  };
 }
 
 function load() {
@@ -270,28 +338,32 @@ function load() {
     if (!stored) return;
     const parsed = JSON.parse(stored);
 
-    let roster = parsed.roster;
-    if (!Array.isArray(roster)) {
-      // Saved by an older version, which kept names in a separate lookup.
-      roster = rosterFromSystem(DEFAULT_SYSTEM).map((player) => ({
-        ...player,
-        name: (parsed.names && parsed.names[player.id]) || '',
-      }));
+    let lineups;
+    let activeId;
+
+    if (parsed.version === STORAGE_VERSION && parsed.lineups) {
+      lineups = {};
+      Object.entries(parsed.lineups).forEach(([id, lineup]) => {
+        lineups[id] = normaliseLineup(lineup, 'Untitled');
+      });
+      activeId = parsed.activeId;
+    } else {
+      // Written by a version that only knew about one team. Wrap it as the
+      // first named lineup rather than throwing the roster away.
+      activeId = 'first';
+      lineups = { first: normaliseLineup(parsed, 'My team') };
     }
 
-    // Older saves predate `fallback`, so fill it in from the role.
-    roster = roster.map((player, index) => ({
-      ...player,
-      fallback: player.fallback || `${ROLE_LABELS[player.role] || 'Player'} ${index + 1}`,
-    }));
+    const ids = Object.keys(lineups);
+    if (ids.length === 0) return;
 
-    saved = {
-      system: SYSTEMS[parsed.system] ? parsed.system : DEFAULT_SYSTEM,
-      roster,
-      layouts: parsed.layouts || {},
-      entrySlot: TRAVEL_ORDER.includes(parsed.entrySlot) ? parsed.entrySlot : 1,
+    store = {
+      version: STORAGE_VERSION,
+      activeId: lineups[activeId] ? activeId : ids[0],
+      lineups,
       showLabels: parsed.showLabels !== false,
     };
+    saved = store.lineups[store.activeId];
   } catch (error) {
     console.warn('Could not load saved data, starting fresh:', error);
   }
@@ -402,6 +474,83 @@ function buildRosterRows() {
   document.getElementById('addPlayer').disabled = rosterSize() >= MAX_PLAYERS;
 }
 
+function syncLineupSelect() {
+  lineupSelect.replaceChildren();
+  Object.entries(store.lineups).forEach(([id, lineup]) => {
+    const option = document.createElement('option');
+    option.value = id;
+    option.textContent = lineup.name;
+    option.selected = id === store.activeId;
+    lineupSelect.appendChild(option);
+  });
+  // Never let someone delete their way down to no lineups at all.
+  document.getElementById('deleteLineup').disabled = Object.keys(store.lineups).length <= 1;
+}
+
+function syncSelects() {
+  syncLineupSelect();
+  syncSystemSelect();
+  syncEntrySelect();
+}
+
+// Point `saved` at a different lineup. Everything else reads through it, so
+// this plus a rebuild is the entire act of switching teams.
+function useLineup(id) {
+  if (!store.lineups[id] || id === store.activeId) return;
+  pushHistory();
+  store.activeId = id;
+  saved = store.lineups[id];
+  currentRotation = 1;
+  save();
+  rebuild();
+}
+
+function addLineup() {
+  const name = (prompt('Name for the new lineup?', 'New team') || '').trim();
+  if (!name) return;
+  pushHistory();
+  const id = `L${Date.now()}`;
+  store.lineups[id] = newLineup(name);
+  store.activeId = id;
+  saved = store.lineups[id];
+  currentRotation = 1;
+  save();
+  rebuild();
+}
+
+function duplicateLineup() {
+  pushHistory();
+  const id = `L${Date.now()}`;
+  const copy = structuredClone(saved);
+  copy.name = `${saved.name} copy`;
+  store.lineups[id] = copy;
+  store.activeId = id;
+  saved = copy;
+  save();
+  rebuild();
+}
+
+function renameLineup() {
+  const name = (prompt('Rename this lineup', saved.name) || '').trim();
+  if (!name) return;
+  pushHistory();
+  saved.name = name;
+  save();
+  syncLineupSelect();
+}
+
+function deleteLineup() {
+  if (Object.keys(store.lineups).length <= 1) return;
+  if (!confirm(`Delete "${saved.name}"? Undo will bring it back.`)) return;
+  pushHistory();
+  delete store.lineups[store.activeId];
+  store.activeId = Object.keys(store.lineups)[0];
+  saved = store.lineups[store.activeId];
+  currentRotation = 1;
+  save();
+  rebuild();
+}
+
 function syncSystemSelect() {
   systemSelect.replaceChildren();
   Object.entries(SYSTEMS).forEach(([key, system]) => {
@@ -468,8 +617,7 @@ function rebuild() {
   buildPlayers();
   buildRotationButtons();
   buildRosterRows();
-  syncSystemSelect();
-  syncEntrySelect();
+  syncSelects();
   render();
   requestAnimationFrame(() => court.classList.add('animate'));
 }
@@ -506,7 +654,7 @@ function render() {
     button.classList.toggle('active', index + 1 === currentRotation);
   });
 
-  document.body.classList.toggle('hide-labels', !saved.showLabels);
+  document.body.classList.toggle('hide-labels', !store.showLabels);
 }
 
 // Name whoever is setting this rotation. Which setter that is depends on the
@@ -640,6 +788,12 @@ entrySelect.addEventListener('change', () => {
 });
 
 systemSelect.addEventListener('change', () => applySystem(systemSelect.value));
+lineupSelect.addEventListener('change', () => useLineup(lineupSelect.value));
+
+document.getElementById('newLineup').addEventListener('click', addLineup);
+document.getElementById('duplicateLineup').addEventListener('click', duplicateLineup);
+document.getElementById('renameLineup').addEventListener('click', renameLineup);
+document.getElementById('deleteLineup').addEventListener('click', deleteLineup);
 
 // Hold to reset all. The bar filling across the button is a CSS transition on
 // width; letting go removes the class, which snaps it back to zero.
@@ -676,15 +830,15 @@ rosterButton.addEventListener('click', () => {
 
 const labelsButton = document.getElementById('toggleLabels');
 labelsButton.addEventListener('click', () => {
-  saved.showLabels = !saved.showLabels;
+  store.showLabels = !store.showLabels;
   syncLabelsButton();
   save();
   render();
 });
 
 function syncLabelsButton() {
-  labelsButton.textContent = `Labels: ${saved.showLabels ? 'on' : 'off'}`;
-  labelsButton.setAttribute('aria-pressed', String(saved.showLabels));
+  labelsButton.textContent = `Labels: ${store.showLabels ? 'on' : 'off'}`;
+  labelsButton.setAttribute('aria-pressed', String(store.showLabels));
 }
 
 // --- Start it up ------------------------------------------------------
@@ -693,3 +847,8 @@ load();
 syncLabelsButton();
 syncUndoButton();
 rebuild();
+
+// Write straight back after loading, so data saved by an older version gets
+// upgraded on the spot instead of sitting in its old shape until the first
+// edit. Without this a stale shape can survive indefinitely.
+save();

@@ -120,13 +120,47 @@ The real distinction is which setter sets:
 reports who's setting under the current system, and for a 5-1 also reports the
 front-row hitter count, since that's what changes rotation to rotation.
 
+## v0.6 — saved lineups
+
+Multiple named lineups, switchable from a dropdown at the top. New, Duplicate,
+Rename and Delete live in the roster panel. Undo covers all of them, including
+delete.
+
+Each lineup owns its own system, roster, layouts and entry zone. `showLabels` is
+global, since it's a display preference rather than a fact about a team.
+
+### Storage shape
+
+```
+{ version: 2, activeId, showLabels, lineups: { id: {name, system, roster, layouts, entrySlot} } }
+```
+
+The localStorage key deliberately did **not** change, so data written by every
+earlier version is found and upgraded rather than orphaned. `normaliseLineup()`
+accepts all four historical shapes:
+
+| Version | Shape |
+|---------|-------|
+| v0.2 | `{ names: {id: name}, layouts }` — names in a side lookup |
+| v0.3 | `{ roster: [...], layouts }` — names moved onto the roster |
+| v0.4 | adds `entrySlot`, `fallback` |
+| v0.5 | adds `system` |
+
+It also defends against merely broken data, since the blob is editable in
+devtools and one bad field shouldn't white-screen the app. Startup writes the
+upgraded shape straight back, so old shapes don't linger.
+
+### Tests
+
+`node test/migration.js` — 41 checks. Boots the real `script.js` against a
+stubbed DOM, so it tests the shipped code rather than a copy of the logic.
+Covers every historical shape, round-tripping, missing `activeId`, and nine
+kinds of corrupt input.
+
 ## Planned next
 
-1. **Formation presets** — base / serve receive / defense per rotation. Needs a
-   real table of serve-receive positions per system, not a formula.
-2. **Saved lineups** — name and switch between rosters ("Tuesday league", "JV").
-   Deliberately last: it wraps the saved document, so it should be built once the
-   shape has settled.
+**Formation presets** — base / serve receive / defense per rotation. Needs a
+real table of serve-receive positions per system, not a formula.
 
 ## Still does NOT do — on purpose
 
