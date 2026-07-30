@@ -35,24 +35,8 @@
 
     <p class="status" id="status"></p>
 
-    <!-- Under the rotation notes, where your thumb already is. Text rather than
-         drawn icons: the SVG versions rendered as empty rectangles. The arrows
-         keep an aria-label, since "<" on its own says nothing aloud. -->
-    <div class="actions two">
-      <button id="prev" class="glyph" aria-label="Previous rotation" title="Previous rotation">&lt;</button>
-      <button id="next" class="glyph" aria-label="Next rotation" title="Next rotation">&gt;</button>
-    </div>
-
-    <div class="actions">
-      <button id="undo" disabled>Undo</button>
-      <button id="reset">Reset</button>
-      <button id="redo" disabled>Redo</button>
-    </div>
-
-    <div class="rotations" id="rotationButtons">
-      <!-- The rotation buttons get created by script.js -->
-    </div>
-
+    <!-- Formation tabs sit high, right under the court: switching between base,
+         serve receive and defense is the thing this app is for. -->
     <div class="formations" id="formationButtons">
       <!-- filled by script.js -->
     </div>
@@ -78,6 +62,22 @@
       </label>
     </div>
 
+    <!-- Text rather than drawn icons: the SVG versions rendered as empty
+         rectangles. The arrows keep an aria-label, since "<" says nothing aloud. -->
+    <div class="actions two">
+      <button id="prev" class="glyph" aria-label="Previous rotation" title="Previous rotation">&lt;</button>
+      <button id="next" class="glyph" aria-label="Next rotation" title="Next rotation">&gt;</button>
+    </div>
+
+    <div class="actions two">
+      <button id="undo" disabled>Undo</button>
+      <button id="reset">Reset</button>
+    </div>
+
+    <div class="rotations" id="rotationButtons">
+      <!-- The rotation buttons get created by script.js -->
+    </div>
+
     <div class="actions two">
       <button id="toggleLabels" aria-pressed="true">Labels: on</button>
       <button id="exportImage">Save as image</button>
@@ -90,11 +90,11 @@
     </div>
 
     <div class="actions one">
-      <button id="toggleRoster" aria-expanded="false">Show roster</button>
+      <button id="startQuiz">Quiz Mode</button>
     </div>
 
     <div class="actions one">
-      <button id="startQuiz">Quiz Mode</button>
+      <button id="toggleRoster" aria-expanded="false">Show roster</button>
     </div>
 
     <section class="quiz" id="quiz" hidden>

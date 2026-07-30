@@ -307,10 +307,8 @@ let currentRotation = 1;
 let currentFormation = 'base';
 const playerElements = {}; // player id -> the circle on screen
 
-// Snapshots of the whole store, oldest first. Undo pops the newest onto the
-// future stack; redo moves them back.
+// Snapshots of the whole store, oldest first. Undo pops the newest.
 const history = [];
-const future = [];
 
 const court = document.getElementById('court');
 const statusLine = document.getElementById('status');
@@ -318,7 +316,6 @@ const rotationButtons = document.getElementById('rotationButtons');
 const rosterPanel = document.getElementById('roster');
 const rosterRows = document.getElementById('rosterRows');
 const undoButton = document.getElementById('undo');
-const redoButton = document.getElementById('redo');
 const holdButton = document.getElementById('resetAll');
 const entrySelect = document.getElementById('entrySlot');
 const systemSelect = document.getElementById('system');
@@ -560,19 +557,14 @@ function draggedLayout(formation, rotation) {
 function pushHistory() {
   history.push(structuredClone(store));
   if (history.length > HISTORY_LIMIT) history.shift();
-
-  // Doing something new invalidates the redo path: you can't step forward into
-  // a future that no longer follows from where you are.
-  future.length = 0;
-
-  syncHistoryButtons();
+  syncUndoButton();
 }
 
-// Swaps the whole store for a snapshot and redraws. Shared by undo and redo,
-// which differ only in which stack they take from and which they add to.
-function applySnapshot(snapshot) {
+function undo() {
+  if (history.length === 0) return;
+
   const before = saved;
-  store = snapshot;
+  store = history.pop();
   saved = store.lineups[store.activeId];
   if (currentRotation > rotationCount()) currentRotation = 1;
   save();
@@ -591,26 +583,11 @@ function applySnapshot(snapshot) {
   } else {
     rebuild();
   }
-  syncHistoryButtons();
+  syncUndoButton();
 }
 
-function undo() {
-  if (history.length === 0) return;
-  future.push(structuredClone(store));
-  if (future.length > HISTORY_LIMIT) future.shift();
-  applySnapshot(history.pop());
-}
-
-function redo() {
-  if (future.length === 0) return;
-  history.push(structuredClone(store));
-  if (history.length > HISTORY_LIMIT) history.shift();
-  applySnapshot(future.pop());
-}
-
-function syncHistoryButtons() {
+function syncUndoButton() {
   undoButton.disabled = history.length === 0;
-  redoButton.disabled = future.length === 0;
 }
 
 // --- Saving between visits --------------------------------------------
@@ -1677,7 +1654,6 @@ function downloadCanvas(canvas, stemSource) {
 document.getElementById('prev').addEventListener('click', () => step(-1));
 document.getElementById('next').addEventListener('click', () => step(1));
 undoButton.addEventListener('click', undo);
-redoButton.addEventListener('click', redo);
 
 document.getElementById('reset').addEventListener('click', () => {
   pushHistory();
@@ -1850,7 +1826,7 @@ function syncLabelsButton() {
 load();
 syncLabelsButton();
 syncRosterButton();
-syncHistoryButtons();
+syncUndoButton();
 roleScopeSelect.value = store.roleScope;
 buildZoneLabels();
 buildZoneTargets();

@@ -96,8 +96,8 @@ function boot(seedJson) {
       describeRotation, setRotation, roleFor, hasRoleOverride, overrideCount,
       buildRosterRows, benchPosition, rotationCount, applyRosterOrder,
       movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer,
-      startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, redo, movePlayer };
-    globalThis.__stacks = () => ({ undos: history.length, redos: future.length });
+      startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory };
+    globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
     globalThis.__const = { ZONE_LABEL_POSITIONS, SERVE_SLOT, SLOT_POSITIONS,
       COURT_SPOTS, FORMATIONS, DEFENSE_SPOTS, SETTER_TARGET, FRONT_ROW_SLOTS,
@@ -935,56 +935,27 @@ console.log('\n31. Transparent export preference');
 }
 
 
-console.log('\n32. Undo and redo');
+console.log('\n32. Undo');
 {
   const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
-  const names = () => app.peek().saved.roster.map((p) => p.id).join(',');
+  const ids = () => app.peek().saved.roster.map((p) => p.id).join(',');
 
-  check('nothing to undo or redo at rest',
-    app.stacks().undos === 0 && app.stacks().redos === 0, JSON.stringify(app.stacks()));
-  app.call.redo();
-  check('redo on an empty stack is a no-op', app.stacks().redos === 0);
-
-  const original = names();
-  app.call.movePlayer(0, 1);
-  const moved = names();
-  check('the move took effect', moved !== original, `${original} -> ${moved}`);
-  check('one undo available, no redo',
-    app.stacks().undos === 1 && app.stacks().redos === 0, JSON.stringify(app.stacks()));
-
+  check('nothing to undo at rest', app.stacks().undos === 0, JSON.stringify(app.stacks()));
   app.call.undo();
-  check('undo restored the original order', names() === original, names());
-  check('undo moved the step onto the redo stack',
-    app.stacks().undos === 0 && app.stacks().redos === 1, JSON.stringify(app.stacks()));
+  check('undo on an empty stack is a no-op', ids().length > 0);
 
-  app.call.redo();
-  check('redo reapplied the move', names() === moved, names());
-  check('redo moved the step back onto the undo stack',
-    app.stacks().undos === 1 && app.stacks().redos === 0, JSON.stringify(app.stacks()));
+  // Three moves, then walk all the way back.
+  const trail = [ids()];
+  for (let i = 0; i < 3; i++) { app.call.movePlayer(0, 1); trail.push(ids()); }
+  check('three steps recorded', app.stacks().undos === 3, JSON.stringify(app.stacks()));
 
-  // The rule that's easy to get wrong: acting after an undo must drop the
-  // redo path, since it no longer follows from where you are.
-  app.call.undo();
-  check('redo is available again after undo', app.stacks().redos === 1);
-  app.call.movePlayer(1, 1);
-  check('a new action clears the redo path', app.stacks().redos === 0,
-    JSON.stringify(app.stacks()));
-
-  // Several steps deep, in order.
-  const app2 = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
-  const ids2 = () => app2.peek().saved.roster.map((p) => p.id).join(',');
-  const trail = [ids2()];
-  for (let i = 0; i < 3; i++) { app2.call.movePlayer(0, 1); trail.push(ids2()); }
   for (let i = 3; i > 0; i--) {
-    app2.call.undo();
-    check(`undo step ${i} lands on the right state`, ids2() === trail[i - 1],
-      `${ids2()} vs ${trail[i - 1]}`);
+    app.call.undo();
+    check(`undo step ${i} lands on the right state`, ids() === trail[i - 1],
+      `${ids()} vs ${trail[i - 1]}`);
   }
-  for (let i = 1; i <= 3; i++) {
-    app2.call.redo();
-    check(`redo step ${i} lands on the right state`, ids2() === trail[i],
-      `${ids2()} vs ${trail[i]}`);
-  }
+  check('stack emptied', app.stacks().undos === 0, JSON.stringify(app.stacks()));
+  check('back where we started', ids() === trail[0], ids());
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

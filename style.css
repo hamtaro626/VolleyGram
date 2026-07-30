@@ -406,6 +406,43 @@ body.hide-labels .player .label {
   grid-template-columns: 1fr;
 }
 
+/* --- Buttons ---------------------------------------------------------- */
+
+button {
+  font: inherit;
+  font-weight: 600;
+  padding: 0.85rem 0.25rem;
+  border-radius: 8px;
+  border: 1px solid #3a4152;
+  background: #232833;
+  color: #f2f4f8;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+button:active {
+  background: #2f3644;
+}
+
+button:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+/* The currently selected rotation, inverted the same way the active formation
+   tab is. */
+.rotations button.active {
+  background: #f2f4f8;
+  border-color: #f2f4f8;
+  color: #16181d;
+}
+
+button.danger {
+  width: 100%;
+  color: #ff9f9f;
+  border-color: #59323a;
+}
+
 /* The "<" and ">" arrows, bumped up so they don't look spindly next to words. */
 button.glyph {
   font-size: 1.15rem;
