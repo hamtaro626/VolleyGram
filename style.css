@@ -270,14 +270,19 @@ body.hide-labels .player .label {
   opacity: 0.45;
 }
 
-/* Whoever's in zone 1 is serving: a ring plus a labelled pill sitting on it,
-   the way a legend sits on a fieldset border. The ring alone was too easy to
-   miss, and text curved around the circle would be about five pixels tall on a
-   phone -- less readable than what it replaced. z-index lifts the serving
-   player so a neighbouring circle can't cover the tag. */
+/* Whoever's in zone 1 is serving, marked by the labelled pill alone -- no ring.
+   The ring now belongs to the setter, and two rings on one court would compete.
+   z-index lifts the server so a neighbouring circle can't cover the tag. */
 .player.serving {
-  box-shadow: 0 0 0 3px #f2f4f8;
   z-index: 2;
+}
+
+/* The ring marks whoever is setting this rotation -- which setter that is
+   depends on the system, so it's genuinely worth pointing at. Drawn outside the
+   circle so it doesn't fight the role colour underneath. */
+.player.setting {
+  box-shadow: 0 0 0 3px #f2f4f8;
+  z-index: 3;
 }
 
 .player .serve-tag {
@@ -327,10 +332,11 @@ body.hide-labels .player .label {
   background: #d47cbd; /* 6.27:1 */
 }
 
-/* Violet, because it's the one gap left: gold, green, teal, periwinkle and pink
-   are taken, and anything orange or coral would blend into the court beneath. */
+/* Crimson: the last hue with real clearance. Green and cyan sit too close to
+   the middle's teal, and anything oranger runs into the court underneath.
+   37 degrees from the opposite's pink, which is the tightest pair on the court. */
 .role-NONE {
-  background: #b39ae8; /* 7.36:1 */
+  background: #e8707f; /* 5.97:1 */
 }
 
 .role-L {

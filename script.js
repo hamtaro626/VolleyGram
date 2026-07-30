@@ -1136,6 +1136,7 @@ function rebuild() {
 
 function render() {
   const layout = positionsFor(currentFormation, currentRotation);
+  const setterIds = new Set(settersThisRotation(currentRotation).map((e) => e.player.id));
 
   saved.roster.forEach((player, index) => {
     const el = playerElements[player.id];
@@ -1154,6 +1155,7 @@ function render() {
     el.className = `player role-${role}`;
     if (slot === null) el.classList.add('benched');
     if (slot === SERVE_SLOT) el.classList.add('serving');
+    if (setterIds.has(player.id)) el.classList.add('setting');
 
     el.querySelector('.name').textContent = displayName(player);
     el.querySelector('.label').textContent = roleBadge(role);
@@ -1176,6 +1178,24 @@ function render() {
   document.body.classList.toggle('hide-labels', !store.showLabels);
 }
 
+// Whoever is actually setting this rotation, as {player, slot} entries. Which
+// setter that is depends on the system: front row for a 4-2, back row for a
+// 6-2, whoever's on court for a 5-1. The ring drawn on the court and the status
+// line both read from here, so they can't drift apart.
+function settersThisRotation(rotation) {
+  const { setsFrom } = SYSTEMS[saved.system];
+  if (!setsFrom) return [];
+
+  return saved.roster
+    .map((player, index) => ({ player, slot: slotFor(index, rotation) }))
+    .filter(({ player, slot }) => {
+      if (slot === null || roleFor(player, rotation) !== 'S') return false;
+      if (setsFrom === 'front') return FRONT_ROW_SLOTS.includes(slot);
+      if (setsFrom === 'back') return BACK_ROW_SLOTS.includes(slot);
+      return true;
+    });
+}
+
 // Name whoever is setting this rotation. Which setter that is depends on the
 // system: a 4-2 sets with the front-row setter, a 6-2 with the back-row one,
 // and a 5-1 has only one setter so it's whoever that is, wherever they are.
@@ -1190,15 +1210,7 @@ function describeRotation(rotation = currentRotation) {
   // Simple mode has no roles, so there's nothing to say about who sets.
   if (!setsFrom) return label;
 
-  const onCourtSetters = saved.roster
-    .map((player, index) => ({ player, slot: slotFor(index, rotation) }))
-    .filter(({ player, slot }) => roleFor(player, rotation) === 'S' && slot !== null);
-
-  const eligible = onCourtSetters.filter(({ slot }) => {
-    if (setsFrom === 'front') return FRONT_ROW_SLOTS.includes(slot);
-    if (setsFrom === 'back') return BACK_ROW_SLOTS.includes(slot);
-    return true;
-  });
+  const eligible = settersThisRotation(rotation);
 
   if (eligible.length === 0) {
     const where = setsFrom === 'any' ? 'on court' : `in the ${setsFrom} row`;
@@ -1498,6 +1510,7 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
   // Generated plus dragged, same as the screen. Nothing is written, so exporting
   // default layouts into storage for rotations you've never actually opened.
   const layout = positionsFor(currentFormation, rotation);
+  const setterIds = new Set(settersThisRotation(rotation).map((e) => e.player.id));
   const radius = EDGE * 0.115;
 
   saved.roster.forEach((player, index) => {
@@ -1518,8 +1531,8 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
     ctx.lineWidth = EDGE * 0.005;
     ctx.stroke();
 
-    // Outer ring on the server, matching the on-screen marker.
-    if (slot === SERVE_SLOT) {
+    // Outer ring on the setter, matching the on-screen marker.
+    if (setterIds.has(player.id)) {
       ctx.beginPath();
       ctx.arc(cx, cy, radius + EDGE * 0.008, 0, Math.PI * 2);
       ctx.strokeStyle = '#f2f4f8';

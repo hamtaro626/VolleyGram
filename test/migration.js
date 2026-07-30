@@ -96,7 +96,8 @@ function boot(seedJson) {
       describeRotation, setRotation, roleFor, hasRoleOverride, overrideCount,
       buildRosterRows, benchPosition, rotationCount, applyRosterOrder,
       movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer,
-      startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory };
+      startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory,
+      settersThisRotation };
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
     globalThis.__const = { ZONE_LABEL_POSITIONS, SERVE_SLOT, SLOT_POSITIONS,
@@ -965,6 +966,47 @@ console.log('\n32. Undo');
   }
   check('stack emptied', app.stacks().undos === 0, JSON.stringify(app.stacks()));
   check('back where we started', ids() === trail[0], ids());
+}
+
+
+console.log('\n33. The setter ring agrees with the status line');
+{
+  for (const [system, where] of [['4-2', 'front'], ['6-2', 'back'], ['5-1', 'any']]) {
+    const app = boot(JSON.stringify({ system, roster: null, entrySlot: 1 }));
+    const c = app.consts;
+    for (let r = 1; r <= 6; r++) {
+      const setters = app.call.settersThisRotation(r);
+      check(`${system} r${r}: exactly one setter ringed`, setters.length === 1,
+        String(setters.length));
+      if (setters.length !== 1) continue;
+
+      const { player, slot } = setters[0];
+      check(`${system} r${r}: the ringed player is a setter`,
+        app.call.roleFor(player, r) === 'S');
+
+      if (where === 'front') {
+        check(`${system} r${r}: setting from the front row`,
+          c.FRONT_ROW_SLOTS.includes(slot), `zone ${slot}`);
+      } else if (where === 'back') {
+        check(`${system} r${r}: setting from the back row`,
+          c.BACK_ROW_SLOTS.includes(slot), `zone ${slot}`);
+      }
+
+      // The ring and the sentence underneath must name the same person.
+      app.call.setRotation(r);
+      check(`${system} r${r}: status line names the ringed player`,
+        app.status().includes(player.name || player.fallback),
+        app.status());
+    }
+  }
+
+  // Simple mode has no setter, so nothing should be ringed.
+  const simple = boot(JSON.stringify({ system: 'simple', roster: null, entrySlot: 1 }));
+  let none = true;
+  for (let r = 1; r <= 6; r++) {
+    if (simple.call.settersThisRotation(r).length !== 0) none = false;
+  }
+  check('simple mode rings nobody', none);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
