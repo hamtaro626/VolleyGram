@@ -95,16 +95,20 @@ function boot(seedJson) {
       duplicateLineup, deleteLineup, normaliseLineup, slotFor, rosterSize,
       describeRotation, setRotation, roleFor, hasRoleOverride, overrideCount,
       buildRosterRows, benchPosition, rotationCount, applyRosterOrder,
-      movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer };
+      movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer,
+      startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, redo, movePlayer };
+    globalThis.__stacks = () => ({ undos: history.length, redos: future.length });
+    globalThis.__quiz = () => ({ quiz, quizScore });
     globalThis.__const = { ZONE_LABEL_POSITIONS, SERVE_SLOT, SLOT_POSITIONS,
       COURT_SPOTS, FORMATIONS, DEFENSE_SPOTS, SETTER_TARGET, FRONT_ROW_SLOTS,
       BACK_ROW_SLOTS, BACK_PASS_SPOTS, BACK_COVER_SPOTS, FRONT_PASS_SPOTS,
-      NET_SPOTS };
+      NET_SPOTS, ZONE_REGIONS };
     globalThis.__status = () => document.getElementById('status').textContent;
   `;
   vm.runInNewContext(source + expose, context, { filename: 'script.js' });
   return { ...context, memory, warnings, peek: context.__peek, call: context.__call,
-           consts: context.__const, status: context.__status };
+           consts: context.__const, status: context.__status, quiz: context.__quiz,
+           stacks: context.__stacks };
 }
 
 let failures = 0;
@@ -823,6 +827,164 @@ console.log('\n27. Dragging one formation leaves the others alone');
     JSON.stringify(app.call.positionsFor('defense', 1)[id]) === JSON.stringify(defenseBefore));
   check('other rotations of base unaffected',
     app.call.positionsFor('base', 2)[id].x !== 5);
+}
+
+
+console.log('\n28. Quiz zone regions tile the whole court');
+{
+  const app = boot(undefined);
+  const { ZONE_REGIONS, SLOT_POSITIONS, FRONT_ROW_SLOTS } = app.consts;
+  const zones = Object.keys(ZONE_REGIONS).map(Number).sort((a, b) => a - b);
+  check('all six zones have a region', zones.join(',') === '1,2,3,4,5,6', zones.join(','));
+
+  // Total area must be the whole court, with no gaps and no overlaps.
+  const area = Object.values(ZONE_REGIONS)
+    .reduce((sum, r) => sum + (r.width * r.height), 0);
+  check('regions cover the court exactly', Math.abs(area - 10000) < 2, area.toFixed(1));
+
+  // Every player's standing spot must fall inside its own zone's region.
+  let inside = true;
+  for (const [zone, region] of Object.entries(ZONE_REGIONS)) {
+    const spot = SLOT_POSITIONS[zone];
+    const within = spot.x >= region.left && spot.x <= region.left + region.width
+      && spot.y >= region.top && spot.y <= region.top + region.height;
+    if (!within) { inside = false; console.log(`      zone ${zone} spot is outside its region`); }
+  }
+  check('each zone spot sits inside its own region', inside);
+
+  // Front-row regions above the attack line, back-row below.
+  check('front-row regions start at the net',
+    FRONT_ROW_SLOTS.every((z) => ZONE_REGIONS[z].top === 0));
+  check('back-row regions start at the attack line',
+    [1, 5, 6].every((z) => Math.abs(ZONE_REGIONS[z].top - 33.33) < 0.01));
+}
+
+console.log('\n29. Quiz answers agree with the court');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  app.call.startQuiz();
+
+  for (let n = 0; n < 40; n++) {
+    app.call.nextQuizQuestion();
+    const { quiz } = app.quiz();
+    check(`q${n}: answer matches slotFor`,
+      quiz.answer === app.call.slotFor(quiz.index, quiz.rotation),
+      `${quiz.answer} vs ${app.call.slotFor(quiz.index, quiz.rotation)}`);
+    if (n > 2) break; // four is enough to prove it; keep the log readable
+  }
+
+  // Only ever asks about players who are actually on court.
+  let onCourtOnly = true;
+  for (let n = 0; n < 60; n++) {
+    app.call.nextQuizQuestion();
+    const { quiz } = app.quiz();
+    if (quiz.answer === null) onCourtOnly = false;
+  }
+  check('never asks about a benched player', onCourtOnly);
+}
+
+console.log('\n30. Quiz scoring');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  app.call.startQuiz();
+
+  // Three right, then one wrong.
+  for (let i = 0; i < 3; i++) {
+    app.call.nextQuizQuestion();
+    app.call.answerQuiz(app.quiz().quiz.answer);
+  }
+  let s = app.quiz().quizScore;
+  check('three correct counted', s.correct === 3 && s.asked === 3, JSON.stringify(s));
+  check('streak is three', s.streak === 3, String(s.streak));
+
+  app.call.nextQuizQuestion();
+  const wrong = [1, 2, 3, 4, 5, 6].find((z) => z !== app.quiz().quiz.answer);
+  app.call.answerQuiz(wrong);
+  s = app.quiz().quizScore;
+  check('wrong answer counted but not credited', s.asked === 4 && s.correct === 3,
+    JSON.stringify(s));
+  check('streak reset', s.streak === 0, String(s.streak));
+  check('best streak remembered', s.best === 3, String(s.best));
+
+  // A second tap on the same question must not double-count.
+  app.call.answerQuiz(app.quiz().quiz.answer);
+  s = app.quiz().quizScore;
+  check('answering twice is ignored', s.asked === 4 && s.correct === 3, JSON.stringify(s));
+
+  app.call.endQuiz();
+  check('quiz cleared on exit', app.quiz().quiz === null);
+}
+
+console.log('\n31. Transparent export preference');
+{
+  const app = boot(JSON.stringify({ version: 2, activeId: 'a', transparentExport: true,
+    lineups: { a: { name: 'T', system: '4-2', entrySlot: 1, layouts: {}, roleOverrides: {},
+      roster: [
+        { id: 'S1', role: 'S', name: '', fallback: 'Setter 1' },
+        { id: 'MB1', role: 'MB', name: '', fallback: 'Middle 1' },
+        { id: 'OH1', role: 'OH', name: '', fallback: 'Outside 1' },
+        { id: 'S2', role: 'S', name: '', fallback: 'Setter 2' },
+        { id: 'MB2', role: 'MB', name: '', fallback: 'Middle 2' },
+        { id: 'OH2', role: 'OH', name: '', fallback: 'Outside 2' }] } } }));
+  check('loaded from storage', app.peek().store.transparentExport === true);
+  check('persisted on rewrite',
+    JSON.parse(app.memory['volleyball-rotations-v1']).transparentExport === true);
+
+  const off = boot(JSON.stringify({ roster: null }));
+  check('defaults to off', off.peek().store.transparentExport === false);
+}
+
+
+console.log('\n32. Undo and redo');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const names = () => app.peek().saved.roster.map((p) => p.id).join(',');
+
+  check('nothing to undo or redo at rest',
+    app.stacks().undos === 0 && app.stacks().redos === 0, JSON.stringify(app.stacks()));
+  app.call.redo();
+  check('redo on an empty stack is a no-op', app.stacks().redos === 0);
+
+  const original = names();
+  app.call.movePlayer(0, 1);
+  const moved = names();
+  check('the move took effect', moved !== original, `${original} -> ${moved}`);
+  check('one undo available, no redo',
+    app.stacks().undos === 1 && app.stacks().redos === 0, JSON.stringify(app.stacks()));
+
+  app.call.undo();
+  check('undo restored the original order', names() === original, names());
+  check('undo moved the step onto the redo stack',
+    app.stacks().undos === 0 && app.stacks().redos === 1, JSON.stringify(app.stacks()));
+
+  app.call.redo();
+  check('redo reapplied the move', names() === moved, names());
+  check('redo moved the step back onto the undo stack',
+    app.stacks().undos === 1 && app.stacks().redos === 0, JSON.stringify(app.stacks()));
+
+  // The rule that's easy to get wrong: acting after an undo must drop the
+  // redo path, since it no longer follows from where you are.
+  app.call.undo();
+  check('redo is available again after undo', app.stacks().redos === 1);
+  app.call.movePlayer(1, 1);
+  check('a new action clears the redo path', app.stacks().redos === 0,
+    JSON.stringify(app.stacks()));
+
+  // Several steps deep, in order.
+  const app2 = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const ids2 = () => app2.peek().saved.roster.map((p) => p.id).join(',');
+  const trail = [ids2()];
+  for (let i = 0; i < 3; i++) { app2.call.movePlayer(0, 1); trail.push(ids2()); }
+  for (let i = 3; i > 0; i--) {
+    app2.call.undo();
+    check(`undo step ${i} lands on the right state`, ids2() === trail[i - 1],
+      `${ids2()} vs ${trail[i - 1]}`);
+  }
+  for (let i = 1; i <= 3; i++) {
+    app2.call.redo();
+    check(`redo step ${i} lands on the right state`, ids2() === trail[i],
+      `${ids2()} vs ${trail[i]}`);
+  }
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

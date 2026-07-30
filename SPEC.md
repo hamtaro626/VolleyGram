@@ -315,10 +315,42 @@ made merely reading a rotation persist data. `positionsFor()` replaces it and
 writes nothing: generated defaults with dragged positions spread on top. Reset
 now deletes the dragged bucket rather than freezing defaults into it.
 
+## v0.12 — quiz mode and transparent export
+
+### Quiz
+
+**Start quiz** picks a random rotation and a random on-court player, hides
+everyone, and asks which zone that player is in. Tap a cell on the court to
+answer. Right answer turns green, wrong turns red and names the correct zone.
+Either way the formation is **revealed** once you answer, so a wrong guess still
+teaches you the whole rotation instead of just marking you down.
+
+Score tracks correct/asked plus current and best streak. Session only — not
+persisted.
+
+The answer comes from `slotFor()`, the same function that draws the court, so the
+quiz can never disagree with the diagram. `ZONE_REGIONS` maps the six zone
+*areas* (front row is the top third, back row the bottom two thirds), as distinct
+from `SLOT_POSITIONS`, which says where a player stands within one.
+
+While a quiz runs, the pickers, formation tabs, rotation buttons, roster and
+status line are hidden, and swipe and arrow keys are disabled — all of them would
+either give away the answer or navigate away from the question.
+
+### Transparent export
+
+A checkbox in the roster panel. When on, exports skip the page background *and*
+the court fill, leaving lines, zone numbers and players on transparency. PNG
+already carries an alpha channel, so "transparent" is just not painting those two
+rectangles. Filenames get a `-transparent` suffix.
+
+The court lines are deliberately kept — they're what you line the diagram up
+against when compositing over real footage.
+
 ## Tests
 
 ```
-node test/migration.js    # 203 checks — storage, migration, roles, formations
+node test/migration.js    # 255 checks — storage, migration, roles, formations, quiz
 node test/contrast.js     # colour contrast and hue separation
 ```
 

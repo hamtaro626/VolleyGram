@@ -29,9 +29,29 @@
       <div class="attack-line"></div>
       <div class="bench"><span>Off court</span></div>
       <!-- The players get created by script.js -->
+      <!-- Tappable zone cells, only live during a quiz -->
+      <div class="zone-targets" id="zoneTargets"></div>
     </div>
 
     <p class="status" id="status"></p>
+
+    <!-- Under the rotation notes, where your thumb already is. Text rather than
+         drawn icons: the SVG versions rendered as empty rectangles. The arrows
+         keep an aria-label, since "<" on its own says nothing aloud. -->
+    <div class="actions two">
+      <button id="prev" class="glyph" aria-label="Previous rotation" title="Previous rotation">&lt;</button>
+      <button id="next" class="glyph" aria-label="Next rotation" title="Next rotation">&gt;</button>
+    </div>
+
+    <div class="actions">
+      <button id="undo" disabled>Undo</button>
+      <button id="reset">Reset</button>
+      <button id="redo" disabled>Redo</button>
+    </div>
+
+    <div class="rotations" id="rotationButtons">
+      <!-- The rotation buttons get created by script.js -->
+    </div>
 
     <div class="formations" id="formationButtons">
       <!-- filled by script.js -->
@@ -58,18 +78,9 @@
       </label>
     </div>
 
-    <div class="rotations" id="rotationButtons">
-      <!-- The rotation buttons get created by script.js -->
-    </div>
-
     <div class="actions two">
-      <button id="prev">&lsaquo; Prev</button>
-      <button id="next">Next &rsaquo;</button>
-    </div>
-
-    <div class="actions two">
-      <button id="undo" disabled>Undo</button>
-      <button id="reset">Reset rotation</button>
+      <button id="toggleLabels" aria-pressed="true">Labels: on</button>
+      <button id="exportImage">Save as image</button>
     </div>
 
     <div class="actions one">
@@ -78,14 +89,23 @@
       </button>
     </div>
 
-    <div class="actions two">
-      <button id="toggleLabels" aria-pressed="true">Labels: on</button>
-      <button id="exportImage">Save as image</button>
-    </div>
-
     <div class="actions one">
       <button id="toggleRoster" aria-expanded="false">Show roster</button>
     </div>
+
+    <div class="actions one">
+      <button id="startQuiz">Quiz Mode</button>
+    </div>
+
+    <section class="quiz" id="quiz" hidden>
+      <p class="quiz-question" id="quizQuestion"></p>
+      <p class="quiz-feedback" id="quizFeedback"></p>
+      <div class="quiz-actions">
+        <button id="quizNext">Next question</button>
+        <button id="endQuiz">End quiz</button>
+      </div>
+      <p class="quiz-score" id="quizScore"></p>
+    </section>
 
     <section class="roster" id="roster" hidden>
       <div id="rosterRows">
@@ -109,6 +129,11 @@
 
       <button id="clearRoleOverrides">Clear per-rotation roles</button>
       <button id="exportAll">Save all rotations as one image</button>
+
+      <label class="setting toggle">
+        <input type="checkbox" id="transparentExport">
+        <span>Transparent background in exports</span>
+      </label>
 
       <div class="lineup-actions">
         <button id="newLineup">New lineup</button>

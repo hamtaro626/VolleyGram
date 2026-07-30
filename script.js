@@ -153,6 +153,21 @@ const DEFENSE_SYSTEM_LABELS = {
   rotation: 'Rotation / 6-up',
 };
 
+// --- Quiz -------------------------------------------------------------
+//
+// The six zone cells as tap targets, in percentages of the court. Front row is
+// the top third (net to attack line); back row is the remaining two thirds.
+// These are regions, not points -- SLOT_POSITIONS says where a player stands,
+// this says which area of the court belongs to which zone.
+const ZONE_REGIONS = {
+  4: { left: 0, top: 0, width: 33.33, height: 33.33 },
+  3: { left: 33.33, top: 0, width: 33.34, height: 33.33 },
+  2: { left: 66.67, top: 0, width: 33.33, height: 33.33 },
+  5: { left: 0, top: 33.33, width: 33.33, height: 66.67 },
+  6: { left: 33.33, top: 33.33, width: 33.34, height: 66.67 },
+  1: { left: 66.67, top: 33.33, width: 33.33, height: 66.67 },
+};
+
 // Pixels of horizontal travel before a drag across the court counts as a swipe.
 const SWIPE_MIN = 45;
 
@@ -278,7 +293,8 @@ let store = {
   activeId: 'first',
   lineups: { first: newLineup('My team') },
   showLabels: true,
-  roleScope: 'all',   // whether a role edit hits every rotation or just this one
+  roleScope: 'all',      // whether a role edit hits every rotation or just this one
+  transparentExport: false,
 };
 
 // A live reference into store.lineups, so the rest of the code can go on
@@ -291,8 +307,10 @@ let currentRotation = 1;
 let currentFormation = 'base';
 const playerElements = {}; // player id -> the circle on screen
 
-// Snapshots of `saved`, oldest first. Undo pops the newest.
+// Snapshots of the whole store, oldest first. Undo pops the newest onto the
+// future stack; redo moves them back.
 const history = [];
+const future = [];
 
 const court = document.getElementById('court');
 const statusLine = document.getElementById('status');
@@ -300,6 +318,7 @@ const rotationButtons = document.getElementById('rotationButtons');
 const rosterPanel = document.getElementById('roster');
 const rosterRows = document.getElementById('rosterRows');
 const undoButton = document.getElementById('undo');
+const redoButton = document.getElementById('redo');
 const holdButton = document.getElementById('resetAll');
 const entrySelect = document.getElementById('entrySlot');
 const systemSelect = document.getElementById('system');
@@ -541,14 +560,19 @@ function draggedLayout(formation, rotation) {
 function pushHistory() {
   history.push(structuredClone(store));
   if (history.length > HISTORY_LIMIT) history.shift();
-  syncUndoButton();
+
+  // Doing something new invalidates the redo path: you can't step forward into
+  // a future that no longer follows from where you are.
+  future.length = 0;
+
+  syncHistoryButtons();
 }
 
-function undo() {
-  if (history.length === 0) return;
-
+// Swaps the whole store for a snapshot and redraws. Shared by undo and redo,
+// which differ only in which stack they take from and which they add to.
+function applySnapshot(snapshot) {
   const before = saved;
-  store = history.pop();
+  store = snapshot;
   saved = store.lineups[store.activeId];
   if (currentRotation > rotationCount()) currentRotation = 1;
   save();
@@ -567,12 +591,26 @@ function undo() {
   } else {
     rebuild();
   }
-  syncUndoButton();
+  syncHistoryButtons();
 }
 
-function syncUndoButton() {
+function undo() {
+  if (history.length === 0) return;
+  future.push(structuredClone(store));
+  if (future.length > HISTORY_LIMIT) future.shift();
+  applySnapshot(history.pop());
+}
+
+function redo() {
+  if (future.length === 0) return;
+  history.push(structuredClone(store));
+  if (history.length > HISTORY_LIMIT) history.shift();
+  applySnapshot(future.pop());
+}
+
+function syncHistoryButtons() {
   undoButton.disabled = history.length === 0;
-  undoButton.textContent = history.length ? `Undo (${history.length})` : 'Undo';
+  redoButton.disabled = future.length === 0;
 }
 
 // --- Saving between visits --------------------------------------------
@@ -691,6 +729,7 @@ function load() {
       lineups,
       showLabels: parsed.showLabels !== false,
       roleScope: parsed.roleScope === 'rotation' ? 'rotation' : 'all',
+      transparentExport: parsed.transparentExport === true,
     };
     saved = store.lineups[store.activeId];
   } catch (error) {
@@ -1274,6 +1313,123 @@ function clamp(value, min, max) {
   return Math.max(min, Math.min(value, max));
 }
 
+// --- Quiz -------------------------------------------------------------
+//
+// Asks which zone a named player occupies in a randomly chosen rotation. The
+// answer comes straight from slotFor(), the same function that draws the court,
+// so the quiz can never disagree with the diagram. Players are hidden while the
+// question is open and revealed once you answer, so a wrong guess still teaches
+// you the whole formation rather than just marking you down.
+
+let quiz = null; // { rotation, index, answer, chosen }
+let quizScore = { asked: 0, correct: 0, streak: 0, best: 0 };
+
+const quizPanel = document.getElementById('quiz');
+const quizQuestion = document.getElementById('quizQuestion');
+const quizFeedback = document.getElementById('quizFeedback');
+const quizScoreLine = document.getElementById('quizScore');
+const zoneTargets = document.getElementById('zoneTargets');
+
+function buildZoneTargets() {
+  zoneTargets.replaceChildren();
+  Object.entries(ZONE_REGIONS).forEach(([zone, region]) => {
+    const cell = document.createElement('button');
+    cell.className = 'zone-target';
+    cell.dataset.zone = zone;
+    cell.style.left = `${region.left}%`;
+    cell.style.top = `${region.top}%`;
+    cell.style.width = `${region.width}%`;
+    cell.style.height = `${region.height}%`;
+    cell.setAttribute('aria-label', `Zone ${zone}, ${ZONE_NAMES[zone]}`);
+    cell.addEventListener('click', () => answerQuiz(Number(zone)));
+    zoneTargets.appendChild(cell);
+  });
+}
+
+function startQuiz() {
+  quizScore = { asked: 0, correct: 0, streak: 0, best: 0 };
+  // Questions are about base zones, so make sure that's what's on screen.
+  currentFormation = 'base';
+  document.body.classList.add('quizzing');
+  quizPanel.hidden = false;
+  nextQuizQuestion();
+}
+
+function endQuiz() {
+  quiz = null;
+  document.body.classList.remove('quizzing', 'quiz-hide-players');
+  quizPanel.hidden = true;
+  syncFormationControls();
+  render();
+}
+
+function nextQuizQuestion() {
+  const rotation = 1 + Math.floor(Math.random() * rotationCount());
+  const onCourt = saved.roster
+    .map((_, index) => index)
+    .filter((index) => slotFor(index, rotation) !== null);
+
+  const index = onCourt[Math.floor(Math.random() * onCourt.length)];
+  quiz = { rotation, index, answer: slotFor(index, rotation), chosen: null };
+
+  currentRotation = rotation;
+  renderQuiz();
+}
+
+function answerQuiz(zone) {
+  if (!quiz || quiz.chosen !== null) return;
+
+  quiz.chosen = zone;
+  quizScore.asked += 1;
+  if (zone === quiz.answer) {
+    quizScore.correct += 1;
+    quizScore.streak += 1;
+    quizScore.best = Math.max(quizScore.best, quizScore.streak);
+  } else {
+    quizScore.streak = 0;
+  }
+  renderQuiz();
+}
+
+function renderQuiz() {
+  if (!quiz) return;
+
+  const player = saved.roster[quiz.index];
+  const answered = quiz.chosen !== null;
+
+  quizQuestion.textContent =
+    `Rotation ${quiz.rotation} of ${rotationCount()} — which zone is ${displayName(player)} in?`;
+
+  if (!answered) {
+    quizFeedback.textContent = 'Tap a zone on the court.';
+    quizFeedback.className = 'quiz-feedback';
+  } else if (quiz.chosen === quiz.answer) {
+    quizFeedback.textContent = `Correct — zone ${quiz.answer}, ${ZONE_NAMES[quiz.answer]}.`;
+    quizFeedback.className = 'quiz-feedback right';
+  } else {
+    quizFeedback.textContent =
+      `Not quite. ${displayName(player)} is in zone ${quiz.answer}`
+      + ` (${ZONE_NAMES[quiz.answer]}), not zone ${quiz.chosen}.`;
+    quizFeedback.className = 'quiz-feedback wrong';
+  }
+
+  quizScoreLine.textContent = quizScore.asked === 0
+    ? ''
+    : `${quizScore.correct} of ${quizScore.asked} · streak ${quizScore.streak}`
+      + ` · best ${quizScore.best}`;
+
+  // Mark the cells, and reveal the formation once the guess is locked in.
+  [...zoneTargets.children].forEach((cell) => {
+    const zone = Number(cell.dataset.zone);
+    cell.classList.toggle('is-answer', answered && zone === quiz.answer);
+    cell.classList.toggle('is-wrong', answered && zone === quiz.chosen && zone !== quiz.answer);
+  });
+  document.body.classList.toggle('quiz-hide-players', !answered);
+
+  document.getElementById('quizNext').disabled = !answered;
+  render();
+}
+
 // --- Export to image --------------------------------------------------
 
 // Drawing to a canvas means redescribing the court in a second place, which is
@@ -1310,8 +1466,12 @@ function pill(ctx, x, y, width, height) {
 // Draws one rotation at the canvas origin, EDGE pixels wide. Returns how tall
 // the drawing came out, so the caller knows where a caption can go.
 function drawRotation(ctx, rotation, EDGE, hasBench) {
-  ctx.fillStyle = getComputedStyle(court).backgroundColor;
-  ctx.fillRect(0, 0, EDGE, EDGE);
+  // The court fill is the thing you want gone when overlaying real footage --
+  // the lines still help you line the diagram up with the court underneath.
+  if (!store.transparentExport) {
+    ctx.fillStyle = getComputedStyle(court).backgroundColor;
+    ctx.fillRect(0, 0, EDGE, EDGE);
+  }
   ctx.strokeStyle = '#f2f4f8';
   ctx.lineWidth = EDGE * 0.005;
   ctx.strokeRect(0, 0, EDGE, EDGE);
@@ -1433,8 +1593,12 @@ function newCanvas(width, height) {
   canvas.width = Math.round(width);
   canvas.height = Math.round(height);
   const ctx = canvas.getContext('2d');
-  ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  // Left unpainted for a transparent export: PNG carries an alpha channel, so
+  // simply not filling it is all "transparent" means.
+  if (!store.transparentExport) {
+    ctx.fillStyle = getComputedStyle(document.body).backgroundColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  }
   return { canvas, ctx };
 }
 
@@ -1451,8 +1615,9 @@ function exportImage() {
     `${saved.name} — ${FORMATION_LABELS[currentFormation]} — ${describeRotation(currentRotation)}`,
     EDGE, tall + pad * 0.5);
 
+  const alpha = store.transparentExport ? '-transparent' : '';
   downloadCanvas(canvas,
-    `${saved.name}-${currentFormation}-rotation-${currentRotation}`);
+    `${saved.name}-${currentFormation}-rotation-${currentRotation}${alpha}`);
 }
 
 // One contact sheet with every rotation, two across. Easier to use than a burst
@@ -1512,6 +1677,7 @@ function downloadCanvas(canvas, stemSource) {
 document.getElementById('prev').addEventListener('click', () => step(-1));
 document.getElementById('next').addEventListener('click', () => step(1));
 undoButton.addEventListener('click', undo);
+redoButton.addEventListener('click', redo);
 
 document.getElementById('reset').addEventListener('click', () => {
   pushHistory();
@@ -1567,6 +1733,16 @@ holdButton.addEventListener('pointercancel', cancelHold);
 
 document.getElementById('exportImage').addEventListener('click', exportImage);
 
+document.getElementById('startQuiz').addEventListener('click', startQuiz);
+document.getElementById('endQuiz').addEventListener('click', endQuiz);
+document.getElementById('quizNext').addEventListener('click', nextQuizQuestion);
+
+const transparentToggle = document.getElementById('transparentExport');
+transparentToggle.addEventListener('change', () => {
+  store.transparentExport = transparentToggle.checked;
+  save();
+});
+
 // Changing any of these changes what the generated positions are, so they push
 // history and redraw -- but they don't touch anything you've dragged.
 passersSelect.addEventListener('change', () => {
@@ -1598,7 +1774,8 @@ let swipeFrom = null;
 
 court.addEventListener('pointerdown', (event) => {
   const onPlayer = event.target.closest && event.target.closest('.player');
-  swipeFrom = onPlayer ? null : { x: event.clientX, y: event.clientY };
+  // During a quiz the court is an answer grid, not a rotation carousel.
+  swipeFrom = (onPlayer || quiz) ? null : { x: event.clientX, y: event.clientY };
 });
 
 court.addEventListener('pointerup', (event) => {
@@ -1617,6 +1794,7 @@ document.addEventListener('keydown', (event) => {
   // Don't hijack the arrows while someone's typing a name or in a dropdown.
   const tag = event.target && event.target.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
+  if (quiz) return; // arrows would give away the answer by moving the court
   if (event.key === 'ArrowLeft') {
     step(-1);
     event.preventDefault();
@@ -1672,11 +1850,13 @@ function syncLabelsButton() {
 load();
 syncLabelsButton();
 syncRosterButton();
-syncUndoButton();
+syncHistoryButtons();
 roleScopeSelect.value = store.roleScope;
 buildZoneLabels();
+buildZoneTargets();
 buildFormationButtons();
 buildFormationOptionSelects();
+transparentToggle.checked = store.transparentExport;
 rebuild();
 
 // Write straight back after loading, so data saved by an older version gets
