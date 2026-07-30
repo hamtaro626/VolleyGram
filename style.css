@@ -19,8 +19,12 @@ main {
   margin: 0 auto;
 }
 
+/* Scales with the viewport so the name and subtitle stay on one line, right
+   down to a 320px phone. nowrap makes that a guarantee rather than a hope; the
+   vw term is sized to keep it inside the screen at the narrowest width. */
 h1 {
-  font-size: 1.25rem;
+  font-size: clamp(0.7rem, 3.3vw, 1.1rem);
+  white-space: nowrap;
   text-align: center;
   margin: 0 0 0.6rem;
   font-weight: 600;

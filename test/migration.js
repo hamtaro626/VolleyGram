@@ -56,7 +56,7 @@ function stubElement(tag = 'div') {
   return el;
 }
 
-function boot(seedJson) {
+function boot(seedJson, seedHash) {
   const memory = {};
   if (seedJson !== undefined) memory['volleyball-rotations-v1'] = seedJson;
 
@@ -85,7 +85,24 @@ function boot(seedJson) {
     clearTimeout: () => {},
     prompt: () => 'Prompted name',
     confirm: () => true,
+    alert: () => {},
+    atob: (b) => Buffer.from(b, 'base64').toString('binary'),
+    btoa: (b) => Buffer.from(b, 'binary').toString('base64'),
+    TextEncoder,
+    TextDecoder,
+    navigator: {},
+    location: { origin: 'https://example.test', pathname: '/app/', search: '', hash: seedHash || '' },
   };
+  // The real History API, near enough: replaceState with a hash-less URL is how
+  // the app drops an imported link from the address bar.
+  context.history = {
+    replaceState: (_state, _title, url) => {
+      const [pathname, hash] = String(url).split('#');
+      context.location.pathname = pathname;
+      context.location.hash = hash ? `#${hash}` : '';
+    },
+  };
+  context.window = context;
 
   const source = fs.readFileSync(SCRIPT, 'utf8');
   // Appended in the same lexical scope, so it can reach the module's `let`s.
@@ -97,7 +114,7 @@ function boot(seedJson) {
       buildRosterRows, benchPosition, rotationCount, applyRosterOrder,
       movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer,
       startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory,
-      settersThisRotation };
+      settersThisRotation, shareUrl, encodeLineup, decodeLineup, importFromUrl };
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
     globalThis.__const = { ZONE_LABEL_POSITIONS, SERVE_SLOT, SLOT_POSITIONS,
@@ -1007,6 +1024,78 @@ console.log('\n33. The setter ring agrees with the status line');
     if (simple.call.settersThisRotation(r).length !== 0) none = false;
   }
   check('simple mode rings nobody', none);
+}
+
+
+console.log('\n34. Share links');
+{
+  // Build a VolleyGram worth sharing, then read the link back.
+  const source = boot(JSON.stringify({
+    version: 2, activeId: 'a', showLabels: true,
+    lineups: { a: { name: 'Tuesday Café', system: '6-2', entrySlot: 5, passers: 5,
+      defenseSystem: 'rotation', defenseSide: 'left',
+      layouts: { base: { 2: { S1: { x: 11, y: 22 } } }, receive: {}, defense: {} },
+      roleOverrides: { 3: { MB1: 'OH' } },
+      roster: [
+        { id: 'S1', role: 'S', name: 'Álex', fallback: 'Setter 1' },
+        { id: 'MB1', role: 'MB', name: '', fallback: 'Middle 1' },
+        { id: 'OH1', role: 'OH', name: 'Maya', fallback: 'Outside 1' },
+        { id: 'S2', role: 'S', name: '', fallback: 'Setter 2' },
+        { id: 'MB2', role: 'MB', name: '', fallback: 'Middle 2' },
+        { id: 'OH2', role: 'OH', name: '', fallback: 'Outside 2' }] } },
+  }));
+
+  const url = source.call.shareUrl();
+  check('link points at the app', url.startsWith('https://example.test/app/#g='), url.slice(0, 40));
+  check('payload rides in the hash, not the query', !url.includes('?'), url.slice(0, 60));
+  check('no characters that need escaping in a URL',
+    /^[A-Za-z0-9\-_]+$/.test(url.split('#g=')[1]), url.split('#g=')[1].slice(0, 40));
+  console.log(`       link is ${url.length} characters`);
+  check('a typical link is comfortably short', url.length < 1200, String(url.length));
+
+  // Someone else opens it, with their own work already saved.
+  const theirs = { name: 'My own team', system: '4-2', entrySlot: 1, layouts: {},
+    roleOverrides: {}, roster: [
+      { id: 'S1', role: 'S', name: 'Mine', fallback: 'Setter 1' },
+      { id: 'MB1', role: 'MB', name: '', fallback: 'Middle 1' },
+      { id: 'OH1', role: 'OH', name: '', fallback: 'Outside 1' },
+      { id: 'S2', role: 'S', name: '', fallback: 'Setter 2' },
+      { id: 'MB2', role: 'MB', name: '', fallback: 'Middle 2' },
+      { id: 'OH2', role: 'OH', name: '', fallback: 'Outside 2' }] };
+
+  const hash = '#g=' + url.split('#g=')[1];
+  const receiver = boot(
+    JSON.stringify({ version: 2, activeId: 'mine', showLabels: true, lineups: { mine: theirs } }),
+    hash);
+
+  const { store, saved } = receiver.peek();
+  check('their own VolleyGram survived', Boolean(store.lineups.mine), Object.keys(store.lineups).join(','));
+  check('their roster untouched', store.lineups.mine.roster[0].name === 'Mine');
+  check('the shared one was added, not swapped in', Object.keys(store.lineups).length === 2,
+    String(Object.keys(store.lineups).length));
+  check('the shared one is now active', saved.name === 'Tuesday Café', saved.name);
+
+  // Everything about it should have travelled.
+  check('system travelled', saved.system === '6-2', saved.system);
+  check('entry zone travelled', saved.entrySlot === 5, String(saved.entrySlot));
+  check('passer count travelled', saved.passers === 5, String(saved.passers));
+  check('defense system travelled', saved.defenseSystem === 'rotation', saved.defenseSystem);
+  check('defense side travelled', saved.defenseSide === 'left', saved.defenseSide);
+  check('dragged position travelled', saved.layouts.base['2'].S1.x === 11);
+  check('per-rotation role travelled', saved.roleOverrides['3'].MB1 === 'OH');
+  check('accented name survived the round trip', saved.roster[0].name === 'Álex',
+    saved.roster[0].name);
+
+  check('the hash is cleared so a refresh cannot double-import',
+    receiver.location.hash === '' || !receiver.location.hash.includes('#g='),
+    receiver.location.hash);
+
+  // A mangled link must not take the app down with it.
+  const broken = boot(undefined, '#g=this-is-not-base64!!!');
+  check('a corrupt link leaves a working app',
+    broken.peek().saved.roster.length === 6);
+  check('and falls back to the default VolleyGram',
+    broken.peek().saved.name === 'My team', broken.peek().saved.name);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

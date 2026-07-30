@@ -1613,7 +1613,7 @@ function exportImage() {
     EDGE, tall + pad * 0.5);
 
   const alpha = store.transparentExport ? '-transparent' : '';
-  downloadCanvas(canvas,
+  saveCanvas(canvas,
     `${saved.name}-${currentFormation}-rotation-${currentRotation}${alpha}`);
 }
 
@@ -1651,22 +1651,154 @@ function exportAllRotations() {
     ctx.restore();
   }
 
-  downloadCanvas(canvas, `${saved.name}-${currentFormation}-all-rotations`);
+  saveCanvas(canvas, `${saved.name}-${currentFormation}-all-rotations`);
 }
 
-function downloadCanvas(canvas, stemSource) {
-  const stem = stemSource
+function fileStem(source) {
+  return source
     .toLowerCase()
     .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '');
+    .replace(/^-+|-+$/g, '') || 'rotation';
+}
 
+// A plain <a download> is the desktop path, and on iOS it drops the file into
+// Files rather than Photos -- there's no way to reach the camera roll from a
+// download. The share sheet can: it offers "Save Image", plus Messages and
+// AirDrop, which is what you actually want courtside. So try sharing first and
+// fall back to downloading.
+function saveCanvas(canvas, stemSource) {
+  const name = `${fileStem(stemSource)}.png`;
+
+  canvas.toBlob((blob) => {
+    if (!blob) return;
+
+    const file = new File([blob], name, { type: 'image/png' });
+    const canShareFile = typeof navigator !== 'undefined'
+      && navigator.canShare
+      && navigator.canShare({ files: [file] });
+
+    if (canShareFile) {
+      navigator.share({ files: [file] })
+        // A cancelled share sheet rejects too, so don't fall back on failure --
+        // downloading the file after someone taps Cancel would be worse.
+        .catch((error) => console.warn('Share dismissed or unavailable:', error));
+      return;
+    }
+
+    downloadBlob(blob, name);
+  }, 'image/png');
+}
+
+function downloadBlob(blob, name) {
+  const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
-  link.download = `${stem || 'rotation'}.png`;
-  link.href = canvas.toDataURL('image/png');
+  link.download = name;
+  link.href = url;
   // Some browsers ignore a click on a link that isn't in the document.
   document.body.appendChild(link);
   link.click();
   link.remove();
+  // Freed on the next tick, once the browser has taken the data.
+  setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// --- Sharing ----------------------------------------------------------
+//
+// The whole VolleyGram is packed into the URL itself, so sharing needs no
+// server, no accounts and no database. The link *is* the data, and the app stays
+// three static files on GitHub Pages.
+//
+// This only works because layouts store dragged positions and nothing else --
+// an untouched VolleyGram carries no coordinates at all, so a typical link is a
+// few hundred characters rather than tens of kilobytes.
+
+// URL-safe base64: +, / and = all mean something inside a URL, so they're
+// swapped out. TextEncoder first, because btoa can't handle a name with an
+// accent or an emoji in it.
+function encodeLineup(lineup) {
+  const bytes = new TextEncoder().encode(JSON.stringify(lineup));
+  let binary = '';
+  bytes.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+
+function decodeLineup(encoded) {
+  const binary = atob(encoded.replace(/-/g, '+').replace(/_/g, '/'));
+  const bytes = Uint8Array.from(binary, (char) => char.charCodeAt(0));
+  return JSON.parse(new TextDecoder().decode(bytes));
+}
+
+// The payload rides in the hash rather than a query string, which means it's
+// never sent to GitHub's servers -- the fragment stays in the browser.
+function shareUrl(lineup = saved) {
+  return `${location.origin}${location.pathname}#g=${encodeLineup(lineup)}`;
+}
+
+// Opening a shared link *adds* a VolleyGram. It must never overwrite what the
+// person already has.
+function importFromUrl() {
+  const match = (location.hash || '').match(/^#g=(.+)$/);
+  if (!match) return false;
+
+  let imported = false;
+  try {
+    const lineup = normaliseLineup(decodeLineup(match[1]), 'Shared VolleyGram');
+    const id = `L${Date.now()}`;
+    store.lineups[id] = lineup;
+    store.activeId = id;
+    saved = lineup;
+    currentRotation = 1;
+    save();
+    imported = true;
+  } catch (error) {
+    console.warn('Could not read that share link:', error);
+  }
+
+  // Drop the hash either way, so a refresh doesn't import a second copy and a
+  // broken link doesn't fail twice. `history` here is our own undo stack, so
+  // window.history has to be spelled out.
+  if (typeof window !== 'undefined' && window.history && window.history.replaceState) {
+    window.history.replaceState(null, '', location.pathname + location.search);
+  }
+  return imported;
+}
+
+async function shareCurrent() {
+  const url = shareUrl();
+
+  // Browsers and messaging apps start truncating links well before this; better
+  // to say so than to hand out one that arrives broken.
+  if (url.length > 8000) {
+    alert('This VolleyGram is too big to fit in a link. Reset some dragged '
+      + 'positions and try again.');
+    return;
+  }
+
+  const payload = { title: 'VolleyGram', text: `${saved.name} — a VolleyGram`, url };
+  if (navigator.share && (!navigator.canShare || navigator.canShare(payload))) {
+    try {
+      await navigator.share(payload);
+    } catch (error) {
+      console.warn('Share dismissed:', error);
+    }
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(url);
+    flashShareButton('Link copied');
+  } catch (error) {
+    // Clipboard access needs a secure context; plain http://localhost aside,
+    // this is the fallback when it's refused.
+    prompt('Copy this link:', url);
+  }
+}
+
+function flashShareButton(message) {
+  const button = document.getElementById('shareLink');
+  const original = button.textContent;
+  button.textContent = message;
+  setTimeout(() => { button.textContent = original; }, 1600);
 }
 
 // --- Controls ---------------------------------------------------------
@@ -1729,6 +1861,7 @@ holdButton.addEventListener('pointercancel', cancelHold);
 
 document.getElementById('exportImage').addEventListener('click', exportImage);
 
+document.getElementById('shareLink').addEventListener('click', shareCurrent);
 document.getElementById('startQuiz').addEventListener('click', startQuiz);
 document.getElementById('endQuiz').addEventListener('click', endQuiz);
 document.getElementById('quizNext').addEventListener('click', nextQuizQuestion);
@@ -1844,6 +1977,7 @@ function syncLabelsButton() {
 // --- Start it up ------------------------------------------------------
 
 load();
+importFromUrl();
 syncLabelsButton();
 syncRosterButton();
 syncUndoButton();
