@@ -1342,11 +1342,18 @@ function endQuiz() {
 
 function nextQuizQuestion() {
   const rotation = 1 + Math.floor(Math.random() * rotationCount());
-  const onCourt = saved.roster
-    .map((_, index) => index)
-    .filter((index) => slotFor(index, rotation) !== null);
 
-  const index = onCourt[Math.floor(Math.random() * onCourt.length)];
+  // The server stays visible as an anchor, so there's something to reason from
+  // rather than recalling six positions cold. That also means they can't be the
+  // subject of the question -- the answer would be sitting right there.
+  const candidates = saved.roster
+    .map((_, index) => index)
+    .filter((index) => {
+      const slot = slotFor(index, rotation);
+      return slot !== null && slot !== SERVE_SLOT;
+    });
+
+  const index = candidates[Math.floor(Math.random() * candidates.length)];
   quiz = { rotation, index, answer: slotFor(index, rotation), chosen: null };
 
   currentRotation = rotation;

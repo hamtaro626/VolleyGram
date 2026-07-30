@@ -151,6 +151,12 @@ body.quiz-hide-players .player {
   visibility: hidden;
 }
 
+/* The server stays put as an anchor. Knowing who's in zone 1 turns the question
+   from blank recall into something you can actually work out. */
+body.quiz-hide-players .player.serving {
+  visibility: visible;
+}
+
 /* --- The bench -------------------------------------------------------- */
 
 /* Only exists once there are more than six players, so it's hidden until
@@ -321,8 +327,10 @@ body.hide-labels .player .label {
   background: #d47cbd; /* 6.27:1 */
 }
 
+/* Violet, because it's the one gap left: gold, green, teal, periwinkle and pink
+   are taken, and anything orange or coral would blend into the court beneath. */
 .role-NONE {
-  background: #a8a8a8; /* 7.47:1 */
+  background: #b39ae8; /* 7.36:1 */
 }
 
 .role-L {
@@ -409,6 +417,10 @@ body.hide-labels .player .label {
 /* --- Buttons ---------------------------------------------------------- */
 
 button {
+  /* iOS Safari otherwise applies its own control styling on top of ours, which
+     is one candidate for buttons rendering white on an iPhone. */
+  -webkit-appearance: none;
+  appearance: none;
   font: inherit;
   font-weight: 600;
   padding: 0.85rem 0.25rem;

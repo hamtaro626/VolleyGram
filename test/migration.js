@@ -873,14 +873,23 @@ console.log('\n29. Quiz answers agree with the court');
     if (n > 2) break; // four is enough to prove it; keep the log readable
   }
 
-  // Only ever asks about players who are actually on court.
+  // Only ever asks about players who are actually on court, and never about the
+  // server -- they stay visible as the anchor, so asking would give it away.
   let onCourtOnly = true;
-  for (let n = 0; n < 60; n++) {
+  let neverTheServer = true;
+  const zonesAsked = new Set();
+  for (let n = 0; n < 200; n++) {
     app.call.nextQuizQuestion();
     const { quiz } = app.quiz();
     if (quiz.answer === null) onCourtOnly = false;
+    if (quiz.answer === app.consts.SERVE_SLOT) neverTheServer = false;
+    zonesAsked.add(quiz.answer);
   }
   check('never asks about a benched player', onCourtOnly);
+  check('never asks about the server', neverTheServer,
+    [...zonesAsked].sort().join(','));
+  check('does ask about the other five zones',
+    zonesAsked.size === 5, [...zonesAsked].sort().join(','));
 }
 
 console.log('\n30. Quiz scoring');
