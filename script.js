@@ -1155,7 +1155,7 @@ function render() {
     el.className = `player role-${role}`;
     if (slot === null) el.classList.add('benched');
     if (slot === SERVE_SLOT) el.classList.add('serving');
-    if (setterIds.has(player.id)) el.classList.add('setting');
+    if (setterIds.has(player.id)) el.classList.add('is-setter');
 
     el.querySelector('.name').textContent = displayName(player);
     el.querySelector('.label').textContent = roleBadge(role);

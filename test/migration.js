@@ -596,6 +596,32 @@ console.log('\n20. Source files are plain text');
   const dirty = files.filter((f) =>
     fs.readFileSync(path.join(__dirname, '..', f)).includes(0));
   check('no NUL bytes in source', dirty.length === 0, dirty.join(', '));
+
+  // A CSS rule written as a single unqualified class matches *anywhere* that
+  // class appears. Adding one of those names to a player circle silently
+  // repaints it -- which is exactly how `.setting` (a roster-panel row style)
+  // greyed out the setter's name and folded it onto one line.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+
+  const bare = new Set();
+  for (const rule of css.matchAll(/^([^\n{@]+)\{/gm)) {
+    for (const selector of rule[1].split(',')) {
+      const trimmed = selector.trim();
+      if (/^\.[A-Za-z][\w-]*$/.test(trimmed)) bare.add(trimmed.slice(1));
+    }
+  }
+
+  // Every class the code ever puts on a player circle.
+  const onPlayers = new Set(['player']);
+  for (const m of js.matchAll(/el\.classList\.add\('([\w-]+)'\)/g)) onPlayers.add(m[1]);
+  for (const m of js.matchAll(/className = `player ([^`]*)`/g)) {
+    m[1].split(/\s+/).forEach((c) => { if (c && !c.includes('$')) onPlayers.add(c); });
+  }
+
+  const collisions = [...onPlayers].filter((c) => c !== 'player' && bare.has(c));
+  check('no player class is also a bare CSS selector', collisions.length === 0,
+    collisions.join(', '));
 }
 
 

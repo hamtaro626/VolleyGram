@@ -283,8 +283,11 @@ body.hide-labels .player .label {
 
 /* The ring marks whoever is setting this rotation -- which setter that is
    depends on the system, so it's genuinely worth pointing at. Drawn outside the
-   circle so it doesn't fight the role colour underneath. */
-.player.setting {
+   circle so it doesn't fight the role colour underneath.
+   Named is-setter, not setting: a bare `.setting` rule further down styles the
+   roster panel's labelled rows, and it happily matched the player circles too --
+   greying the name, forcing it onto one line with the role, and resizing it. */
+.player.is-setter {
   box-shadow: 0 0 0 3px #f2f4f8;
   z-index: 3;
 }
