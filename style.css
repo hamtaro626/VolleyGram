@@ -28,11 +28,21 @@ h1 {
 
 .picker {
   display: block;
-  margin-bottom: 0.4rem;
+  margin-bottom: 0.5rem;
 }
 
 .picker:last-of-type {
   margin-bottom: 0.8rem;
+}
+
+/* Above the control rather than beside it: these selects are full width and
+   their option text is long ("4-2 - two setters, front-row setter sets"), so a
+   side label would squeeze it. */
+.picker span {
+  display: block;
+  margin-bottom: 0.2rem;
+  font-size: 0.75rem;
+  color: #a9b2c6;
 }
 
 .picker select {

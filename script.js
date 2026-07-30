@@ -193,25 +193,25 @@ function roleBadge(role) {
 const SYSTEMS = {
   simple: {
     name: 'Simple',
-    blurb: 'no roles, just six spots',
+    blurb: 'No roles assigned',
     lineup: ['NONE', 'NONE', 'NONE', 'NONE', 'NONE', 'NONE'],
     setsFrom: null,
   },
   '4-2': {
     name: '4-2',
-    blurb: 'two setters, front-row setter sets',
+    blurb: 'Two setters - front-row setter sets',
     lineup: ['S', 'MB', 'OH', 'S', 'MB', 'OH'],
     setsFrom: 'front',
   },
   '5-1': {
     name: '5-1',
-    blurb: 'one setter all six rotations',
+    blurb: 'One setter for all six rotations',
     lineup: ['S', 'MB', 'OH', 'OPP', 'MB', 'OH'],
     setsFrom: 'any',
   },
   '6-2': {
     name: '6-2',
-    blurb: 'two setters, back-row setter sets',
+    blurb: 'Two setters - back-row setter sets',
     lineup: ['S', 'MB', 'OH', 'S', 'MB', 'OH'],
     setsFrom: 'back',
   },
