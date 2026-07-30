@@ -251,10 +251,74 @@ Curved perimeter text was considered for the server label and rejected: at phone
 size it renders about five pixels tall, less readable than the plain ring it was
 meant to clarify.
 
+## v0.11 — formations
+
+Three tabs under the court: **Base**, **Serve receive**, **Defense**. Each keeps
+its own set of six per-rotation layouts, so they're three independent
+whiteboards. Dragging in one never touches the others.
+
+### Generated, not tabulated
+
+Base positions come from the rulebook. Receive and defense don't have one right
+answer, so they're **computed** from who's on court and what they play rather
+than looked up in a fixed table. A table would be more authoritative and would
+break the moment there are seven players, a reordered lineup, or a per-rotation
+role override — all of which this app allows. Drag fixes anything the rules get
+wrong, and a dragged position always wins.
+
+**Serve receive keeps everyone in their own row.** A back-row player never runs
+up to the net; a front-row player never drops in behind them. That's what keeps
+the formation legal at the moment of serve, and it's how the two rows actually
+play. The first version of this got it wrong and had back-row players releasing
+to the net.
+
+Passers are taken from the **back row first** — they're already there, and pulling
+a front-row hitter back to pass costs an attacker. In a 4-2 each row holds one
+setter, one middle and one outside, so three passers works out to exactly the back
+row, including the back-row setter (who isn't the one setting). Passer count is
+selectable: 2, 3, 4, or 5. Three back plus two front is the classic W.
+
+Two different orderings, deliberately:
+
+- **Passers** are placed left to right by where they already stand, so they don't
+  cross on the way to their spot.
+- **Front-row players at the net** are placed by role — middle to the middle,
+  outside to the left pin — whatever zone they rotated in from. That crossing
+  *is* the switch, and it's what front-row players actually do.
+
+The setter goes to the setting spot, or stays behind the attack line if they're
+back row; they come up after the serve is contacted, not before it.
+
+This is the switch that base positions can't express — where people actually go
+once the ball is in the air. It was explicitly out of scope in v0.1.
+
+**Defense** puts the two front-row players nearest the ball on the block, pulls
+the third off to cover, and gives the back row the three dig spots. Perimeter and
+Rotation / 6-up are both available, and the attack side flips (perimeter against
+an attack from your left is the mirror of one from your right).
+
+### Libero
+
+A sixth role, in no system's default lineup — it exists if you assign it and
+stays out of the way otherwise. It always passes and, being a back-row
+specialist, naturally lands on a dig spot. Real libero substitution (swapping for
+a middle rotating to the back) is **not** implemented.
+
+### Storage
+
+`layouts` is now keyed by formation first: `{ base, receive, defense }`, each
+holding rotations. A save whose `layouts` has numeric top-level keys is
+pre-v0.11, and everything in it was a base layout.
+
+`layoutFor()` is gone. It lazily *wrote* default layouts as a side effect, which
+made merely reading a rotation persist data. `positionsFor()` replaces it and
+writes nothing: generated defaults with dragged positions spread on top. Reset
+now deletes the dragged bucket rather than freezing defaults into it.
+
 ## Tests
 
 ```
-node test/migration.js    # 93 checks — storage, migration, roles, zones, reordering
+node test/migration.js    # 203 checks — storage, migration, roles, formations
 node test/contrast.js     # colour contrast and hue separation
 ```
 

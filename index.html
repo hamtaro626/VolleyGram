@@ -27,6 +27,31 @@
 
     <p class="status" id="status"></p>
 
+    <div class="formations" id="formationButtons">
+      <!-- filled by script.js -->
+    </div>
+
+    <div class="formation-options" id="receiveOptions" hidden>
+      <label class="setting">
+        <span>Passers</span>
+        <select id="passers"><!-- filled by script.js --></select>
+      </label>
+    </div>
+
+    <div class="formation-options" id="defenseOptions" hidden>
+      <label class="setting">
+        <span>System</span>
+        <select id="defenseSystem"><!-- filled by script.js --></select>
+      </label>
+      <label class="setting">
+        <span>Attack from</span>
+        <select id="defenseSide">
+          <option value="right">Our right (their outside)</option>
+          <option value="left">Our left (their right side)</option>
+        </select>
+      </label>
+    </div>
+
     <div class="rotations" id="rotationButtons">
       <!-- The rotation buttons get created by script.js -->
     </div>

@@ -90,14 +90,16 @@ function boot(seedJson) {
   const source = fs.readFileSync(SCRIPT, 'utf8');
   // Appended in the same lexical scope, so it can reach the module's `let`s.
   const expose = `
-    globalThis.__peek = () => ({ store, saved, currentRotation });
+    globalThis.__peek = () => ({ store, saved, currentRotation, currentFormation });
     globalThis.__call = { load, render, rebuild, useLineup, addLineup,
       duplicateLineup, deleteLineup, normaliseLineup, slotFor, rosterSize,
       describeRotation, setRotation, roleFor, hasRoleOverride, overrideCount,
-      buildRosterRows, defaultPosition, rotationCount, applyRosterOrder,
-      movePlayer };
+      buildRosterRows, benchPosition, rotationCount, applyRosterOrder,
+      movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer };
     globalThis.__const = { ZONE_LABEL_POSITIONS, SERVE_SLOT, SLOT_POSITIONS,
-      COURT_SPOTS };
+      COURT_SPOTS, FORMATIONS, DEFENSE_SPOTS, SETTER_TARGET, FRONT_ROW_SLOTS,
+      BACK_ROW_SLOTS, BACK_PASS_SPOTS, BACK_COVER_SPOTS, FRONT_PASS_SPOTS,
+      NET_SPOTS };
     globalThis.__status = () => document.getElementById('status').textContent;
   `;
   vm.runInNewContext(source + expose, context, { filename: 'script.js' });
@@ -140,7 +142,7 @@ console.log('\n2. v0.2 save — names in a side lookup, no roster array');
   check('wrapped into one lineup', Object.keys(store.lineups).length === 1);
   check('S1 name survived', saved.roster[0].name === 'Alec', saved.roster[0].name);
   check('MB1 name survived', saved.roster[1].name === 'Jordan', saved.roster[1].name);
-  check('layout survived', saved.layouts['1'].S1.x === 10);
+  check('layout survived, now under base', saved.layouts.base['1'].S1.x === 10);
   check('showLabels moved to top level', store.showLabels === false);
   check('no warnings', app.warnings.length === 0, app.warnings.join('; '));
 }
@@ -337,7 +339,7 @@ console.log('\n11. Simple mode — no roles assigned');
     saved.roster[0].fallback === 'Player 1', saved.roster[0].fallback);
   app.call.setRotation(3);
   check('status line stays quiet about setters',
-    app.status() === 'Rotation 3 of 6', app.status());
+    app.status() === 'Base \u00b7 Rotation 3 of 6', app.status());
   const zones = new Set();
   for (let i = 0; i < 6; i++) zones.add(app.call.slotFor(i, 3));
   check('rotation still works', zones.size === 6 && !zones.has(null));
@@ -505,19 +507,19 @@ console.log('\n17. Reading other rotations must not write to storage');
 {
   const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
   const { saved } = app.peek();
+  const { FORMATIONS } = app.consts;
 
-  // Startup renders rotation 1, which does populate that one layout.
-  saved.layouts = {};
-
-  // What the batch export does: read every rotation without opening it.
-  for (let r = 1; r <= app.call.rotationCount(); r++) {
-    app.call.describeRotation(r);
-    saved.roster.forEach((_, i) => app.call.defaultPosition(i, r));
+  // What the batch export does: read every rotation of every formation without
+  // ever opening them.
+  for (const formation of FORMATIONS) {
+    for (let r = 1; r <= app.call.rotationCount(); r++) {
+      app.call.positionsFor(formation, r);
+      app.call.defaultLayout(formation, r);
+    }
   }
 
-  check('layouts still empty after reading all rotations',
-    Object.keys(saved.layouts).length === 0,
-    JSON.stringify(Object.keys(saved.layouts)));
+  const written = FORMATIONS.filter((f) => Object.keys(saved.layouts[f]).length > 0);
+  check('no layouts created by reading', written.length === 0, written.join(', '));
 }
 
 console.log('\n18. describeRotation describes the rotation it is asked about');
@@ -529,7 +531,7 @@ console.log('\n18. describeRotation describes the rotation it is asked about');
   check('current rotation unchanged', app.peek().currentRotation === 1,
     String(app.peek().currentRotation));
   check('status line still shows rotation 1',
-    app.status().startsWith('Rotation 1 of 6'), app.status());
+    app.status().startsWith('Base \u00b7 Rotation 1 of 6'), app.status());
 }
 
 console.log('\n19. Reordering the roster by drag');
@@ -572,6 +574,255 @@ console.log('\n20. Source files are plain text');
   const dirty = files.filter((f) =>
     fs.readFileSync(path.join(__dirname, '..', f)).includes(0));
   check('no NUL bytes in source', dirty.length === 0, dirty.join(', '));
+}
+
+
+// --- Formation helpers ------------------------------------------------------
+
+// Everyone standing on the court for a formation, as {id, role, slot, pos}.
+function onCourt(app, formation, rotation) {
+  const { saved } = app.peek();
+  const layout = app.call.positionsFor(formation, rotation);
+  return saved.roster
+    .map((player, i) => ({
+      id: player.id,
+      role: app.call.roleFor(player, rotation),
+      slot: app.call.slotFor(i, rotation),
+      pos: layout[player.id],
+    }))
+    .filter((entry) => entry.slot !== null);
+}
+
+const at = (pos, spot) => pos && Math.abs(pos.x - spot.x) < 0.01 && Math.abs(pos.y - spot.y) < 0.01;
+const matchesAny = (pos, spots) => spots.some((spot) => at(pos, spot));
+
+console.log('\n21. Layouts migrate into formations');
+{
+  // Pre-v0.11: layouts keyed by rotation number, all of them base positions.
+  const old = boot(JSON.stringify({
+    roster: null, layouts: { 2: { S1: { x: 11, y: 22 } }, 5: { MB1: { x: 33, y: 44 } } },
+  }));
+  const migrated = old.peek().saved.layouts;
+  check('numeric keys treated as base', migrated.base['2'].S1.x === 11);
+  check('all rotations carried over', migrated.base['5'].MB1.y === 44);
+  check('receive starts empty', Object.keys(migrated.receive).length === 0);
+  check('defense starts empty', Object.keys(migrated.defense).length === 0);
+
+  // Already formation-keyed: left alone.
+  const fresh = boot(JSON.stringify({
+    roster: null,
+    layouts: { base: { 1: { S1: { x: 1, y: 2 } } }, receive: { 3: { S1: { x: 5, y: 6 } } } },
+  }));
+  const kept = fresh.peek().saved.layouts;
+  check('formation keys preserved', kept.base['1'].S1.x === 1 && kept.receive['3'].S1.y === 6);
+
+  // Formation settings validate rather than trusting the blob.
+  const bad = boot(JSON.stringify({
+    roster: null, layouts: 'nope', passers: 99, defenseSystem: 'zone', defenseSide: 'up',
+  }));
+  const b = bad.peek().saved;
+  check('garbage layouts reset to empty', Object.keys(b.layouts.base).length === 0);
+  check('bad passer count defaults to 3', b.passers === 3, String(b.passers));
+  check('bad defense system defaults to perimeter', b.defenseSystem === 'perimeter');
+  check('bad defense side defaults to right', b.defenseSide === 'right');
+}
+
+console.log('\n22. Serve receive keeps players in their own row');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1, passers: 3 }));
+  const c = app.consts;
+  const passSpots = [...Object.values(c.BACK_PASS_SPOTS).flat(),
+                     ...Object.values(c.FRONT_PASS_SPOTS).flat()];
+
+  for (let r = 1; r <= 6; r++) {
+    const players = onCourt(app, 'receive', r);
+    const front = players.filter((e) => c.FRONT_ROW_SLOTS.includes(e.slot));
+    const back = players.filter((e) => c.BACK_ROW_SLOTS.includes(e.slot));
+
+    // The invariant that was broken: nobody swaps rows.
+    const deepestFront = Math.max(...front.map((e) => e.pos.y));
+    const shallowestBack = Math.min(...back.map((e) => e.pos.y));
+    check(`rotation ${r}: no front-row player ends up behind a back-row player`,
+      deepestFront < shallowestBack, `front ${deepestFront} vs back ${shallowestBack}`);
+
+    check(`rotation ${r}: no back-row player runs to the net`,
+      back.every((e) => e.pos.y > 40), JSON.stringify(back.map((e) => e.pos.y)));
+
+    check(`rotation ${r}: front row stays forward`,
+      front.every((e) => e.pos.y < 50), JSON.stringify(front.map((e) => e.pos.y)));
+
+    const unique = new Set(players.map((e) => `${e.pos.x},${e.pos.y}`));
+    check(`rotation ${r}: all six positions distinct`, unique.size === 6, String(unique.size));
+
+    const passers = players.filter((e) => matchesAny(e.pos, passSpots));
+    check(`rotation ${r}: three passers`, passers.length === 3, String(passers.length));
+
+    // With three passers in a 4-2, the passers are exactly the back row.
+    check(`rotation ${r}: the back row does the passing`,
+      passers.length === back.length && passers.every((e) => c.BACK_ROW_SLOTS.includes(e.slot)));
+
+    // And one of them is the back-row setter, who isn't the one setting.
+    check(`rotation ${r}: the back-row setter is one of the passers`,
+      passers.some((e) => e.role === 'S'), JSON.stringify(passers.map((e) => e.role)));
+
+    // The setting setter is at the net, in the front row.
+    const setting = players.filter((e) =>
+      at(e.pos, c.SETTER_TARGET.front) || at(e.pos, c.SETTER_TARGET.back));
+    check(`rotation ${r}: exactly one player set up to set`, setting.length === 1,
+      String(setting.length));
+    check(`rotation ${r}: that player is a setter in the front row`,
+      setting[0] && setting[0].role === 'S' && c.FRONT_ROW_SLOTS.includes(setting[0].slot));
+  }
+}
+
+console.log('\n23. Passer count, still row-preserving');
+{
+  const expectations = { 2: 2, 3: 3, 4: 4, 5: 5 };
+  for (const count of [2, 3, 4, 5]) {
+    const app = boot(JSON.stringify({
+      system: '4-2', roster: null, entrySlot: 1, passers: count,
+    }));
+    const c = app.consts;
+    const passSpots = [...Object.values(c.BACK_PASS_SPOTS).flat(),
+                       ...Object.values(c.FRONT_PASS_SPOTS).flat()];
+    const players = onCourt(app, 'receive', 1);
+    const front = players.filter((e) => c.FRONT_ROW_SLOTS.includes(e.slot));
+    const back = players.filter((e) => c.BACK_ROW_SLOTS.includes(e.slot));
+    const passers = players.filter((e) => matchesAny(e.pos, passSpots));
+
+    check(`${count} passers requested, ${passers.length} placed`,
+      passers.length === expectations[count]);
+    check(`${count}-passer: rows still not crossed`,
+      Math.max(...front.map((e) => e.pos.y)) < Math.min(...back.map((e) => e.pos.y)));
+    check(`${count}-passer: back row stays back`, back.every((e) => e.pos.y > 40));
+    const unique = new Set(players.map((e) => `${e.pos.x},${e.pos.y}`));
+    check(`${count}-passer: nobody stacked`, unique.size === 6, String(unique.size));
+  }
+}
+
+console.log('\n24. A back-row setter sets from behind the attack line');
+{
+  // A 6-2 sets with the back-row setter, so this is the case where the setting
+  // player is in the back row.
+  const app = boot(JSON.stringify({ system: '6-2', roster: null, entrySlot: 1, passers: 3 }));
+  const c = app.consts;
+  for (let r = 1; r <= 6; r++) {
+    const players = onCourt(app, 'receive', r);
+    const setting = players.filter((e) => at(e.pos, c.SETTER_TARGET.back));
+    check(`rotation ${r}: back-row setter is at the back target`, setting.length === 1,
+      String(setting.length));
+    check(`rotation ${r}: and stays behind the attack line`,
+      setting[0] && setting[0].pos.y > 33.33, setting[0] && String(setting[0].pos.y));
+
+    const front = players.filter((e) => c.FRONT_ROW_SLOTS.includes(e.slot));
+    const back = players.filter((e) => c.BACK_ROW_SLOTS.includes(e.slot));
+    check(`rotation ${r}: 6-2 rows not crossed`,
+      Math.max(...front.map((e) => e.pos.y)) < Math.min(...back.map((e) => e.pos.y)),
+      `front ${Math.max(...front.map((e) => e.pos.y))} back ${Math.min(...back.map((e) => e.pos.y))}`);
+  }
+}
+
+console.log('\n24b. A libero still passes');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1, passers: 2 }));
+  const { saved } = app.peek();
+  const c = app.consts;
+  const passSpots = [...Object.values(c.BACK_PASS_SPOTS).flat(),
+                     ...Object.values(c.FRONT_PASS_SPOTS).flat()];
+
+  // Make the back-row middle a libero; with only two passing spots they keep one.
+  const backRowIndex = saved.roster.findIndex((_, i) => c.BACK_ROW_SLOTS.includes(app.call.slotFor(i, 1)));
+  saved.roster[backRowIndex].role = 'L';
+
+  const libero = onCourt(app, 'receive', 1).find((e) => e.role === 'L');
+  check('libero is on court', Boolean(libero));
+  check('libero is passing', libero && matchesAny(libero.pos, passSpots),
+    libero && JSON.stringify(libero.pos));
+}
+
+console.log('\n25. Defense');
+{
+  const app = boot(JSON.stringify({
+    system: '4-2', roster: null, entrySlot: 1, defenseSystem: 'perimeter', defenseSide: 'right',
+  }));
+  const { DEFENSE_SPOTS, FRONT_ROW_SLOTS, BACK_ROW_SLOTS } = app.consts;
+  const spots = DEFENSE_SPOTS.perimeter;
+
+  for (let r = 1; r <= 6; r++) {
+    const players = onCourt(app, 'defense', r);
+    const blockers = players.filter((e) => matchesAny(e.pos, spots.block));
+    const off = players.filter((e) => at(e.pos, spots.offBlocker));
+    const diggers = players.filter((e) => matchesAny(e.pos, spots.back));
+
+    check(`rotation ${r}: two blockers`, blockers.length === 2, String(blockers.length));
+    check(`rotation ${r}: one off-blocker`, off.length === 1, String(off.length));
+    check(`rotation ${r}: three diggers`, diggers.length === 3, String(diggers.length));
+    check(`rotation ${r}: blockers come from the front row`,
+      blockers.every((e) => FRONT_ROW_SLOTS.includes(e.slot)));
+    check(`rotation ${r}: diggers come from the back row`,
+      diggers.every((e) => BACK_ROW_SLOTS.includes(e.slot)));
+
+    // Blockers must be the two front-row players nearest the ball, which is on
+    // our right, so the off-blocker is the leftmost of the three.
+    const front = players.filter((e) => FRONT_ROW_SLOTS.includes(e.slot));
+    const leftmost = front.reduce((a, b) =>
+      app.consts.SLOT_POSITIONS[a.slot].x < app.consts.SLOT_POSITIONS[b.slot].x ? a : b);
+    check(`rotation ${r}: the off-blocker is the far-side front player`,
+      off[0] && off[0].id === leftmost.id);
+  }
+}
+
+console.log('\n26. Defense mirrors and switches system');
+{
+  const right = boot(JSON.stringify({
+    system: '4-2', roster: null, entrySlot: 1, defenseSystem: 'perimeter', defenseSide: 'right',
+  }));
+  const left = boot(JSON.stringify({
+    system: '4-2', roster: null, entrySlot: 1, defenseSystem: 'perimeter', defenseSide: 'left',
+  }));
+
+  const xs = (app) => onCourt(app, 'defense', 1).map((e) => Math.round(e.pos.x)).sort((a, b) => a - b);
+  const mirrored = xs(right).map((x) => 100 - x).sort((a, b) => a - b);
+  check('left side is the mirror of the right', JSON.stringify(xs(left)) === JSON.stringify(mirrored),
+    `${xs(left)} vs ${mirrored}`);
+
+  const rot = boot(JSON.stringify({
+    system: '4-2', roster: null, entrySlot: 1, defenseSystem: 'rotation', defenseSide: 'right',
+  }));
+  const perimeterPositions = JSON.stringify(onCourt(right, 'defense', 1).map((e) => e.pos));
+  const rotationPositions = JSON.stringify(onCourt(rot, 'defense', 1).map((e) => e.pos));
+  check('rotation defense differs from perimeter', perimeterPositions !== rotationPositions);
+
+  // 6-up pulls a defender in front of the attack line; perimeter does not.
+  const deepest = (app) => Math.max(...onCourt(app, 'defense', 1)
+    .filter((e) => app.consts.BACK_ROW_SLOTS.includes(e.slot)).map((e) => e.pos.y));
+  const shallowest = (app) => Math.min(...onCourt(app, 'defense', 1)
+    .filter((e) => app.consts.BACK_ROW_SLOTS.includes(e.slot)).map((e) => e.pos.y));
+  check('6-up brings a back-row defender up the court',
+    shallowest(rot) < shallowest(right),
+    `${shallowest(rot)} vs ${shallowest(right)}`);
+  void deepest;
+}
+
+console.log('\n27. Dragging one formation leaves the others alone');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const { saved } = app.peek();
+  const id = saved.roster[0].id;
+
+  const receiveBefore = app.call.positionsFor('receive', 1)[id];
+  const defenseBefore = app.call.positionsFor('defense', 1)[id];
+
+  // Simulate a drag in base, rotation 1.
+  saved.layouts.base['1'] = { [id]: { x: 5, y: 95 } };
+
+  check('base picks up the dragged spot', app.call.positionsFor('base', 1)[id].x === 5);
+  check('receive unaffected',
+    JSON.stringify(app.call.positionsFor('receive', 1)[id]) === JSON.stringify(receiveBefore));
+  check('defense unaffected',
+    JSON.stringify(app.call.positionsFor('defense', 1)[id]) === JSON.stringify(defenseBefore));
+  check('other rotations of base unaffected',
+    app.call.positionsFor('base', 2)[id].x !== 5);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

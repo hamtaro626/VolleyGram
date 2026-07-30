@@ -62,6 +62,97 @@ const BACK_ROW_SLOTS = [1, 5, 6];
 const COURT_SPOTS = 6;
 const SERVE_SLOT = 1; // zone 1 serves
 
+// --- Formations -------------------------------------------------------
+//
+// Base positions come from the rulebook: six zones, and the rotation decides
+// who stands in which. Serve receive and defense have no such single answer, so
+// these are *generated* from who's on court and what they play, rather than
+// looked up in a fixed table. A table would be more authentic and would break
+// the moment there are seven players, a reordered lineup, or a per-rotation role
+// override -- all of which this app allows. Drag fixes anything they get wrong.
+
+const FORMATIONS = ['base', 'receive', 'defense'];
+
+const FORMATION_LABELS = {
+  base: 'Base',
+  receive: 'Serve receive',
+  defense: 'Defense',
+};
+
+// Serve receive keeps everyone in the row they're already in. A back-row player
+// never runs up to the net and a front-row player never drops in behind them --
+// that's what keeps the formation legal at the moment of serve, and it's how the
+// two rows actually play. Every table below is keyed by how many players need
+// placing, and positioned left to right.
+
+// Where the setter goes to set. A back row setter stays behind the attack line;
+// they come up after the serve is contacted, not before it.
+const SETTER_TARGET = {
+  front: { x: 68, y: 20 },
+  back: { x: 72, y: 48 },
+};
+
+// Back-row passers. Deep, spread across the court.
+const BACK_PASS_SPOTS = {
+  1: [{ x: 50, y: 70 }],
+  2: [{ x: 30, y: 68 }, { x: 70, y: 68 }],
+  3: [{ x: 18, y: 66 }, { x: 50, y: 72 }, { x: 82, y: 66 }],
+};
+
+// Back-row players who aren't passing: still back, out of the passing lanes.
+const BACK_COVER_SPOTS = {
+  1: [{ x: 50, y: 88 }],
+  2: [{ x: 14, y: 86 }, { x: 86, y: 86 }],
+  3: [{ x: 14, y: 88 }, { x: 50, y: 90 }, { x: 86, y: 88 }],
+};
+
+// Front-row passers come up short rather than dropping into the back row. Three
+// back plus two front passing is the classic W.
+const FRONT_PASS_SPOTS = {
+  1: [{ x: 30, y: 45 }],
+  2: [{ x: 31, y: 45 }, { x: 69, y: 45 }],
+  3: [{ x: 20, y: 45 }, { x: 50, y: 47 }, { x: 80, y: 45 }],
+};
+
+// Front-row players not passing hold at the net, ready to attack.
+const NET_SPOTS = {
+  1: [{ x: 50, y: 16 }],
+  2: [{ x: 20, y: 17 }, { x: 52, y: 14 }],
+  3: [{ x: 16, y: 17 }, { x: 50, y: 14 }, { x: 84, y: 17 }],
+};
+
+// Net spots are handed out by role, not by court position: the middle goes to the
+// middle and the outside to the left pin whatever zone they rotated in from.
+// That crossing is the switch, and it's what front-row players actually do.
+const NET_PRIORITY = { OH: 0, L: 1, NONE: 2, MB: 3, S: 4, OPP: 5 };
+
+const PASSER_COUNTS = [2, 3, 4, 5];
+const DEFAULT_PASSERS = 3;
+
+// Willingness to pass, lowest first. Liberos always pass; setters never do
+// unless there's nobody left.
+const PASS_PRIORITY = { L: 0, OH: 1, NONE: 2, OPP: 3, MB: 4, S: 5 };
+
+// Defensive spots for an attack arriving on our right -- the usual case, since
+// the opponent's left-side hitter faces our right. Mirrored for the other side.
+const DEFENSE_SPOTS = {
+  perimeter: {
+    block: [{ x: 70, y: 9 }, { x: 87, y: 9 }],
+    offBlocker: { x: 20, y: 30 },
+    back: [{ x: 88, y: 68 }, { x: 50, y: 88 }, { x: 12, y: 66 }],
+  },
+  rotation: {
+    block: [{ x: 70, y: 9 }, { x: 87, y: 9 }],
+    offBlocker: { x: 24, y: 34 },
+    back: [{ x: 72, y: 40 }, { x: 90, y: 74 }, { x: 26, y: 76 }],
+  },
+};
+
+const DEFENSE_SYSTEM_LABELS = {
+  perimeter: 'Perimeter',
+  rotation: 'Rotation / 6-up',
+};
+
 // Pixels of horizontal travel before a drag across the court counts as a swipe.
 const SWIPE_MIN = 45;
 
@@ -75,12 +166,15 @@ const HISTORY_LIMIT = 40;
 
 // NONE is a real role meaning "not decided yet". Listed first so it's the top
 // option in the roster dropdown.
+// Libero is last and appears in no system's default lineup -- it exists if you
+// want it, and stays out of the way if you don't.
 const ROLE_LABELS = {
   NONE: 'No role',
   S: 'Setter',
   MB: 'Middle',
   OH: 'Outside',
   OPP: 'Opposite',
+  L: 'Libero',
 };
 
 // What shows under the name on the court. Unset players get nothing rather than
@@ -156,14 +250,23 @@ const STORAGE_VERSION = 2;
 // --- State ------------------------------------------------------------
 
 // One team's worth of setup. Several of these live side by side in the store.
+function emptyLayouts() {
+  return { base: {}, receive: {}, defense: {} };
+}
+
 function newLineup(name) {
   return {
     name,
     system: DEFAULT_SYSTEM,
     roster: rosterFromSystem(DEFAULT_SYSTEM),
-    layouts: {},        // rotation -> { player id -> {x, y} }
+    // formation -> rotation -> { player id -> {x, y} }. Only holds positions
+    // you've dragged; anything absent is generated.
+    layouts: emptyLayouts(),
     roleOverrides: {},  // rotation -> { player id -> role }
     entrySlot: 1,       // the zone off-court players sub in at
+    passers: DEFAULT_PASSERS,
+    defenseSystem: 'perimeter',
+    defenseSide: 'right',
   };
 }
 
@@ -183,6 +286,9 @@ let store = {
 let saved = store.lineups[store.activeId];
 
 let currentRotation = 1;
+// Which formation you're looking at. Not persisted, same as currentRotation --
+// it's where you are, not what you've built.
+let currentFormation = 'base';
 const playerElements = {}; // player id -> the circle on screen
 
 // Snapshots of `saved`, oldest first. Undo pops the newest.
@@ -198,6 +304,9 @@ const holdButton = document.getElementById('resetAll');
 const entrySelect = document.getElementById('entrySlot');
 const systemSelect = document.getElementById('system');
 const lineupSelect = document.getElementById('lineup');
+const passersSelect = document.getElementById('passers');
+const defenseSystemSelect = document.getElementById('defenseSystem');
+const defenseSideSelect = document.getElementById('defenseSide');
 
 // --- Working out who stands where -------------------------------------
 
@@ -265,30 +374,161 @@ function overrideCount() {
     .reduce((total, map) => total + Object.keys(map || {}).length, 0);
 }
 
-// The untouched, straight-off-the-rulebook position for one player.
-function defaultPosition(rosterIndex, rotation) {
-  const index = cycleIndex(rosterIndex, rotation);
-  if (index < COURT_SPOTS) return { ...SLOT_POSITIONS[courtPath()[index]] };
-
-  // On the bench: spread everyone evenly along the strip.
-  const benchIndex = index - COURT_SPOTS;
+// On the bench: spread everyone evenly along the strip, in queue order.
+function benchPosition(rosterIndex, rotation) {
+  const benchIndex = cycleIndex(rosterIndex, rotation) - COURT_SPOTS;
   const benchCount = rosterSize() - COURT_SPOTS;
   return { x: (100 / (benchCount + 1)) * (benchIndex + 1), y: BENCH_Y };
 }
 
-function defaultLayout(rotation) {
-  const layout = {};
-  saved.roster.forEach((player, index) => {
-    layout[player.id] = defaultPosition(index, rotation);
+// Pairs players with target spots, both sorted left to right, so nobody crosses
+// paths on their way there. Keeps generated formations looking deliberate rather
+// than scrambled.
+function pairByX(players, spots) {
+  const ordered = [...players].sort(
+    (a, b) => SLOT_POSITIONS[a.slot].x - SLOT_POSITIONS[b.slot].x);
+  const targets = [...spots].sort((a, b) => a.x - b.x);
+  return ordered.map((player, i) => [player, targets[Math.min(i, targets.length - 1)]]);
+}
+
+// Which on-court player is setting, per the system's rule. Simple mode has no
+// setter, so this returns nothing and everyone is a passing candidate.
+function settingPlayer(onCourt) {
+  const { setsFrom } = SYSTEMS[saved.system];
+  if (!setsFrom) return null;
+  return onCourt.find(({ role, slot }) => {
+    if (role !== 'S') return false;
+    if (setsFrom === 'front') return FRONT_ROW_SLOTS.includes(slot);
+    if (setsFrom === 'back') return BACK_ROW_SLOTS.includes(slot);
+    return true;
+  }) || null;
+}
+
+// Left to right by where they're already standing. Passers don't switch before
+// they pass, so this keeps them from crossing on the way to their spot.
+function byCourtX(a, b) {
+  return SLOT_POSITIONS[a.slot].x - SLOT_POSITIONS[b.slot].x;
+}
+
+// Left to right by position played, for the front-row switch.
+function byNetRole(a, b) {
+  return (NET_PRIORITY[a.role] ?? 9) - (NET_PRIORITY[b.role] ?? 9) || a.index - b.index;
+}
+
+// Places a group of players into a shape table, left to right.
+function placeGroup(entries, shapes, layout, sorter) {
+  if (entries.length === 0) return;
+  const spots = shapes[entries.length]
+    || shapes[Math.max(...Object.keys(shapes).map(Number))];
+  const ordered = [...entries].sort(sorter || byCourtX);
+  const targets = [...spots].sort((a, b) => a.x - b.x);
+  ordered.forEach((entry, i) => {
+    layout[entry.player.id] = { ...targets[Math.min(i, targets.length - 1)] };
   });
+}
+
+// Serve receive. The player who's setting goes to the setting spot; everyone
+// else stays in their own row, passing or not.
+//
+// Passers are taken from the back row first. They're already back there, and
+// pulling a front-row hitter out of the front row to pass costs an attacker. In
+// a 4-2 each row holds one setter, one middle and one outside, so three passers
+// works out to exactly the back row -- including the back-row setter, who isn't
+// the one setting.
+function assignReceive(onCourt, layout) {
+  const setter = settingPlayer(onCourt);
+  if (setter) {
+    layout[setter.player.id] = {
+      ...(FRONT_ROW_SLOTS.includes(setter.slot) ? SETTER_TARGET.front : SETTER_TARGET.back),
+    };
+  }
+
+  const rest = onCourt.filter((entry) => entry !== setter);
+  const back = rest.filter(({ slot }) => BACK_ROW_SLOTS.includes(slot));
+  const front = rest.filter(({ slot }) => FRONT_ROW_SLOTS.includes(slot));
+
+  const byWillingness = (a, b) =>
+    (PASS_PRIORITY[a.role] ?? 9) - (PASS_PRIORITY[b.role] ?? 9) || a.index - b.index;
+
+  const queue = [...back].sort(byWillingness).concat([...front].sort(byWillingness));
+  const wanted = clamp(saved.passers, 2, queue.length);
+  const passing = new Set(queue.slice(0, wanted));
+
+  placeGroup(back.filter((entry) => passing.has(entry)), BACK_PASS_SPOTS, layout);
+  placeGroup(back.filter((entry) => !passing.has(entry)), BACK_COVER_SPOTS, layout);
+  placeGroup(front.filter((entry) => passing.has(entry)), FRONT_PASS_SPOTS, layout);
+  placeGroup(front.filter((entry) => !passing.has(entry)), NET_SPOTS, layout, byNetRole);
+}
+
+// Mirrors the stored spots when the attack is coming from the other side.
+function defenseSpots() {
+  const base = DEFENSE_SPOTS[saved.defenseSystem] || DEFENSE_SPOTS.perimeter;
+  if (saved.defenseSide === 'right') return base;
+  const flip = (spot) => ({ x: 100 - spot.x, y: spot.y });
+  return {
+    block: base.block.map(flip),
+    offBlocker: flip(base.offBlocker),
+    back: base.back.map(flip),
+  };
+}
+
+// Defense: the two front-row players nearest the ball put up the block, the
+// third pulls off to cover, and the back row takes the three dig spots.
+function assignDefense(onCourt, layout) {
+  const spots = defenseSpots();
+  const ballX = saved.defenseSide === 'right' ? 100 : 0;
+
+  const front = onCourt.filter(({ slot }) => FRONT_ROW_SLOTS.includes(slot));
+  const back = onCourt.filter(({ slot }) => BACK_ROW_SLOTS.includes(slot));
+
+  const byNearness = [...front].sort((a, b) =>
+    Math.abs(SLOT_POSITIONS[a.slot].x - ballX) - Math.abs(SLOT_POSITIONS[b.slot].x - ballX));
+
+  pairByX(byNearness.slice(0, 2), spots.block)
+    .forEach(([entry, spot]) => { layout[entry.player.id] = { ...spot }; });
+
+  byNearness.slice(2).forEach((entry) => {
+    layout[entry.player.id] = { ...spots.offBlocker };
+  });
+
+  pairByX(back, spots.back)
+    .forEach(([entry, spot]) => { layout[entry.player.id] = { ...spot }; });
+}
+
+// Generated positions for a formation and rotation, before any dragging.
+function defaultLayout(formation, rotation) {
+  const layout = {};
+  const onCourt = [];
+
+  saved.roster.forEach((player, index) => {
+    const slot = slotFor(index, rotation);
+    if (slot === null) {
+      layout[player.id] = benchPosition(index, rotation);
+    } else {
+      onCourt.push({ player, index, slot, role: roleFor(player, rotation) });
+    }
+  });
+
+  if (formation === 'receive') assignReceive(onCourt, layout);
+  else if (formation === 'defense') assignDefense(onCourt, layout);
+  else onCourt.forEach(({ player, slot }) => { layout[player.id] = { ...SLOT_POSITIONS[slot] }; });
+
   return layout;
 }
 
-function layoutFor(rotation) {
-  if (!saved.layouts[rotation]) {
-    saved.layouts[rotation] = defaultLayout(rotation);
-  }
-  return saved.layouts[rotation];
+// What to actually draw: generated defaults with your dragged positions layered
+// on top. Nothing is written here, which is why reading a rotation you've never
+// opened -- as the batch export does -- can't quietly create saved data.
+function positionsFor(formation, rotation) {
+  const dragged = saved.layouts[formation] && saved.layouts[formation][rotation];
+  return { ...defaultLayout(formation, rotation), ...(dragged || {}) };
+}
+
+// The bucket a drag writes into, created on demand.
+function draggedLayout(formation, rotation) {
+  if (!saved.layouts[formation]) saved.layouts[formation] = {};
+  if (!saved.layouts[formation][rotation]) saved.layouts[formation][rotation] = {};
+  return saved.layouts[formation][rotation];
 }
 
 // --- Undo -------------------------------------------------------------
@@ -389,13 +629,35 @@ function normaliseLineup(raw, fallbackName) {
     name: raw.name || fallbackName,
     system,
     roster,
-    layouts: raw.layouts && typeof raw.layouts === 'object' ? raw.layouts : {},
+    layouts: normaliseLayouts(raw.layouts),
     // Added in v0.8. Absent in every earlier save, hence the default rather
     // than a version bump -- an extra optional field breaks nothing.
     roleOverrides: raw.roleOverrides && typeof raw.roleOverrides === 'object'
       ? raw.roleOverrides : {},
     entrySlot: TRAVEL_ORDER.includes(raw.entrySlot) ? raw.entrySlot : 1,
+    passers: PASSER_COUNTS.includes(raw.passers) ? raw.passers : DEFAULT_PASSERS,
+    defenseSystem: DEFENSE_SPOTS[raw.defenseSystem] ? raw.defenseSystem : 'perimeter',
+    defenseSide: raw.defenseSide === 'left' ? 'left' : 'right',
   };
+}
+
+// Layouts used to be keyed by rotation number. From v0.11 they're keyed by
+// formation first, with rotations underneath. A save with numeric top-level keys
+// is therefore pre-v0.11, and everything in it was a base-formation layout.
+function normaliseLayouts(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return emptyLayouts();
+
+  const isOldShape = Object.keys(raw).some((key) => /^\d+$/.test(key));
+  if (isOldShape) return { ...emptyLayouts(), base: raw };
+
+  const layouts = emptyLayouts();
+  FORMATIONS.forEach((formation) => {
+    const byRotation = raw[formation];
+    if (byRotation && typeof byRotation === 'object' && !Array.isArray(byRotation)) {
+      layouts[formation] = byRotation;
+    }
+  });
+  return layouts;
 }
 
 function load() {
@@ -470,6 +732,55 @@ function buildZoneLabels() {
     label.style.top = `${position.y}%`;
     court.appendChild(label);
   });
+}
+
+function buildFormationButtons() {
+  const container = document.getElementById('formationButtons');
+  container.replaceChildren();
+  FORMATIONS.forEach((formation) => {
+    const button = document.createElement('button');
+    button.textContent = FORMATION_LABELS[formation];
+    button.addEventListener('click', () => setFormation(formation));
+    container.appendChild(button);
+  });
+}
+
+function syncFormationControls() {
+  [...document.getElementById('formationButtons').children].forEach((button, i) => {
+    button.classList.toggle('active', FORMATIONS[i] === currentFormation);
+  });
+
+  // Only show the options that apply to what you're looking at.
+  document.getElementById('receiveOptions').hidden = currentFormation !== 'receive';
+  document.getElementById('defenseOptions').hidden = currentFormation !== 'defense';
+
+  passersSelect.value = String(saved.passers);
+  defenseSystemSelect.value = saved.defenseSystem;
+  defenseSideSelect.value = saved.defenseSide;
+}
+
+function buildFormationOptionSelects() {
+  passersSelect.replaceChildren();
+  PASSER_COUNTS.forEach((count) => {
+    const option = document.createElement('option');
+    option.value = String(count);
+    option.textContent = count === 5 ? '5 (W)' : String(count);
+    passersSelect.appendChild(option);
+  });
+
+  defenseSystemSelect.replaceChildren();
+  Object.entries(DEFENSE_SYSTEM_LABELS).forEach(([key, label]) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = label;
+    defenseSystemSelect.appendChild(option);
+  });
+}
+
+function setFormation(formation) {
+  currentFormation = formation;
+  syncFormationControls();
+  render();
 }
 
 function buildRotationButtons() {
@@ -715,7 +1026,7 @@ function syncEntrySelect() {
 function changeLineup(mutate) {
   pushHistory();
   mutate();
-  saved.layouts = {};
+  saved.layouts = emptyLayouts();
   if (currentRotation > rotationCount()) currentRotation = 1;
   save();
   rebuild();
@@ -800,6 +1111,7 @@ function rebuild() {
   buildRotationButtons();
   buildRosterRows();
   syncSelects();
+  syncFormationControls();
   render();
   requestAnimationFrame(() => court.classList.add('animate'));
 }
@@ -807,11 +1119,11 @@ function rebuild() {
 // --- Drawing the current rotation -------------------------------------
 
 function render() {
-  const layout = layoutFor(currentRotation);
+  const layout = positionsFor(currentFormation, currentRotation);
 
   saved.roster.forEach((player, index) => {
     const el = playerElements[player.id];
-    const position = layout[player.id] || defaultPosition(index, currentRotation);
+    const position = layout[player.id];
     const slot = slotFor(index, currentRotation);
 
     // Setting left/top is all it takes to move a player. The CSS transition
@@ -839,7 +1151,7 @@ function render() {
   // No point drawing an empty bench strip when everyone's on court.
   court.classList.toggle('has-bench', rosterSize() > COURT_SPOTS);
 
-  statusLine.textContent = describeRotation();
+  statusLine.textContent = `${FORMATION_LABELS[currentFormation]} · ${describeRotation()}`;
 
   [...rotationButtons.children].forEach((button, index) => {
     button.classList.toggle('active', index + 1 === currentRotation);
@@ -948,7 +1260,7 @@ function endDrag() {
 
   // Write where they ended up into this rotation only. The others are
   // untouched.
-  layoutFor(currentRotation)[dragTarget.dataset.playerId] = {
+  draggedLayout(currentFormation, currentRotation)[dragTarget.dataset.playerId] = {
     x: parseFloat(dragTarget.style.left),
     y: parseFloat(dragTarget.style.top),
   };
@@ -1039,13 +1351,13 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
     ctx.setLineDash([]);
   }
 
-  // Read positions directly rather than through layoutFor(), which would write
+  // Generated plus dragged, same as the screen. Nothing is written, so exporting
   // default layouts into storage for rotations you've never actually opened.
-  const layout = saved.layouts[rotation];
+  const layout = positionsFor(currentFormation, rotation);
   const radius = EDGE * 0.115;
 
   saved.roster.forEach((player, index) => {
-    const position = (layout && layout[player.id]) || defaultPosition(index, rotation);
+    const position = layout[player.id];
     const role = roleFor(player, rotation);
     const { fill, text } = roleColours(role);
     const cx = (position.x / 100) * EDGE;
@@ -1135,10 +1447,12 @@ function exportImage() {
   const { canvas, ctx } = newCanvas(EDGE + pad * 2, tall + pad * 2);
   ctx.translate(pad, pad);
   drawRotation(ctx, currentRotation, EDGE, hasBench);
-  drawCaption(ctx, `${saved.name} — ${describeRotation(currentRotation)}`, EDGE,
-    tall + pad * 0.5);
+  drawCaption(ctx,
+    `${saved.name} — ${FORMATION_LABELS[currentFormation]} — ${describeRotation(currentRotation)}`,
+    EDGE, tall + pad * 0.5);
 
-  downloadCanvas(canvas, `${saved.name}-rotation-${currentRotation}`);
+  downloadCanvas(canvas,
+    `${saved.name}-${currentFormation}-rotation-${currentRotation}`);
 }
 
 // One contact sheet with every rotation, two across. Easier to use than a burst
@@ -1161,7 +1475,9 @@ function exportAllRotations() {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.font = `700 ${Math.round(EDGE * 0.06)}px -apple-system, system-ui, sans-serif`;
-  ctx.fillText(`${saved.name} — ${SYSTEMS[saved.system].name}`, pad, titleBand / 2);
+  ctx.fillText(
+    `${saved.name} — ${SYSTEMS[saved.system].name} — ${FORMATION_LABELS[currentFormation]}`,
+    pad, titleBand / 2);
 
   for (let rotation = 1; rotation <= rotationCount(); rotation++) {
     const col = (rotation - 1) % cols;
@@ -1173,7 +1489,7 @@ function exportAllRotations() {
     ctx.restore();
   }
 
-  downloadCanvas(canvas, `${saved.name}-all-rotations`);
+  downloadCanvas(canvas, `${saved.name}-${currentFormation}-all-rotations`);
 }
 
 function downloadCanvas(canvas, stemSource) {
@@ -1199,7 +1515,8 @@ undoButton.addEventListener('click', undo);
 
 document.getElementById('reset').addEventListener('click', () => {
   pushHistory();
-  saved.layouts[currentRotation] = defaultLayout(currentRotation);
+  // Deleting drops back to generated defaults, rather than freezing them in.
+  if (saved.layouts[currentFormation]) delete saved.layouts[currentFormation][currentRotation];
   save();
   render();
 });
@@ -1231,7 +1548,7 @@ function startHold() {
   holdTimer = setTimeout(() => {
     cancelHold();
     pushHistory();
-    saved.layouts = {};
+    saved.layouts = emptyLayouts();
     save();
     render();
   }, HOLD_MS);
@@ -1249,6 +1566,29 @@ holdButton.addEventListener('pointerleave', cancelHold);
 holdButton.addEventListener('pointercancel', cancelHold);
 
 document.getElementById('exportImage').addEventListener('click', exportImage);
+
+// Changing any of these changes what the generated positions are, so they push
+// history and redraw -- but they don't touch anything you've dragged.
+passersSelect.addEventListener('change', () => {
+  pushHistory();
+  saved.passers = Number(passersSelect.value);
+  save();
+  render();
+});
+
+defenseSystemSelect.addEventListener('change', () => {
+  pushHistory();
+  saved.defenseSystem = defenseSystemSelect.value;
+  save();
+  render();
+});
+
+defenseSideSelect.addEventListener('change', () => {
+  pushHistory();
+  saved.defenseSide = defenseSideSelect.value;
+  save();
+  render();
+});
 document.getElementById('exportAll').addEventListener('click', exportAllRotations);
 
 // Swiping across empty court changes rotation. A swipe that starts on a player
@@ -1335,6 +1675,8 @@ syncRosterButton();
 syncUndoButton();
 roleScopeSelect.value = store.roleScope;
 buildZoneLabels();
+buildFormationButtons();
+buildFormationOptionSelects();
 rebuild();
 
 // Write straight back after loading, so data saved by an older version gets

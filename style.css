@@ -272,6 +272,10 @@ body.hide-labels .player .label {
   background: #a8a8a8; /* 7.47:1 */
 }
 
+.role-L {
+  background: #7aad30; /* 6.64:1 */
+}
+
 /* --- Controls --------------------------------------------------------- */
 
 .status {
@@ -280,6 +284,51 @@ body.hide-labels .player .label {
   font-size: 0.9rem;
   color: #a9b2c6;
   min-height: 1.2em;
+}
+
+.formations {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.formations button {
+  font-size: 0.8rem;
+  padding: 0.7rem 0.2rem;
+}
+
+.formations button.active {
+  background: #f2f4f8;
+  border-color: #f2f4f8;
+  color: #16181d;
+}
+
+/* Only the options relevant to the current formation are shown, so this block
+   appears and disappears. Needs the [hidden] rule for the same reason the
+   roster panel does -- an author display rule outranks the browser's. */
+.formation-options {
+  display: grid;
+  gap: 0.4rem;
+  margin-bottom: 0.6rem;
+  padding: 0.6rem;
+  border: 1px solid #3a4152;
+  border-radius: 8px;
+}
+
+.formation-options[hidden] {
+  display: none;
+}
+
+.formation-options select {
+  font: inherit;
+  font-size: 16px; /* under 16px, iOS zooms the page when you tap in */
+  padding: 0.45rem;
+  border-radius: 6px;
+  border: 1px solid #3a4152;
+  background: #16181d;
+  color: #f2f4f8;
+  min-width: 0;
 }
 
 .rotations {
