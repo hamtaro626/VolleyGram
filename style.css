@@ -427,6 +427,14 @@ body.hide-labels .player .label {
   grid-template-columns: 1fr;
 }
 
+/* Three text labels across a 320px phone leaves about 100px a column, which is
+   narrower than a word-and-a-half at the default size. Dropped to the same
+   0.8rem the formation tabs use rather than letting the labels wrap. */
+.actions.compact button {
+  font-size: 0.8rem;
+  padding: 0.7rem 0.2rem;
+}
+
 /* --- Buttons ---------------------------------------------------------- */
 
 button {

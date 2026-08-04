@@ -804,7 +804,11 @@ function buildFormationButtons() {
 
 function syncFormationControls() {
   [...document.getElementById('formationButtons').children].forEach((button, i) => {
-    button.classList.toggle('active', FORMATIONS[i] === currentFormation);
+    const active = FORMATIONS[i] === currentFormation;
+    button.classList.toggle('active', active);
+    // Which tab is selected is carried by colour alone otherwise, which says
+    // nothing aloud. Same treatment as the Labels and roster toggles.
+    button.setAttribute('aria-pressed', String(active));
   });
 
   // Only show the options that apply to what you're looking at.
@@ -1575,7 +1579,8 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
   }
 
   // Generated plus dragged, same as the screen. Nothing is written, so exporting
-  // default layouts into storage for rotations you've never actually opened.
+  // can't quietly persist default layouts for rotations you've never opened --
+  // which is exactly what the old layoutFor() did, and why it's gone.
   const layout = positionsFor(currentFormation, rotation);
   const setterIds = new Set(settersThisRotation(rotation).map((e) => e.player.id));
   const radius = EDGE * 0.115;

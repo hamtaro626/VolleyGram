@@ -347,10 +347,164 @@ rectangles. Filenames get a `-transparent` suffix.
 The court lines are deliberately kept — they're what you line the diagram up
 against when compositing over real footage.
 
+## v0.13 — controls in thumb order
+
+The formation tabs moved up to sit directly under the court. Choosing between
+base, serve receive and defense is the thing this app is for, so it shouldn't be
+below two rows of buttons. Everything else fell in behind it, roughly in the
+order you reach for it: formation tabs, formation options, prev/next, undo and
+reset, then the rotation numbers.
+
+A base `button` rule came back into `style.css`, having gone missing somewhere
+around v0.12 — buttons were rendering as plain white iOS controls on a phone.
+`-webkit-appearance: none` is the part that matters: without it, Safari paints
+its own control styling straight over yours.
+
+### Redo, added and dropped
+
+Redo shipped in the first v0.13 commit and was gone by the second.
+`applySnapshot()` and `syncHistoryButtons()` went with it, collapsing back to the
+`undo()` and `syncUndoButton()` that are there now.
+
+Neither commit message records *why* it was dropped, which is a gap worth
+filling — a feature that was built and then deliberately removed is exactly the
+kind of decision this document exists to hold onto.
+
+## v0.14 — VolleyGram
+
+Named at last, after Rotato and VballPlan. The `<h1>` now carries both the name
+and what it is — "VolleyGram – A Volleyball Rotation Reference" — on a single
+line at any width, via `clamp(0.7rem, 3.3vw, 1.1rem)` plus `white-space: nowrap`.
+The `<title>` stays short, because tabs and home-screen shortcuts truncate. The
+lineup picker became "VolleyGram Name" rather than "Team/Rotation Name": one
+word for the thing the app makes.
+
+### The ring moved to the setter
+
+The ring used to mark the server. It now marks whoever is **setting** this
+rotation, and the server keeps the labelled pill on its own.
+
+Two rings on one court compete for attention, and of the two facts the setter is
+the one worth pointing at — which setter it is changes with the system and the
+rotation, whereas the server is always just whoever is in zone 1.
+
+`settersThisRotation()` feeds both the ring and the status line, so the diagram
+and the words under it can't drift apart. Exports draw the same ring from the
+same function.
+
+### Crimson for no role
+
+`#a8a8a8` grey → `#e8707f`.
+
+**This reverses v0.7**, which made unset deliberately neutral grey on the grounds
+that unset shouldn't look like a position. The reason recorded in the CSS is
+clearance: crimson is the last hue with real separation left, since green and
+cyan sit too close to the middle's teal and anything oranger runs into the court
+underneath. It lands 37° from the opposite's pink — the tightest pair on the
+court, and the reason `contrast.js` checks hue separation as well as contrast.
+
+What isn't recorded is why grey needed replacing at all. The two versions
+disagree in this document on purpose, until that's settled.
+
+### The quiz keeps the server visible
+
+The server is no longer hidden along with everyone else, and can no longer be
+the subject of the question. Knowing who's in zone 1 turns the question from
+blank recall into something you can reason out — and if the server *were* the
+answer, it would be sitting right there in plain view.
+
+## v0.15 — share links and Save to Photos
+
+### The link is the data
+
+The whole VolleyGram is packed into the URL itself, so sharing needs no server,
+no accounts and no database. The app stays three static files on GitHub Pages.
+
+The payload rides in the **hash** (`#g=…`) rather than a query string, which
+means it is never sent to GitHub's servers — fragments stay in the browser.
+Encoding is URL-safe base64: `+`, `/` and `=` all mean something inside a URL, so
+they're swapped out. `TextEncoder` runs first, because `btoa` can't handle a name
+with an accent or an emoji in it.
+
+This only works because `layouts` stores dragged positions and nothing else. An
+untouched VolleyGram carries no coordinates at all, so a typical link is around
+800 characters rather than tens of kilobytes. Past 8000 the app refuses and says
+so, rather than handing out a link that arrives truncated.
+
+Opening a shared link **adds** a VolleyGram. It must never overwrite what the
+person already has. The hash is cleared either way once it's been read, so a
+refresh can't import a second copy and a broken link can't fail twice.
+
+### Save to Photos
+
+A plain `<a download>` is the desktop path, and on iOS it drops the file into
+Files — there's no way to reach the camera roll from a download. The share sheet
+can: it offers "Save Image", plus Messages and AirDrop, which is what you
+actually want courtside. So `saveCanvas()` tries `navigator.share({ files })`
+first and falls back to downloading.
+
+A cancelled share sheet rejects the same way an unavailable one does, so the
+fallback deliberately does *not* fire on failure. Downloading the file after
+someone taps Cancel would be worse than doing nothing.
+
+### `.setting` was matching the player circles
+
+The setter ring's class is `is-setter`, not `setting`. A bare `.setting` rule
+further down the stylesheet styles the roster panel's labelled rows, and it
+happily matched the player circles too — greying the name, forcing it onto one
+line with the role, and resizing it. `migration.js` now checks that no class
+used on a player is also a bare CSS selector.
+
+## v0.16 — a tap is not a drag
+
+### Tapping a player used to pin it
+
+`endDrag()` wrote into the saved layout unconditionally, so merely *touching* a
+player converted its generated position into a dragged one. Dragged always beats
+generated, so that player then stopped responding to the passer count and the
+defensive system — a stray tap courtside quietly broke the formation it landed
+on, and cost an undo step for nothing.
+
+Dragging now needs 3px of travel (`DRAG_MIN`) before it moves anything, pushes
+history or saves. `pushHistory()` moved from `startDrag()` to the first
+qualifying `onDrag()`, so a tap costs neither a stored position nor an undo step.
+Same reasoning as `applyRosterOrder()`, which already refused to act on a reorder
+that reordered nothing.
+
+### Coordinates are checked, not trusted
+
+Dragged coordinates arrive from localStorage and from share links, both of which
+anyone can hand-edit. They were copied into the store unchecked. A `null`
+position survived the spread in `positionsFor()` and threw on `position.x` in
+`render()`, white-screening the app before it drew anything — reachable by
+anyone who could get a link tapped, not just via devtools.
+
+`normalisePositions()` now requires finite numbers and clamps them to the same
+bounds a live drag is held to, so a hand-edited value can't park someone off the
+edge of the diagram where they can't be grabbed back. Out-of-range numbers are
+clamped rather than dropped: the coordinate was real, so the player is pulled
+back onto the court instead of snapping to wherever the formation would have
+generated for them. `normaliseRotations()` drops non-numeric rotation keys and
+empty buckets, which were dead weight in every save and every share link.
+
+### Housekeeping
+
+- **Buttons regrouped.** Five stacked rows below the rotation numbers became
+  three: Labels / Save image / Share, then Quiz Mode / Show roster, then Hold to
+  reset all — last and alone, since it's the one control you least want a thumb
+  to find by accident. Three text labels across a 320px phone need the same
+  0.8rem the formation tabs use, hence `.actions.compact`.
+- **Formation tabs carry `aria-pressed`.** Which tab is selected was conveyed by
+  colour alone, which says nothing aloud.
+- `?v=` cache busting on both `style.css` and `script.js`, asserted by a test to
+  stay in step. Bump it on any release that touches either file, or phones will
+  go on serving themselves the previous version.
+
 ## Tests
 
 ```
-node test/migration.js    # 255 checks — storage, migration, roles, formations, quiz
+node test/migration.js    # 370 checks — storage, migration, roles, formations,
+                          #   quiz, sharing, dragging
 node test/contrast.js     # colour contrast and hue separation
 ```
 
@@ -360,26 +514,45 @@ during v0.10 from a mis-written escape; it ran fine but made the file binary to
 
 `migration.js` boots the real `script.js` against a stubbed DOM, so it tests the
 shipped code rather than a copy of the logic. Covers every historical shape,
-round-tripping, missing `activeId`, Simple mode, and nine kinds of corrupt input.
+round-tripping, missing `activeId`, Simple mode, nine kinds of corrupt input, and
+hand-edited coordinates arriving from a share link.
 
 `contrast.js` parses the colours straight out of `style.css` for the same reason
 — a hand-copied palette in the test would drift from the real one.
 
 ## Planned next
 
-**Formation presets** — base / serve receive / defense per rotation. Needs a
-real table of serve-receive positions per system, not a formula.
+Nothing committed. The old entry here — formation presets, base / serve receive
+/ defense per rotation — was delivered by v0.11, generated rather than tabulated.
 
 ## Still does NOT do — on purpose
 
-These are all good ideas. They are not next.
+- **Overlap-legality checking.** The app will happily draw a formation that
+  would be whistled. Base positions are legal by construction; anything you drag
+  is on you.
+- **Real libero substitution.** The role exists and passes and digs, but
+  swapping a libero for a middle rotating to the back row isn't modelled.
+- **A serve-receive table per system.** Receive and defense are computed from
+  who's on court and what they play, on purpose — see v0.11. A table would be
+  more authoritative and would break the moment there are seven players, a
+  reordered lineup, or a per-rotation role override.
+- **Any backend.** No accounts, no database, no sync. Sharing is a link that
+  carries its own data; saving is localStorage. Three static files, and it stays
+  that way.
+- **Redo.** Built in v0.13 and removed in the same version. Undo is 40 deep.
 
-- Serve receive formations
-- Defensive formations
-- The setter's switch to the setting position after contact
-- Overlap-legality checking
-- Reordering the lineup (who starts in which slot)
-- Multiple teams or saved lineups
-- Sharing a diagram with someone else
-- 5-1 or 6-2 systems
-- Export to image
+### Delivered — do not re-plan these
+
+This list used to say these were out of scope. They shipped, and the list went
+three versions without being corrected. Kept here so it isn't re-decided:
+
+| Once "not doing" | Delivered |
+|------------------|-----------|
+| Serve receive formations | v0.11 |
+| Defensive formations | v0.11 |
+| The setter's switch after contact | v0.11 |
+| Reordering the lineup | v0.4, by drag in v0.10 |
+| Multiple teams or saved lineups | v0.6 |
+| Sharing a diagram with someone else | v0.15 |
+| 5-1 and 6-2 systems | v0.5 |
+| Export to image | v0.8 |

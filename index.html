@@ -12,7 +12,7 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.16">
+  <link rel="stylesheet" href="style.css?v=0.17">
 </head>
 <body>
   <main>
@@ -82,27 +82,26 @@
       <!-- The rotation buttons get created by script.js -->
     </div>
 
-    <div class="actions two">
+    <!-- Getting the diagram out of the app: look at it, save it, send it.
+         Three across needs the smaller type, same as the formation tabs. -->
+    <div class="actions compact">
       <button id="toggleLabels" aria-pressed="true">Labels: on</button>
-      <button id="exportImage">Save as image</button>
+      <button id="exportImage">Save image</button>
+      <button id="shareLink">Share</button>
     </div>
 
-    <div class="actions one">
-      <button id="shareLink">Share this VolleyGram</button>
+    <!-- The two panels that take over the screen. -->
+    <div class="actions two">
+      <button id="startQuiz">Quiz Mode</button>
+      <button id="toggleRoster" aria-expanded="false">Show roster</button>
     </div>
 
+    <!-- Last, and alone. It's the one control you least want a thumb to find by
+         accident, so nothing sits beside it and nothing follows it. -->
     <div class="actions one">
       <button id="resetAll" class="hold-reset danger">
         <span>Hold to reset all</span>
       </button>
-    </div>
-
-    <div class="actions one">
-      <button id="startQuiz">Quiz Mode</button>
-    </div>
-
-    <div class="actions one">
-      <button id="toggleRoster" aria-expanded="false">Show roster</button>
     </div>
 
     <section class="quiz" id="quiz" hidden>
@@ -152,6 +151,6 @@
     </section>
   </main>
 
-  <script src="script.js?v=0.16"></script>
+  <script src="script.js?v=0.17"></script>
 </body>
 </html>
