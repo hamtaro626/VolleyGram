@@ -260,6 +260,25 @@ function rosterFromSystem(key) {
   });
 }
 
+// --- Which build is this ----------------------------------------------
+//
+// Read out of this script's own URL rather than kept in a constant beside it,
+// so the number in the corner can't drift from the ?v= that actually served the
+// file. That also makes it answer the more useful question: if a phone is still
+// holding a cached index.html, the corner reports the *old* version, which is
+// exactly what you want to know when someone says the fix didn't land.
+function versionFrom(src) {
+  const match = String(src || '').match(/[?&]v=([\w.]+)/);
+  // Opened straight off the filesystem, or served without a ?v= -- say so
+  // rather than inventing a number.
+  return match ? match[1] : 'dev';
+}
+
+// document.currentScript only has a value while this script is first running,
+// which is now. Reading it later would give null.
+const APP_VERSION = versionFrom(
+  (typeof document !== 'undefined' && document.currentScript && document.currentScript.src) || '');
+
 const STORAGE_KEY = 'volleyball-rotations-v1';
 
 // Bumped when the saved shape changes. Version 2 wrapped what used to be a
@@ -1648,13 +1667,29 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
 }
 
 // Captions let the image explain itself once it's out of the app and sitting in
-// a camera roll or a Premiere bin.
-function drawCaption(ctx, line, EDGE, y) {
+// a camera roll or a Premiere bin. `width` is narrowed when something else is
+// sharing the line, so a long lineup name can't run underneath it.
+function drawCaption(ctx, line, EDGE, y, width = EDGE) {
   ctx.fillStyle = '#a9b2c6';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.font = `600 ${Math.round(EDGE * 0.026)}px -apple-system, system-ui, sans-serif`;
-  ctx.fillText(line, 0, y, EDGE);
+  ctx.fillText(line, 0, y, width);
+}
+
+// A diagram that's been AirDropped, texted or dropped into a video edit has left
+// the app behind and can no longer say where it came from. This is the only
+// thing that does. Right-aligned opposite the caption and dimmer than it, so it
+// reads as a signature rather than competing with the court above it.
+//
+// Drawn once per exported file, not once per court -- a contact sheet of six
+// rotations wants one mark, not six.
+function drawWatermark(ctx, EDGE, x, y) {
+  ctx.fillStyle = '#8791a8';
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  ctx.font = `700 ${Math.round(EDGE * 0.026)}px -apple-system, system-ui, sans-serif`;
+  ctx.fillText('VolleyGram', x, y);
 }
 
 function newCanvas(width, height) {
@@ -1680,9 +1715,13 @@ function exportImage() {
   const { canvas, ctx } = newCanvas(EDGE + pad * 2, tall + pad * 2);
   ctx.translate(pad, pad);
   drawRotation(ctx, currentRotation, EDGE, hasBench);
+  // Caption and watermark share the line under the court, so the caption gives
+  // up the right quarter of it.
+  const captionY = tall + pad * 0.5;
   drawCaption(ctx,
     `${saved.name} — ${FORMATION_LABELS[currentFormation]} — ${describeRotation(currentRotation)}`,
-    EDGE, tall + pad * 0.5);
+    EDGE, captionY, EDGE * 0.74);
+  drawWatermark(ctx, EDGE, EDGE, captionY);
 
   const alpha = store.transparentExport ? '-transparent' : '';
   saveCanvas(canvas,
@@ -1709,9 +1748,12 @@ function exportAllRotations() {
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
   ctx.font = `700 ${Math.round(EDGE * 0.06)}px -apple-system, system-ui, sans-serif`;
+  // The title shares the band with the watermark, same as the caption does on a
+  // single export.
   ctx.fillText(
     `${saved.name} — ${SYSTEMS[saved.system].name} — ${FORMATION_LABELS[currentFormation]}`,
-    pad, titleBand / 2);
+    pad, titleBand / 2, canvas.width - pad * 2 - EDGE * 0.3);
+  drawWatermark(ctx, EDGE, canvas.width - pad, titleBand / 2);
 
   for (let rotation = 1; rotation <= rotationCount(); rotation++) {
     const col = (rotation - 1) % cols;
@@ -2047,6 +2089,8 @@ function syncLabelsButton() {
 }
 
 // --- Start it up ------------------------------------------------------
+
+document.getElementById('version').textContent = `v${APP_VERSION}`;
 
 load();
 importFromUrl();

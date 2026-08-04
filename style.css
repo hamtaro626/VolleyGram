@@ -435,6 +435,22 @@ body.hide-labels .player .label {
   padding: 0.7rem 0.2rem;
 }
 
+/* --- Version marker --------------------------------------------------- */
+
+/* Small, dim, and pinned to the corner so it's readable without scrolling the
+   whole column. pointer-events: none so it can never swallow a tap meant for
+   whatever sits underneath it. */
+.version {
+  position: fixed;
+  right: 0.4rem;
+  bottom: 0.3rem;
+  margin: 0;
+  font-size: 0.65rem;
+  font-variant-numeric: tabular-nums;
+  color: #6f7891;
+  pointer-events: none;
+}
+
 /* --- Buttons ---------------------------------------------------------- */
 
 button {

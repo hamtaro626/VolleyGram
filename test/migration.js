@@ -115,7 +115,7 @@ function boot(seedJson, seedHash) {
       movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer,
       startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory,
       settersThisRotation, shareUrl, encodeLineup, decodeLineup, importFromUrl,
-      startDrag, onDrag, endDrag };
+      startDrag, onDrag, endDrag, versionFrom };
     globalThis.__players = () => playerElements;
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
@@ -1236,6 +1236,38 @@ console.log('\n36. Corrupt coordinates never reach the renderer');
   check('and the bad position never made it into the store',
     Object.keys(victim.peek().saved.layouts.base).length === 0,
     JSON.stringify(victim.peek().saved.layouts.base));
+}
+
+console.log('\n37. The version marker reads its own script URL');
+{
+  const app = boot(undefined);
+  const v = app.call.versionFrom;
+
+  check('reads ?v= from a served URL',
+    v('https://x.test/app/script.js?v=0.18') === '0.18');
+  check('reads it when other params come first',
+    v('https://x.test/app/script.js?debug=1&v=0.18') === '0.18');
+  check('dotted versions survive whole', v('script.js?v=1.10.2') === '1.10.2');
+  // Opened off the filesystem, which is a real way to run this app.
+  check('no query means dev', v('file:///Users/x/script.js') === 'dev');
+  check('empty and missing sources mean dev',
+    v('') === 'dev' && v(null) === 'dev' && v(undefined) === 'dev');
+  // A ?v= belonging to some other parameter must not be picked up.
+  check('a lookalike param is not mistaken for the version',
+    v('script.js?rev=9') === 'dev', v('script.js?rev=9'));
+
+  // The marker must say something, whatever happened above.
+  check('the corner is never left blank',
+    app.document.getElementById('version').textContent.length > 1,
+    app.document.getElementById('version').textContent);
+
+  // index.html and the marker have to agree, or the number in the corner is
+  // worse than no number at all.
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const served = (html.match(/script\.js\?v=([\w.]+)/) || [])[1];
+  check('index.html serves script.js with a version', Boolean(served), served);
+  check('and that is what the marker would show',
+    v(`script.js?v=${served}`) === served, `${served}`);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

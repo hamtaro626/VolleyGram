@@ -487,38 +487,140 @@ back onto the court instead of snapping to wherever the formation would have
 generated for them. `normaliseRotations()` drops non-numeric rotation keys and
 empty buckets, which were dead weight in every save and every share link.
 
-### Housekeeping
+### Cache busting
 
-- **Buttons regrouped.** Five stacked rows below the rotation numbers became
-  three: Labels / Save image / Share, then Quiz Mode / Show roster, then Hold to
-  reset all — last and alone, since it's the one control you least want a thumb
-  to find by accident. Three text labels across a 320px phone need the same
-  0.8rem the formation tabs use, hence `.actions.compact`.
-- **Formation tabs carry `aria-pressed`.** Which tab is selected was conveyed by
-  colour alone, which says nothing aloud.
-- `?v=` cache busting on both `style.css` and `script.js`, asserted by a test to
-  stay in step. Bump it on any release that touches either file, or phones will
-  go on serving themselves the previous version.
+`?v=` on both `style.css` and `script.js`, with a test asserting the two stay in
+step. Bump it on any release that touches either file, or phones that already
+have VolleyGram open will go on serving themselves the previous version — which
+looks exactly like a fix that didn't work.
+
+## v0.17 — fewer button rows
+
+### The stack below the court was getting long
+
+Five separate rows of buttons sat under the rotation numbers, each its own
+`.actions` block, and every version had added one. Now three:
+
+| Row | Buttons |
+|-----|---------|
+| 1 | Labels · Save image · Share |
+| 2 | Quiz Mode · Show roster |
+| 3 | Hold to reset all |
+
+Grouped by what they're for: get the diagram out of the app, open a panel that
+takes over the screen, and then the destructive one. **Hold to reset all moved
+last and stays alone** — it's the control you least want a thumb to find on the
+way past, so nothing sits beside it and nothing follows it.
+
+Two labels shrank to fit three across: "Save as image" became "Save image" and
+"Share this VolleyGram" became "Share". Three columns on a 320px phone leaves
+about 100px each, which is narrower than a word and a half at the default size,
+so `.actions.compact` drops to the same 0.8rem the formation tabs already use
+rather than letting the labels wrap.
+
+### Smaller things
+
+- **Formation tabs carry `aria-pressed`.** Which tab was selected had been
+  conveyed by colour alone, which says nothing aloud. Set in
+  `syncFormationControls()` next to the `active` class, so the two can't drift.
+- A mangled comment in `drawRotation()` — an edit had dropped a clause and left
+  a sentence that didn't parse. The same thought is stated correctly on
+  `positionsFor()`.
+- **This document caught up.** v0.13, v0.14 and v0.15 had shipped undocumented,
+  and the "Still does NOT do" list was claiming seven delivered features were out
+  of scope. Reconstructed from the commit diffs rather than the commit subjects,
+  which turned out to matter: the v0.12 quiz work actually shipped inside the
+  commit titled "v0.13: redo support, reordered controls".
+
+## v0.18 — version marker and a watermark
+
+### The version, in the corner
+
+A small `v0.18` pinned bottom-right, dim and `pointer-events: none` so it can
+never swallow a tap.
+
+The number is **read out of this script's own URL** — `document.currentScript.src`,
+parsed by `versionFrom()` — rather than kept in a constant beside it. A constant
+would be a third place the version lives and a third place it can drift.
+
+More usefully, reading the served URL makes the marker answer the question you
+actually have. `index.html` carries no cache buster of its own, so it's the file
+most likely to be stale on a phone. If a phone is holding an old `index.html`, it
+requests the old `script.js?v=`, and the corner reports the **old** number —
+which is exactly what you want to see when someone says a fix didn't land.
+
+Falls back to `dev` when there's no `?v=`, which is what you get opening the file
+straight off the filesystem.
+
+### Watermark on exports
+
+`drawWatermark()` puts a small "VolleyGram" on every exported image,
+right-aligned opposite the caption and dimmer than it, so it signs the diagram
+rather than competing with the court.
+
+Drawn **once per file, not once per court** — a contact sheet of six rotations
+wants one mark, not six. So it's called from `exportImage()` and
+`exportAllRotations()` rather than from the shared `drawRotation()`, which is the
+opposite of where the setter ring and zone numbers live.
+
+The caption and the contact sheet's title now take an explicit width, since
+they're sharing a line with the mark and a long lineup name would otherwise run
+underneath it.
+
+It draws on transparent exports too. Like the court lines, it's ink rather than
+background — a diagram composited over real footage is precisely the one most
+likely to travel without the app attached.
 
 ## Tests
 
 ```
-node test/migration.js    # 370 checks — storage, migration, roles, formations,
+node test/migration.js    # 379 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging
 node test/contrast.js     # colour contrast and hue separation
 ```
+
+Both suites live in `test/`. The name is only convention — nothing requires it,
+and no runner is scanning for it. Plain Node scripts with no dependencies, so
+there's nothing to install and nothing to keep up to date.
+
+### Both read the real source files
+
+This is the rule worth keeping. Neither suite contains a copy of what it's
+testing:
+
+- `migration.js` reads `script.js` off disk and runs it, so it exercises the
+  shipped code rather than a re-implementation that can quietly disagree with it.
+- `contrast.js` parses the colours straight out of `style.css`, so the palette
+  it checks is the palette that ships.
+
+A test holding its own copy of the thing it tests will eventually pass while the
+app is broken — the copy and the original drift, and the test goes on checking
+the copy. Both of these fail instead, which is the point.
 
 `migration.js` also asserts no source file contains a NUL byte. One slipped in
 during v0.10 from a mis-written escape; it ran fine but made the file binary to
 `grep`, `git diff` and editor search.
 
-`migration.js` boots the real `script.js` against a stubbed DOM, so it tests the
-shipped code rather than a copy of the logic. Covers every historical shape,
-round-tripping, missing `activeId`, Simple mode, nine kinds of corrupt input, and
-hand-edited coordinates arriving from a share link.
+Coverage runs to every historical storage shape, round-tripping, missing
+`activeId`, Simple mode, nine kinds of corrupt input, and hand-edited coordinates
+arriving from a share link.
 
-`contrast.js` parses the colours straight out of `style.css` for the same reason
-— a hand-copied palette in the test would drift from the real one.
+### The stubbed DOM
+
+`script.js` expects a browser: `document`, `localStorage`, `navigator`, a court
+element to draw into. Node has none of that, so `boot()` hands the script a set
+of fake objects with the same shape — `getElementById` returns an object with a
+`style`, a `classList`, an `appendChild`, and so on.
+
+The app can't tell the difference, so it runs normally and the test can read its
+state afterwards. Nothing is drawn and nothing is displayed, which is fine: the
+questions being asked are about the *logic* — who ends up in which zone, what a
+corrupt save turns into — not about pixels.
+
+The limit is worth knowing. A stub only fakes what someone thought to fake, so
+these tests can't catch anything about real layout or rendering: whether three
+buttons fit across a phone, whether a colour looks right, whether a drag feels
+sluggish. Those still need a real browser and a real thumb.
 
 ## Planned next
 
