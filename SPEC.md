@@ -571,10 +571,97 @@ It draws on transparent exports too. Like the court lines, it's ink rather than
 background — a diagram composited over real footage is precisely the one most
 likely to travel without the app attached.
 
+## v0.19 — overlap legality
+
+### The rule
+
+FIVB 7.4: at the moment the ball is hit by the server, every player must hold
+their rotational order relative to their neighbours.
+
+- **Laterally:** 4 left of 3, 3 left of 2; 5 left of 6, 6 left of 1
+- **By column:** 4 ahead of 5, 3 ahead of 6, 2 ahead of 1
+
+Only *adjacent* pairs are compared. Zone 4 against zone 2 isn't a rule — it
+follows from the two lateral checks. Standing exactly level is legal: the rule is
+about crossing a neighbour, and a diagram that cried wolf over a hair's
+difference would be worse than useless.
+
+The app doesn't model which team is serving, so all six checks apply uniformly.
+In the real rule the server is exempt from being *inside* the court, which this
+doesn't attempt to represent.
+
+### Base only, on purpose
+
+Running the rule against the app's own generated formations before building
+anything gave the reason:
+
+| System | Base | Serve receive |
+|--------|------|---------------|
+| 4-2 | 0 violations | 4 |
+| 5-1 | 0 | 8 |
+| 6-2 | 0 | 12 |
+| Simple | 0 | 10 |
+
+Base is clean everywhere — legal by construction, since the positions *are* the
+zones. Serve receive breaks the rule in every system, and every breach is
+lateral, because v0.11 places front-row players by role: middle to the middle,
+outside to the left pin, whatever zone they rotated in from. That crossing is the
+switch, and a switch made before the serve is contacted is exactly what an
+overlap violation is.
+
+So the receive view is drawing the moment *after* contact. Checking it would
+flag the app's own defaults in every rotation of every system, which reads as a
+broken app rather than an early switch. Defense is further past contact still,
+when the rule has stopped applying at all.
+
+That leaves base — where every flag is something **you** dragged, which is the
+mistake worth catching. `test/migration.js` now asserts base is legal across all
+four systems, all six rotations, and two entry zones, so the invariant can't
+rot quietly.
+
+### Surfacing
+
+Off by default, toggled from the roster panel beside the transparent-export
+checkbox — no new row in the main column.
+
+When on and base is showing, offending players get a dashed red **outline** and
+the status line reports the count. An outline rather than another box-shadow: the
+setter ring already owns box-shadow and two rings on one circle would fight.
+
+The status line says `overlap legal` when the court is clean, not just when it
+isn't — otherwise a legal court is indistinguishable from the check being off.
+Each flagged player's tooltip names the specific rule, since a red ring alone
+doesn't say which way to drag.
+
+`checkOverlap` defaults to `false`, so older saves need no version bump.
+
+### `endDrag()` has to redraw now
+
+`endDrag()` never called `render()`. It didn't need to: `onDrag()` had already
+moved the circle, so there was nothing left to update, and skipping the redraw
+kept a drag cheap.
+
+Overlap checking broke that assumption. The marks and the status count are worked
+out **inside** `render()`, from where the player just landed — so without a
+redraw a breach stayed invisible until something else triggered one. Changing
+rotation did, which made it look like violations only appeared after rotating
+away and back.
+
+Worth remembering when adding anything else that reads positions: **whatever
+mutates a layout has to redraw**, even when the pixels already look right. The
+guard is in `test/migration.js` §39, which drags a player into a breach and
+asserts the status line updates without any manual `render()` call.
+
+### Tab order
+
+Formation tabs are now Base · Defense · Serve receive. Purely presentational —
+everything reading `FORMATIONS` iterates or indexes into it, so storage is
+untouched.
+
 ## Tests
 
 ```
-node test/migration.js    # 379 checks — storage, migration, roles, formations,
+node test/migration.js    # 401 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging
 node test/contrast.js     # colour contrast and hue separation
 ```
@@ -627,11 +714,8 @@ sluggish. Those still need a real browser and a real thumb.
 Nothing committed. The old entry here — formation presets, base / serve receive
 / defense per rotation — was delivered by v0.11, generated rather than tabulated.
 
-## Still does NOT do — on purpose
+## Still does NOT do
 
-- **Overlap-legality checking.** The app will happily draw a formation that
-  would be whistled. Base positions are legal by construction; anything you drag
-  is on you.
 - **Real libero substitution.** The role exists and passes and digs, but
   swapping a libero for a middle rotating to the back row isn't modelled.
 - **A serve-receive table per system.** Receive and defense are computed from
@@ -658,3 +742,4 @@ three versions without being corrected. Kept here so it isn't re-decided:
 | Sharing a diagram with someone else | v0.15 |
 | 5-1 and 6-2 systems | v0.5 |
 | Export to image | v0.8 |
+| Overlap-legality checking | v0.19, base only |

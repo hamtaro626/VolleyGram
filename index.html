@@ -12,7 +12,7 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.18">
+  <link rel="stylesheet" href="style.css?v=0.19">
 </head>
 <body>
   <main>
@@ -142,6 +142,11 @@
         <span>Transparent background in exports</span>
       </label>
 
+      <label class="setting toggle">
+        <input type="checkbox" id="checkOverlap">
+        <span>Flag overlap violations (base only)</span>
+      </label>
+
       <div class="lineup-actions">
         <button id="newLineup">New lineup</button>
         <button id="duplicateLineup">Duplicate</button>
@@ -155,6 +160,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.18"></script>
+  <script src="script.js?v=0.19"></script>
 </body>
 </html>

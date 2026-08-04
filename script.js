@@ -71,7 +71,9 @@ const SERVE_SLOT = 1; // zone 1 serves
 // the moment there are seven players, a reordered lineup, or a per-rotation role
 // override -- all of which this app allows. Drag fixes anything they get wrong.
 
-const FORMATIONS = ['base', 'receive', 'defense'];
+// Tab order. Purely presentational -- everything that reads this iterates or
+// indexes into it, so the order can change without touching storage.
+const FORMATIONS = ['base', 'defense', 'receive'];
 
 const FORMATION_LABELS = {
   base: 'Base',
@@ -152,6 +154,23 @@ const DEFENSE_SYSTEM_LABELS = {
   perimeter: 'Perimeter',
   rotation: 'Rotation / 6-up',
 };
+
+// --- Overlap legality -------------------------------------------------
+//
+// FIVB 7.4: at the moment the ball is hit by the server, every player must hold
+// their rotational order relative to their neighbours.
+//
+// Only *adjacent* pairs are compared, and only these. Zone 4 against zone 2 is
+// not a rule -- it just follows from 4 being left of 3 and 3 being left of 2.
+//
+// Judged on **base positions only**, deliberately. Serve receive draws the
+// front-row switch, which happens after the serve is contacted and is illegal
+// before it, so checking it would flag the app's own defaults in every rotation.
+// Defense is after the ball is in play, when the rule has stopped applying at
+// all. Base is legal by construction, which means anything flagged there is
+// something you dragged -- and that's the mistake worth catching.
+const OVERLAP_LATERAL = [[4, 3], [3, 2], [5, 6], [6, 1]];
+const OVERLAP_COLUMN = [[4, 5], [3, 6], [2, 1]];
 
 // --- Quiz -------------------------------------------------------------
 //
@@ -319,6 +338,7 @@ let store = {
   showLabels: true,
   roleScope: 'all',      // whether a role edit hits every rotation or just this one
   transparentExport: false,
+  checkOverlap: false,   // flag base positions that break rotational order
 };
 
 // A live reference into store.lineups, so the rest of the code can go on
@@ -564,6 +584,43 @@ function positionsFor(formation, rotation) {
   return { ...defaultLayout(formation, rotation), ...(dragged || {}) };
 }
 
+// Every rule the base layout breaks this rotation, as { ids, message }. Empty
+// means legal.
+//
+// Reads the same positions render() draws -- generated defaults with your drags
+// layered on top -- so what gets marked on the court is what's actually there,
+// not what the rulebook says should be.
+//
+// Exactly level counts as legal. The rule is about crossing a neighbour, and a
+// diagram that cried wolf over a hair's difference would be worse than useless.
+function overlapViolations(rotation = currentRotation) {
+  const layout = positionsFor('base', rotation);
+  const byZone = {};
+
+  saved.roster.forEach((player, index) => {
+    const zone = slotFor(index, rotation);
+    if (zone !== null) byZone[zone] = { id: player.id, ...layout[player.id] };
+  });
+
+  const found = [];
+
+  OVERLAP_LATERAL.forEach(([left, right]) => {
+    const a = byZone[left];
+    const b = byZone[right];
+    if (!a || !b || a.x <= b.x) return;
+    found.push({ ids: [a.id, b.id], message: `Zone ${left} must stay left of zone ${right}` });
+  });
+
+  OVERLAP_COLUMN.forEach(([front, back]) => {
+    const a = byZone[front];
+    const b = byZone[back];
+    if (!a || !b || a.y <= b.y) return;
+    found.push({ ids: [a.id, b.id], message: `Zone ${front} must stay in front of zone ${back}` });
+  });
+
+  return found;
+}
+
 // The bucket a drag writes into, created on demand.
 function draggedLayout(formation, rotation) {
   if (!saved.layouts[formation]) saved.layouts[formation] = {};
@@ -767,6 +824,8 @@ function load() {
       showLabels: parsed.showLabels !== false,
       roleScope: parsed.roleScope === 'rotation' ? 'rotation' : 'all',
       transparentExport: parsed.transparentExport === true,
+      // Added in v0.19. Defaults off, so an older save needs no version bump.
+      checkOverlap: parsed.checkOverlap === true,
     };
     saved = store.lineups[store.activeId];
   } catch (error) {
@@ -1202,6 +1261,15 @@ function render() {
   const layout = positionsFor(currentFormation, currentRotation);
   const setterIds = new Set(settersThisRotation(currentRotation).map((e) => e.player.id));
 
+  // Only base is checked -- see OVERLAP_LATERAL for why. On the other two tabs
+  // the marks would be describing positions that aren't on screen.
+  const checking = store.checkOverlap && currentFormation === 'base';
+  const violations = checking ? overlapViolations(currentRotation) : [];
+  const problems = {};
+  violations.forEach(({ ids, message }) => {
+    ids.forEach((id) => { (problems[id] = problems[id] || []).push(message); });
+  });
+
   saved.roster.forEach((player, index) => {
     const el = playerElements[player.id];
     const position = layout[player.id];
@@ -1220,6 +1288,7 @@ function render() {
     if (slot === null) el.classList.add('benched');
     if (slot === SERVE_SLOT) el.classList.add('serving');
     if (setterIds.has(player.id)) el.classList.add('is-setter');
+    if (problems[player.id]) el.classList.add('illegal');
 
     el.querySelector('.name').textContent = displayName(player);
     el.querySelector('.label').textContent = roleBadge(role);
@@ -1228,12 +1297,23 @@ function render() {
     el.title = slot === null
       ? `${displayName(player)} — ${prefix}off court`
       : `${displayName(player)} — ${prefix}zone ${slot}${slot === SERVE_SLOT ? ', serving' : ''}`;
+    // Which rule, on the player it applies to -- a red ring alone doesn't say
+    // what's wrong or which way to drag.
+    if (problems[player.id]) el.title += ` — ${problems[player.id].join('; ')}`;
   });
 
   // No point drawing an empty bench strip when everyone's on court.
   court.classList.toggle('has-bench', rosterSize() > COURT_SPOTS);
 
-  statusLine.textContent = `${FORMATION_LABELS[currentFormation]} · ${describeRotation()}`;
+  // Saying "overlap legal" out loud matters as much as flagging a breach --
+  // otherwise a clean court is indistinguishable from the check being off.
+  const overlapNote = !checking ? ''
+    : violations.length === 0
+      ? ' · overlap legal'
+      : ` · ${violations.length} overlap issue${violations.length === 1 ? '' : 's'}`;
+
+  statusLine.textContent =
+    `${FORMATION_LABELS[currentFormation]} · ${describeRotation()}${overlapNote}`;
 
   [...rotationButtons.children].forEach((button, index) => {
     button.classList.toggle('active', index + 1 === currentRotation);
@@ -1372,7 +1452,9 @@ function endDrag() {
   // because a dragged position always beats a generated one. Same reasoning as
   // applyRosterOrder(), which refuses to act on a reorder that reordered
   // nothing.
-  if (dragMoved) {
+  const moved = dragMoved;
+
+  if (moved) {
     // Write where they ended up into this rotation only. The others are
     // untouched.
     draggedLayout(currentFormation, currentRotation)[dragTarget.dataset.playerId] = {
@@ -1386,6 +1468,14 @@ function endDrag() {
   dragTarget = null;
   dragFrom = null;
   dragMoved = false;
+
+  // onDrag has already put the circle where it belongs, so this used to be
+  // skipped -- there was nothing left to move. But render() is also what works
+  // out the overlap marks and the status line, and those depend on where the
+  // player just landed. Without this they stay stale until something else
+  // redraws, which is why a violation only appeared after rotating away and
+  // back. Positions are written before this runs, so nothing visibly jumps.
+  if (moved) render();
 }
 
 function clamp(value, min, max) {
@@ -1986,6 +2076,13 @@ transparentToggle.addEventListener('change', () => {
   save();
 });
 
+const overlapToggle = document.getElementById('checkOverlap');
+overlapToggle.addEventListener('change', () => {
+  store.checkOverlap = overlapToggle.checked;
+  save();
+  render();
+});
+
 // Changing any of these changes what the generated positions are, so they push
 // history and redraw -- but they don't touch anything you've dragged.
 passersSelect.addEventListener('change', () => {
@@ -2103,6 +2200,7 @@ buildZoneTargets();
 buildFormationButtons();
 buildFormationOptionSelects();
 transparentToggle.checked = store.transparentExport;
+overlapToggle.checked = store.checkOverlap;
 rebuild();
 
 // Write straight back after loading, so data saved by an older version gets

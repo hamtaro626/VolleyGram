@@ -292,6 +292,16 @@ body.hide-labels .player .label {
   z-index: 3;
 }
 
+/* An overlap breach. An outline rather than another box-shadow, because the
+   setter ring already owns box-shadow and two rings on one circle would fight.
+   Dashed so it reads as a warning rather than another part of the diagram, and
+   lifted above both other markers so it's never the one that gets covered. */
+.player.illegal {
+  outline: 3px dashed #ff9f9f;
+  outline-offset: 2px;
+  z-index: 4;
+}
+
 .player .serve-tag {
   display: none;
   position: absolute;

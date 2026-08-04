@@ -115,7 +115,7 @@ function boot(seedJson, seedHash) {
       movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer,
       startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory,
       settersThisRotation, shareUrl, encodeLineup, decodeLineup, importFromUrl,
-      startDrag, onDrag, endDrag, versionFrom };
+      startDrag, onDrag, endDrag, versionFrom, overlapViolations };
     globalThis.__players = () => playerElements;
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
@@ -1268,6 +1268,118 @@ console.log('\n37. The version marker reads its own script URL');
   check('index.html serves script.js with a version', Boolean(served), served);
   check('and that is what the marker would show',
     v(`script.js?v=${served}`) === served, `${served}`);
+}
+
+console.log('\n38. Overlap legality');
+{
+  // The invariant the whole feature rests on: base positions come from the
+  // rulebook, so untouched base must be legal in every system and every
+  // rotation. If this ever fails, either the generator or the checker is wrong.
+  for (const system of ['4-2', '5-1', '6-2', 'simple']) {
+    const app = boot(JSON.stringify({ system, roster: null, entrySlot: 1 }));
+    let total = 0;
+    for (let r = 1; r <= 6; r++) total += app.call.overlapViolations(r).length;
+    check(`${system} base is legal in all six rotations`, total === 0, `${total} found`);
+  }
+
+  // Entry zone rotates the court path, so it's worth checking it doesn't break
+  // the ordering either.
+  for (const entrySlot of [5, 6]) {
+    const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot }));
+    let total = 0;
+    for (let r = 1; r <= 6; r++) total += app.call.overlapViolations(r).length;
+    check(`base stays legal with subs entering at zone ${entrySlot}`, total === 0, `${total} found`);
+  }
+
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const inZone = (zone, rotation) => {
+    const { saved } = app.peek();
+    const i = saved.roster.findIndex((_, idx) => app.call.slotFor(idx, rotation) === zone);
+    return saved.roster[i].id;
+  };
+  const z4 = inZone(4, 1);
+  const z3 = inZone(3, 1);
+  const z5 = inZone(5, 1);
+  const base = app.peek().saved.layouts.base;
+
+  // Drag zone 4 across zone 3: a lateral breach.
+  base['1'] = { [z4]: { x: 90, y: 26 } };
+  const lateral = app.call.overlapViolations(1);
+  check('dragging zone 4 past zone 3 is caught', lateral.length === 1, JSON.stringify(lateral));
+  check('the message names both zones',
+    lateral[0].message.includes('4') && lateral[0].message.includes('3'), lateral[0].message);
+  check('both players are marked, not just the one that moved',
+    lateral[0].ids.includes(z4) && lateral[0].ids.includes(z3), lateral[0].ids.join(','));
+
+  // Drag zone 4 behind zone 5: a column breach, laterally still fine.
+  base['1'] = { [z4]: { x: 22, y: 90 } };
+  const column = app.call.overlapViolations(1);
+  check('dragging a front-row player behind their back-row pair is caught',
+    column.length === 1, JSON.stringify(column));
+  check('and it names the column pair',
+    column[0].ids.includes(z4) && column[0].ids.includes(z5), column[0].message);
+
+  // Exactly level is not a breach -- the rule is about crossing.
+  base['1'] = { [z4]: { x: 50, y: 26 } };
+  check('standing exactly level with a neighbour is legal',
+    app.call.overlapViolations(1).length === 0,
+    JSON.stringify(app.call.overlapViolations(1)));
+
+  // A legal nudge stays legal.
+  base['1'] = { [z4]: { x: 30, y: 20 } };
+  check('a legal adjustment stays legal', app.call.overlapViolations(1).length === 0);
+
+  // Only the rotation you touched is affected.
+  base['1'] = { [z4]: { x: 90, y: 26 } };
+  check('other rotations are unaffected', app.call.overlapViolations(2).length === 0);
+
+  // Serve receive is deliberately NOT checked -- it draws the post-contact
+  // switch, which is illegal before contact. Guards the scoping decision.
+  const clean = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  clean.call.setFormation('receive');
+  clean.call.render();
+  check('the status line stays quiet on serve receive',
+    !clean.status().includes('overlap'), clean.status());
+
+  // Off by default, and it persists.
+  check('overlap checking is off by default', app.peek().store.checkOverlap === false);
+  const on = boot(JSON.stringify({ checkOverlap: true, roster: null }));
+  check('the setting survives a reload', on.peek().store.checkOverlap === true);
+  check('and a bad value falls back to off',
+    boot(JSON.stringify({ checkOverlap: 'yes', roster: null })).peek().store.checkOverlap === false);
+}
+
+console.log('\n39. A drag updates the overlap marks straight away');
+{
+  const app = boot(JSON.stringify({
+    system: '4-2', roster: null, entrySlot: 1, checkOverlap: true,
+  }));
+  const { saved } = app.peek();
+  const z4 = saved.roster[saved.roster.findIndex((_, i) => app.call.slotFor(i, 1) === 4)].id;
+  const el = app.players()[z4];
+
+  check('a fresh base rotation reports legal', app.status().includes('overlap legal'), app.status());
+
+  // Grabbing at the centre of the stubbed 300x300 box makes both grab offsets
+  // zero, so the drag maths is easy to follow: clientX 270 lands on x = 90.
+  app.call.startDrag({ currentTarget: el, clientX: 150, clientY: 150, pointerId: 1 });
+  app.call.onDrag({ clientX: 270, clientY: 78 });
+  app.call.endDrag();
+
+  // Deliberately no render() here. endDrag() used to skip it, since onDrag had
+  // already moved the circle -- but the overlap marks are worked out in
+  // render(), so the breach stayed invisible until the next redraw.
+  check('the breach shows without changing rotation first',
+    app.status().includes('1 overlap issue'), app.status());
+  check('and the dragged position was still saved',
+    app.peek().saved.layouts.base['1'][z4].x === 90,
+    JSON.stringify(app.peek().saved.layouts.base['1']));
+
+  // A tap still costs nothing and changes nothing.
+  const before = app.stacks().undos;
+  app.call.startDrag({ currentTarget: el, clientX: 150, clientY: 150, pointerId: 1 });
+  app.call.endDrag();
+  check('a tap still takes no undo step', app.stacks().undos === before);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
