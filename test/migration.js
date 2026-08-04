@@ -114,7 +114,9 @@ function boot(seedJson, seedHash) {
       buildRosterRows, benchPosition, rotationCount, applyRosterOrder,
       movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer,
       startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory,
-      settersThisRotation, shareUrl, encodeLineup, decodeLineup, importFromUrl };
+      settersThisRotation, shareUrl, encodeLineup, decodeLineup, importFromUrl,
+      startDrag, onDrag, endDrag };
+    globalThis.__players = () => playerElements;
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
     globalThis.__const = { ZONE_LABEL_POSITIONS, SERVE_SLOT, SLOT_POSITIONS,
@@ -126,7 +128,7 @@ function boot(seedJson, seedHash) {
   vm.runInNewContext(source + expose, context, { filename: 'script.js' });
   return { ...context, memory, warnings, peek: context.__peek, call: context.__call,
            consts: context.__const, status: context.__status, quiz: context.__quiz,
-           stacks: context.__stacks };
+           stacks: context.__stacks, players: context.__players };
 }
 
 let failures = 0;
@@ -622,6 +624,14 @@ console.log('\n20. Source files are plain text');
   const collisions = [...onPlayers].filter((c) => c !== 'player' && bare.has(c));
   check('no player class is also a bare CSS selector', collisions.length === 0,
     collisions.join(', '));
+
+  // Both assets must carry the same cache-busting version, or a deploy can ship
+  // new CSS against cached JS -- which looks like a bug and isn't one.
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const versions = [...html.matchAll(/\?v=([\w.]+)/g)].map((m) => m[1]);
+  check('style.css and script.js are both versioned', versions.length === 2,
+    `found ${versions.length}`);
+  check('and carry the same version', new Set(versions).size === 1, versions.join(' vs '));
 }
 
 
@@ -1122,6 +1132,110 @@ console.log('\n34. Share links');
     broken.peek().saved.roster.length === 6);
   check('and falls back to the default VolleyGram',
     broken.peek().saved.name === 'My team', broken.peek().saved.name);
+}
+
+console.log('\n35. A tap on a player is not a drag');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const el = app.players().S1;
+  const before = app.stacks().undos;
+
+  // Down and straight back up. One pixel of jitter, which a real finger always
+  // has, must still read as a tap.
+  app.call.startDrag({ currentTarget: el, clientX: 100, clientY: 100, pointerId: 1 });
+  app.call.onDrag({ clientX: 101, clientY: 100 });
+  app.call.endDrag();
+
+  const tapped = app.peek().saved;
+  check('a tap writes no dragged position',
+    Object.keys(tapped.layouts.base).length === 0,
+    JSON.stringify(tapped.layouts.base));
+  check('a tap costs no undo step', app.stacks().undos === before,
+    `${before} -> ${app.stacks().undos}`);
+
+  // The generated position must still be generated -- that is the whole point.
+  // Changing the passer count moves a player the app placed, but never one you
+  // dragged, so this is what a wrongly-frozen tap would break.
+  app.call.setFormation('receive');
+  const wasReceiving = app.call.positionsFor('receive', 1).S1;
+  app.call.startDrag({ currentTarget: el, clientX: 50, clientY: 50, pointerId: 1 });
+  app.call.endDrag();
+  const stillGenerated = app.call.positionsFor('receive', 1).S1;
+  check('a tapped player keeps its generated position',
+    stillGenerated.x === wasReceiving.x && stillGenerated.y === wasReceiving.y,
+    `${JSON.stringify(wasReceiving)} -> ${JSON.stringify(stillGenerated)}`);
+
+  // A real drag still behaves exactly as before.
+  app.call.setFormation('base');
+  app.call.startDrag({ currentTarget: el, clientX: 100, clientY: 100, pointerId: 1 });
+  app.call.onDrag({ clientX: 160, clientY: 190 });
+  app.call.endDrag();
+
+  const dragged = app.peek().saved.layouts.base['1'];
+  check('a real drag is saved', Boolean(dragged && dragged.S1),
+    JSON.stringify(app.peek().saved.layouts.base));
+  check('a real drag costs exactly one undo step', app.stacks().undos === before + 1,
+    `${before} -> ${app.stacks().undos}`);
+}
+
+console.log('\n36. Corrupt coordinates never reach the renderer');
+{
+  // Every one of these would previously have been copied into the store as-is.
+  // The null is the dangerous one: it survives the spread in positionsFor() and
+  // then throws on `position.x` in render(), before the page has drawn.
+  const nasty = boot(JSON.stringify({
+    roster: null,
+    layouts: {
+      base: {
+        1: {
+          S1: null,                    // throws in render()
+          MB1: { x: 'left', y: 10 },   // strings
+          OH1: { x: 40, y: 50 },       // the one good entry
+          S2: { x: NaN, y: 3 },        // JSON writes this as null
+          MB2: 'nope',                 // not an object at all
+          OH2: { x: 1e9, y: -400 },    // finite, but off both edges
+        },
+        notarotation: { S1: { x: 5, y: 5 } },
+      },
+      receive: [1, 2, 3],
+    },
+  }));
+
+  const base = nasty.peek().saved.layouts.base;
+  check('the good coordinate survived', base['1'].OH1.x === 40 && base['1'].OH1.y === 50);
+  check('null position dropped', !('S1' in base['1']));
+  check('string coordinates dropped', !('MB1' in base['1']));
+  check('NaN coordinate dropped', !('S2' in base['1']));
+  check('non-object position dropped', !('MB2' in base['1']));
+  // Clamped to the edges rather than thrown away: the coordinate was a real
+  // number, so the player is pulled back onto the diagram instead of snapping
+  // to wherever the formation would have generated for them.
+  check('out-of-range coordinate clamped to both bounds, not dropped',
+    base['1'].OH2.x === 100 && base['1'].OH2.y === 0,
+    JSON.stringify(base['1'].OH2));
+  check('non-numeric rotation key dropped', !('notarotation' in base),
+    Object.keys(base).join(', '));
+  check('array where an object belongs resets to empty',
+    Object.keys(nasty.peek().saved.layouts.receive).length === 0);
+
+  // The real test: it draws.
+  let drew = true;
+  try { nasty.call.render(); } catch (error) { drew = false; }
+  check('and the app still renders', drew);
+
+  // The same payload arriving as a share link, which is the reachable path --
+  // localStorage needs devtools, a link needs only a tap.
+  const link = boot(undefined).call.encodeLineup({
+    name: 'Hostile', system: '4-2', roster: null,
+    layouts: { base: { 1: { S1: null } } },
+  });
+  const victim = boot(undefined, `#g=${link}`);
+  let survived = true;
+  try { victim.call.render(); } catch (error) { survived = false; }
+  check('a hostile share link cannot white-screen the app', survived);
+  check('and the bad position never made it into the store',
+    Object.keys(victim.peek().saved.layouts.base).length === 0,
+    JSON.stringify(victim.peek().saved.layouts.base));
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

@@ -171,6 +171,11 @@ const ZONE_REGIONS = {
 // Pixels of horizontal travel before a drag across the court counts as a swipe.
 const SWIPE_MIN = 45;
 
+// Pixels of travel before grabbing a player counts as a drag rather than a tap.
+// A finger never holds perfectly still, and a tap must not be mistaken for a
+// drag -- see endDrag() for why that distinction matters.
+const DRAG_MIN = 3;
+
 // The bench strip sits below the court. 112% is its middle -- see .bench in
 // style.css, which draws it from 104% to 120%.
 const BENCH_Y = 112;
@@ -656,6 +661,45 @@ function normaliseLineup(raw, fallbackName) {
   };
 }
 
+// One rotation's dragged positions: player id -> {x, y}. These are only ever
+// numbers, but they arrive from localStorage and from share links, both of which
+// anyone can hand-edit. An unchecked null in here reaches `position.x` in
+// render() and white-screens the app before it has drawn anything, so every
+// coordinate is verified rather than trusted.
+function normalisePositions(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+
+  const clean = {};
+  Object.entries(raw).forEach(([id, position]) => {
+    if (!position || typeof position !== 'object') return;
+    const { x, y } = position;
+    // Number.isFinite rejects strings, null and NaN in one go. JSON has no NaN
+    // literal, so a corrupt file spells it `null`, which fails here too.
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return;
+    // Held to the same bounds a live drag is, so a hand-edited coordinate can't
+    // park someone off the edge of the diagram where they can't be grabbed back.
+    clean[id] = { x: clamp(x, 0, 100), y: clamp(y, 0, MAX_DRAG_Y) };
+  });
+  return clean;
+}
+
+// One formation's worth: rotation number -> positions.
+function normaliseRotations(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+
+  const byRotation = {};
+  Object.entries(raw).forEach(([rotation, positions]) => {
+    // A rotation is a number. A key that isn't could never be looked up anyway,
+    // so it's dead weight in the save and in every share link.
+    if (!/^\d+$/.test(rotation)) return;
+    const clean = normalisePositions(positions);
+    // Empty buckets are dropped rather than kept: draggedLayout() makes one on
+    // demand, and an empty one only pads out the link.
+    if (Object.keys(clean).length > 0) byRotation[rotation] = clean;
+  });
+  return byRotation;
+}
+
 // Layouts used to be keyed by rotation number. From v0.11 they're keyed by
 // formation first, with rotations underneath. A save with numeric top-level keys
 // is therefore pre-v0.11, and everything in it was a base-formation layout.
@@ -663,14 +707,11 @@ function normaliseLayouts(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return emptyLayouts();
 
   const isOldShape = Object.keys(raw).some((key) => /^\d+$/.test(key));
-  if (isOldShape) return { ...emptyLayouts(), base: raw };
+  if (isOldShape) return { ...emptyLayouts(), base: normaliseRotations(raw) };
 
   const layouts = emptyLayouts();
   FORMATIONS.forEach((formation) => {
-    const byRotation = raw[formation];
-    if (byRotation && typeof byRotation === 'object' && !Array.isArray(byRotation)) {
-      layouts[formation] = byRotation;
-    }
+    layouts[formation] = normaliseRotations(raw[formation]);
   });
   return layouts;
 }
@@ -1249,14 +1290,20 @@ let dragTarget = null;
 let grabOffsetX = 0;
 let grabOffsetY = 0;
 
+// Where the pointer went down, and whether it has since travelled far enough to
+// count as a drag. Both exist so that a tap can be told apart from a drag.
+let dragFrom = null;
+let dragMoved = false;
+
 // Bumped every time you grab someone. Without it, overlapping players stack in
 // the order they were created, so the same ones are always buried.
 let topZ = 1;
 
 function startDrag(event) {
-  pushHistory();
-
   dragTarget = event.currentTarget;
+  dragFrom = { x: event.clientX, y: event.clientY };
+  dragMoved = false;
+
   const rect = dragTarget.getBoundingClientRect();
 
   // How far the finger is from the circle's center, so the circle doesn't
@@ -1274,6 +1321,16 @@ function startDrag(event) {
 function onDrag(event) {
   if (!dragTarget) return;
 
+  // Nothing at all happens -- no movement, no history, no save -- until the
+  // pointer has travelled far enough to be a drag. Holding still for the first
+  // few pixels is also what stops a circle twitching under a tap.
+  if (!dragMoved) {
+    if (Math.hypot(event.clientX - dragFrom.x, event.clientY - dragFrom.y) < DRAG_MIN) return;
+    dragMoved = true;
+    // Pushed here rather than on pointerdown, so a tap costs no undo step.
+    pushHistory();
+  }
+
   const courtRect = court.getBoundingClientRect();
   const x = ((event.clientX - grabOffsetX - courtRect.left) / courtRect.width) * 100;
   const y = ((event.clientY - grabOffsetY - courtRect.top) / courtRect.height) * 100;
@@ -1286,16 +1343,26 @@ function onDrag(event) {
 function endDrag() {
   if (!dragTarget) return;
 
-  // Write where they ended up into this rotation only. The others are
-  // untouched.
-  draggedLayout(currentFormation, currentRotation)[dragTarget.dataset.playerId] = {
-    x: parseFloat(dragTarget.style.left),
-    y: parseFloat(dragTarget.style.top),
-  };
-  save();
+  // A tap leaves no trace. The circle is still sitting on its *generated*
+  // position, and writing that into the layout would pin it there for good --
+  // it would stop responding to a change of passer count or defensive system,
+  // because a dragged position always beats a generated one. Same reasoning as
+  // applyRosterOrder(), which refuses to act on a reorder that reordered
+  // nothing.
+  if (dragMoved) {
+    // Write where they ended up into this rotation only. The others are
+    // untouched.
+    draggedLayout(currentFormation, currentRotation)[dragTarget.dataset.playerId] = {
+      x: parseFloat(dragTarget.style.left),
+      y: parseFloat(dragTarget.style.top),
+    };
+    save();
+  }
 
   dragTarget.classList.remove('dragging');
   dragTarget = null;
+  dragFrom = null;
+  dragMoved = false;
 }
 
 function clamp(value, min, max) {

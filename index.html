@@ -8,7 +8,11 @@
        version lives in the <h1>. -->
   <title>VolleyGram</title>
   <meta name="apple-mobile-web-app-title" content="VolleyGram">
-  <link rel="stylesheet" href="style.css">
+  <!-- The ?v= query is cache busting. A browser caches by URL, so changing the
+       query makes style.css a URL it has never seen and must fetch fresh.
+       Bump this on any release that changes the CSS or JS, or phones will keep
+       showing the old one. -->
+  <link rel="stylesheet" href="style.css?v=0.15">
 </head>
 <body>
   <main>
@@ -148,6 +152,6 @@
     </section>
   </main>
 
-  <script src="script.js"></script>
+  <script src="script.js?v=0.15"></script>
 </body>
 </html>
