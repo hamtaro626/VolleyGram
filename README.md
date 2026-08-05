@@ -41,8 +41,8 @@ test/
 ```
 
 **No build step. No dependencies. No package.json. No backend.** No accounts, no
-database, no sync. That is a deliberate constraint, not a stage it's growing out
-of — see *Still does NOT do* in [SPEC.md](SPEC.md).
+database, no sync. That is a deliberate constraint to allow flexible 
+compatibility across various devices — see *Still does NOT do* in [SPEC.md](SPEC.md).
 
 ## Running it
 
@@ -164,10 +164,7 @@ v0.19. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 
-**There is currently no license on this repository.**
+[MIT](LICENSE) — © 2026 Alec Vogelsang.
 
-Worth being straight about, since this README is aimed at people who may want to
-fork it: under default copyright, "no license" means no one has permission to
-use, modify, or redistribute the code, even though the repo is public. If you
-want contributions and forks, the repo needs a license file — MIT is the usual
-choice for something like this. Until then, ask before building on it.
+Fork it, change it, build it into something else. Keep the copyright notice, and
+understand it comes with no warranty.
