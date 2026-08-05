@@ -658,11 +658,77 @@ Formation tabs are now Base · Defense · Serve receive. Purely presentational �
 everything reading `FORMATIONS` iterates or indexes into it, so storage is
 untouched.
 
+## v0.20 — short-handed rosters
+
+Turn up with five and you can still diagram it.
+
+### Five players is not a five-player game
+
+The tempting model is a roster size of five meaning five court slots. It's wrong.
+Short a player, you still play a **six-zone, six-rotation** game — you have five
+bodies and one *vacancy*, and the vacancy rotates around the court exactly like a
+player would. Model it as five slots and you get five rotations, a five-zone
+court nobody plays on, and an overlap table for the wrong shape.
+
+So roster size and court size are separate things. `cycleLength()` is
+`max(rosterSize, COURT_SPOTS)`: above six it grows, because the extras have to
+cycle through the bench; below six it does **not** shrink.
+
+`rotationCount()` returns that, and `cycleIndex()` takes its modulus from it,
+which is the whole mechanism. The hole travels because the cycle is longer than
+the roster.
+
+Two things fell out for free. Nobody is ever benched short-handed —
+`cycleIndex` can't reach `COURT_SPOTS` when the cycle is only that long, so
+`slotFor` never returns null. And `overlapViolations()` already skipped pairs
+where either zone was empty, so an absent player is vacuously legal with no
+change at all.
+
+### It used to delete your team
+
+```js
+if (roster.length < COURT_SPOTS) roster = rosterFromSystem(system);
+```
+
+Anything under six was discarded and rebuilt from the system default — names and
+all. A hand-edited share link with five players came back as the stock six and
+nothing said why. The floor is now `MIN_PLAYERS`, and between that and six the
+roster is kept exactly as saved.
+
+`MIN_PLAYERS` is 2, deliberately more permissive than any league's forfeit rule.
+This is a diagramming tool rather than a referee, leagues disagree, and a smaller
+court will eventually want to go below four. Below the floor a save is likelier
+corrupt than deliberate, so it still rebuilds.
+
+Removing a player is no longer restricted to the seventh and beyond — that
+restriction was the only thing making a short roster unreachable from the UI.
+Every row gets a remove button until the roster is down to `MIN_PLAYERS`.
+
+### The rotation that costs you
+
+Once per cycle the vacancy reaches zone 1 and there is nobody to serve. The
+status line says `no server, zone 1 is empty`, because it's the rotation that
+actually costs you something and it's hard to read off a diagram — the answer is
+an absence, and absences don't draw.
+
+What it costs is a league question: a lost rally, a forfeit, or nothing. So the
+app states the fact and stops. `zoneOccupied(zone, rotation)` is the new
+predicate behind it.
+
+### Passer counts clamp to who's there
+
+Receive generation already clamped to the queue length, so nothing was broken —
+but the dropdown offered five passers with four players on court, which quietly
+meant something else. It now only lists counts you could field. The stored
+preference is untouched, so it comes back if the missing players do; only the
+displayed value is clamped, since assigning a select a value it doesn't have
+blanks it and reads back as 0.
+
 ## Tests
 
 ```
-node test/migration.js    # 401 checks — storage, migration, roles, formations,
-                          #   quiz, sharing, dragging
+node test/migration.js    # 424 checks — storage, migration, roles, formations,
+                          #   quiz, sharing, dragging, short-handed rosters
 node test/contrast.js     # colour contrast and hue separation
 ```
 
@@ -711,8 +777,26 @@ sluggish. Those still need a real browser and a real thumb.
 
 ## Planned next
 
-Nothing committed. The old entry here — formation presets, base / serve receive
-/ defense per rotation — was delivered by v0.11, generated rather than tabulated.
+**Disciplines — grass quads (4v4).** Discussed, not committed. The idea is a
+`discipline` field on each *lineup* rather than a global mode, since you might
+coach indoor sixes and play grass fours yourself, and the lineup picker already
+switches between them. Today's module constants — `SLOT_POSITIONS`,
+`TRAVEL_ORDER`, `FRONT_ROW_SLOTS`, `OVERLAP_*`, `ZONE_REGIONS` — become a
+per-discipline lookup, roughly fifty references.
+
+Two things make it cheaper than it sounds. The court box doesn't change shape:
+indoor is 18×9 and outdoor 16×8, both 2:1, so only the attack line and the slot
+grid move. And because formations are generated rather than tabulated, a new
+discipline needs no new receive or defense tables — the same computation runs
+over four players.
+
+Doing v0.20 first was deliberate: vacancy handling now exists, so grass quads
+with three players is the same mechanism and the discipline work never has to
+invent it.
+
+A palette keyed to discipline would want `test/contrast.js` to iterate palettes
+rather than find one — otherwise a second palette ships unverified while the
+suite still says ALL PASS, which is exactly the drift these tests exist to stop.
 
 ## Still does NOT do
 
@@ -726,6 +810,16 @@ Nothing committed. The old entry here — formation presets, base / serve receiv
   carries its own data; saving is localStorage. Three static files, and it stays
   that way.
 - **Redo.** Built in v0.13 and removed in the same version. Undo is 40 deep.
+- **Beach doubles (2v2).** Not a mode, and not a small one. Beach has *no
+  positional faults* — only serving order is fixed, and players may stand
+  anywhere at service. That removes rotations through zones, the zones
+  themselves, overlap checking, front and back row, the indoor roles, the
+  role-driven receive and defense generation, and the quiz's only question.
+  What survives is a court, drag, export and share. That's a positioning
+  whiteboard, and it should be built as one deliberately — not bolted on as a
+  mode that hides half the interface whenever it's selected.
+- **Scoring rules for a missing server.** v0.20 reports that zone 1 is empty and
+  says nothing about the consequence, because leagues disagree.
 
 ### Delivered — do not re-plan these
 

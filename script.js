@@ -200,6 +200,15 @@ const DRAG_MIN = 3;
 const BENCH_Y = 112;
 const MAX_DRAG_Y = 120;
 const MAX_PLAYERS = 12;
+// Short-handed play. A roster below COURT_SPOTS leaves zones empty, and the
+// empty zone travels through the rotation exactly like a player would -- five
+// players is still a six-zone, six-rotation game, not a five-zone one.
+//
+// The floor is deliberately permissive rather than set to whatever a league
+// demands to avoid a forfeit. Leagues disagree, this is a diagramming tool
+// rather than a referee, and a smaller court will eventually want to go below
+// four anyway.
+const MIN_PLAYERS = 2;
 const HOLD_MS = 1500;
 const HISTORY_LIMIT = 40;
 
@@ -380,9 +389,24 @@ function rosterSize() {
   return saved.roster.length;
 }
 
-// A full cycle takes as many rotations as there are players, not six.
+// How many players are actually standing on the court. Short of a full six,
+// the remaining zones are vacant.
+function onCourtCount() {
+  return Math.min(rosterSize(), COURT_SPOTS);
+}
+
+// One trip around. With more than six players it takes as many rotations as
+// there are players, because the extras have to cycle through the bench.
+//
+// Short-handed it does NOT shrink to the roster size. Five players still rotate
+// through six zones with a hole travelling around, which is six rotations --
+// counting five would invent a five-zone game nobody plays.
+function cycleLength() {
+  return Math.max(rosterSize(), COURT_SPOTS);
+}
+
 function rotationCount() {
-  return rosterSize();
+  return cycleLength();
 }
 
 // The six zones in travel order, beginning wherever subs enter. Rotating this
@@ -401,13 +425,20 @@ function cycleIndex(rosterIndex, rotation) {
   const start = rosterIndex < COURT_SPOTS
     ? courtPath().indexOf(rosterIndex + 1)
     : rosterIndex;
-  return mod(start + rotation - 1, rosterSize());
+  return mod(start + rotation - 1, cycleLength());
 }
 
 // The zone this player is in, or null if they're off court.
 function slotFor(rosterIndex, rotation) {
   const index = cycleIndex(rosterIndex, rotation);
   return index < COURT_SPOTS ? courtPath()[index] : null;
+}
+
+// Whether anyone is standing in a zone this rotation. Always true with a full
+// roster; short-handed, exactly (COURT_SPOTS - rosterSize) zones answer false,
+// and which ones changes every rotation as the hole travels.
+function zoneOccupied(zone, rotation = currentRotation) {
+  return saved.roster.some((_, index) => slotFor(index, rotation) === zone);
 }
 
 function displayName(player) {
@@ -435,9 +466,13 @@ function overrideCount() {
 }
 
 // On the bench: spread everyone evenly along the strip, in queue order.
+//
+// Short-handed nobody is ever off court -- cycleIndex can't reach COURT_SPOTS
+// when the cycle is only that long -- so this isn't reached at all. The guard is
+// still here so a stray call divides by something sane instead of by zero.
 function benchPosition(rosterIndex, rotation) {
   const benchIndex = cycleIndex(rosterIndex, rotation) - COURT_SPOTS;
-  const benchCount = rosterSize() - COURT_SPOTS;
+  const benchCount = Math.max(rosterSize() - COURT_SPOTS, 1);
   return { x: (100 / (benchCount + 1)) * (benchIndex + 1), y: BENCH_Y };
 }
 
@@ -718,8 +753,14 @@ function normaliseLineup(raw, fallbackName) {
       fallback: player.fallback || `${ROLE_LABELS[player.role] || 'Player'} ${index + 1}`,
     }));
 
-  // A rotation needs six players. Anything less isn't recoverable, so start over.
-  if (roster.length < COURT_SPOTS) roster = rosterFromSystem(system);
+  // Short-handed is a real thing you might be saving on purpose, so a roster of
+  // two to five is kept as it is -- the empty zones rotate along with everyone
+  // else. Below MIN_PLAYERS there's nothing worth showing and the save is more
+  // likely corrupt than deliberate, so start over from the system default.
+  //
+  // Before v0.20 this reset anything under six, which silently threw away the
+  // names of a five-player team.
+  if (roster.length < MIN_PLAYERS) roster = rosterFromSystem(system);
 
   return {
     name: raw.name || fallbackName,
@@ -893,14 +934,21 @@ function syncFormationControls() {
   document.getElementById('receiveOptions').hidden = currentFormation !== 'receive';
   document.getElementById('defenseOptions').hidden = currentFormation !== 'defense';
 
-  passersSelect.value = String(saved.passers);
+  // A saved count can outrun a shrunken roster. Show the clamped value rather
+  // than assigning one the select no longer offers, which would blank it and
+  // read back as 0 the next time anyone touched it. The stored preference is
+  // left alone, so it comes back if the missing players do.
+  passersSelect.value = String(clamp(saved.passers, MIN_PLAYERS, onCourtCount()));
   defenseSystemSelect.value = saved.defenseSystem;
   defenseSideSelect.value = saved.defenseSide;
 }
 
 function buildFormationOptionSelects() {
+  // Only offer passer counts you could actually field. Receive generation
+  // clamps to who's on court anyway, so this is about not showing a choice that
+  // silently means something else.
   passersSelect.replaceChildren();
-  PASSER_COUNTS.forEach((count) => {
+  PASSER_COUNTS.filter((count) => count <= onCourtCount()).forEach((count) => {
     const option = document.createElement('option');
     option.value = String(count);
     option.textContent = count === 5 ? '5 (W)' : String(count);
@@ -1022,8 +1070,10 @@ function buildRosterRows() {
 
     row.append(handle, swatch, nameInput, roleSelect);
 
-    // Only the extras can be removed -- the first six are the rotation.
-    if (index >= COURT_SPOTS) {
+    // Anyone can go as long as MIN_PLAYERS survive. Removing from the first six
+    // is how you get a short-handed lineup in the first place -- before v0.20
+    // those rows had no remove button at all.
+    if (rosterSize() > MIN_PLAYERS) {
       row.append(iconButton('icon remove', '×', `Remove ${displayName(player)}`,
         () => changeLineup(() => { saved.roster.splice(index, 1); })));
     } else {
@@ -1351,14 +1401,24 @@ function describeRotation(rotation = currentRotation) {
   const label = `Rotation ${rotation} of ${rotationCount()}`;
   const { setsFrom } = SYSTEMS[saved.system];
 
+  // Short-handed, the vacancy eventually reaches zone 1 and you have nobody to
+  // serve. Worth saying out loud -- it's the rotation that costs you, and it's
+  // hard to spot on the diagram because the answer is an absence.
+  //
+  // What it costs is a league question (lost rally, forfeit, nothing at all),
+  // so state the fact and stop there.
+  const short = rosterSize() < COURT_SPOTS && !zoneOccupied(SERVE_SLOT, rotation)
+    ? ' — no server, zone 1 is empty'
+    : '';
+
   // Simple mode has no roles, so there's nothing to say about who sets.
-  if (!setsFrom) return label;
+  if (!setsFrom) return label + short;
 
   const eligible = settersThisRotation(rotation);
 
   if (eligible.length === 0) {
     const where = setsFrom === 'any' ? 'on court' : `in the ${setsFrom} row`;
-    return `${label} — no setter ${where}`;
+    return `${label} — no setter ${where}${short}`;
   }
 
   const who = eligible
@@ -1371,7 +1431,7 @@ function describeRotation(rotation = currentRotation) {
     ? `, ${FRONT_ROW_SLOTS.includes(eligible[0].slot) ? '2' : '3'} front-row hitters`
     : '';
 
-  return `${label} — ${who} sets${suffix}`;
+  return `${label} — ${who} sets${suffix}${short}`;
 }
 
 function setRotation(rotation) {

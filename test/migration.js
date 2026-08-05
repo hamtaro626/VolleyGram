@@ -110,6 +110,7 @@ function boot(seedJson, seedHash) {
     globalThis.__peek = () => ({ store, saved, currentRotation, currentFormation });
     globalThis.__call = { load, render, rebuild, useLineup, addLineup,
       duplicateLineup, deleteLineup, normaliseLineup, slotFor, rosterSize,
+      zoneOccupied, onCourtCount, cycleLength,
       describeRotation, setRotation, roleFor, hasRoleOverride, overrideCount,
       buildRosterRows, benchPosition, rotationCount, applyRosterOrder,
       movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer,
@@ -122,7 +123,7 @@ function boot(seedJson, seedHash) {
     globalThis.__const = { ZONE_LABEL_POSITIONS, SERVE_SLOT, SLOT_POSITIONS,
       COURT_SPOTS, FORMATIONS, DEFENSE_SPOTS, SETTER_TARGET, FRONT_ROW_SLOTS,
       BACK_ROW_SLOTS, BACK_PASS_SPOTS, BACK_COVER_SPOTS, FRONT_PASS_SPOTS,
-      NET_SPOTS, ZONE_REGIONS };
+      NET_SPOTS, ZONE_REGIONS, MIN_PLAYERS };
     globalThis.__status = () => document.getElementById('status').textContent;
   `;
   vm.runInNewContext(source + expose, context, { filename: 'script.js' });
@@ -300,6 +301,7 @@ console.log('\n8. Corrupt and hostile data');
       { id: 'OH1', role: 'OH', name: '' }] })],
     ['bogus role', JSON.stringify({ roster: Array.from({ length: 6 }, (_, i) =>
       ({ id: 'P' + i, role: 'WIZARD', name: '' })) })],
+    ['roster of 1', JSON.stringify({ roster: [{ id: 'S1', role: 'S', name: 'alone' }] })],
     ['bogus system', JSON.stringify({ system: 'sportsball', roster: null })],
     ['bogus entrySlot', JSON.stringify({ entrySlot: 99, roster: null })],
     ['layouts as a string', JSON.stringify({ layouts: 'nope', roster: null })],
@@ -309,7 +311,9 @@ console.log('\n8. Corrupt and hostile data');
     try {
       const app = boot(json);
       const { store, saved } = app.peek();
-      if (!saved || saved.roster.length < 6) { ok = false; detail = 'roster too small'; }
+      // Since v0.20 anything down to MIN_PLAYERS is a legitimate short-handed
+      // roster and is kept. Only below that is a save treated as unrecoverable.
+      if (!saved || saved.roster.length < 2) { ok = false; detail = 'roster too small'; }
       if (!SystemsOk(saved)) { ok = false; detail = 'bad system ' + saved.system; }
       if (![1, 2, 3, 4, 5, 6].includes(saved.entrySlot)) { ok = false; detail = 'bad entrySlot'; }
       if (typeof saved.layouts !== 'object') { ok = false; detail = 'bad layouts'; }
@@ -326,12 +330,21 @@ console.log('\n8. Corrupt and hostile data');
 
 console.log('\n9. Data preserved where it can be, dropped only where it cannot');
 {
-  const app = boot(JSON.stringify({ roster: [
+  // Three is short-handed, not broken. Before v0.20 this was rebuilt to six and
+  // the name went with it.
+  const short = boot(JSON.stringify({ roster: [
     { id: 'S1', role: 'S', name: 'keep me' },
     { id: 'MB1', role: 'MB', name: '' },
     { id: 'OH1', role: 'OH', name: '' }] }));
+  const kept = short.peek().saved;
+  check('a roster of three is kept, not rebuilt', kept.roster.length === 3,
+    'got ' + kept.roster.length);
+  check('and the name survives', kept.roster[0].name === 'keep me');
+
+  // One player is below MIN_PLAYERS -- nothing worth showing, so start over.
+  const app = boot(JSON.stringify({ roster: [{ id: 'S1', role: 'S', name: 'alone' }] }));
   const { saved } = app.peek();
-  check('unrecoverable roster is rebuilt to six', saved.roster.length === 6);
+  check('a roster below the floor is rebuilt to six', saved.roster.length === 6);
   check('rebuilt roster is a valid 4-2',
     saved.roster.map((p) => p.role).join(',') === 'S,MB,OH,S,MB,OH',
     saved.roster.map((p) => p.role).join(','));
@@ -1380,6 +1393,100 @@ console.log('\n39. A drag updates the overlap marks straight away');
   app.call.startDrag({ currentTarget: el, clientX: 150, clientY: 150, pointerId: 1 });
   app.call.endDrag();
   check('a tap still takes no undo step', app.stacks().undos === before);
+}
+
+console.log('\n40. Short-handed rosters');
+{
+  const shortRoster = (n) => Array.from({ length: n }, (_, i) =>
+    ({ id: 'P' + i, role: 'NONE', name: 'P' + i, fallback: 'Player ' + (i + 1) }));
+
+  const app = boot(JSON.stringify({ roster: shortRoster(5), layouts: {}, entrySlot: 1 }));
+  const { saved } = app.peek();
+
+  check('five players are kept', saved.roster.length === 5, 'got ' + saved.roster.length);
+  check('names are kept', saved.roster.map((p) => p.name).join(',') === 'P0,P1,P2,P3,P4');
+
+  // The point of the whole change: five bodies still play a six-zone game.
+  check('still six rotations, not five', app.call.rotationCount() === 6,
+    'got ' + app.call.rotationCount());
+  check('five of them are on court', app.call.onCourtCount() === 5);
+
+  // Exactly one zone empty each rotation, and a different one each time -- the
+  // hole travels like a player. Over six rotations it visits all six zones.
+  const vacancies = [];
+  for (let r = 1; r <= 6; r++) {
+    const empty = [1, 2, 3, 4, 5, 6].filter((z) => !app.call.zoneOccupied(z, r));
+    if (empty.length !== 1) {
+      check(`rotation ${r} has exactly one empty zone`, false, 'empty: ' + empty.join(','));
+    }
+    vacancies.push(empty[0]);
+  }
+  check('exactly one zone empty in every rotation', vacancies.every((z) => z !== undefined),
+    vacancies.join(','));
+  check('the hole visits all six zones', new Set(vacancies).size === 6, vacancies.join(','));
+
+  // Nobody is ever benched when the roster is short of a full court.
+  let benched = 0;
+  for (let r = 1; r <= 6; r++) {
+    saved.roster.forEach((_, i) => { if (app.call.slotFor(i, r) === null) benched++; });
+  }
+  check('nobody is sent to the bench', benched === 0, benched + ' bench placements');
+
+  // The rotation where the hole reaches zone 1 is the one that costs you.
+  const serveless = [1, 2, 3, 4, 5, 6].filter((r) => !app.call.zoneOccupied(1, r));
+  check('exactly one rotation has no server', serveless.length === 1, serveless.join(','));
+  app.call.setRotation(serveless[0]);
+  check('and the status line says so', /no server/.test(app.status()), app.status());
+  app.call.setRotation(serveless[0] === 6 ? 1 : serveless[0] + 1);
+  check('other rotations do not', !/no server/.test(app.status()), app.status());
+
+  // Overlap checking treats an empty zone as nothing to compare against.
+  let threw = null;
+  try { app.call.overlapViolations(1); } catch (e) { threw = e.message; }
+  check('overlap checking survives empty zones', threw === null, threw);
+  check('a fresh short lineup is legal', app.call.overlapViolations(1).length === 0);
+
+  // Rendering the whole thing must not throw either.
+  let renderError = null;
+  try { for (let r = 1; r <= 6; r++) { app.call.setRotation(r); app.call.render(); } }
+  catch (e) { renderError = e.message; }
+  check('renders every rotation short-handed', renderError === null, renderError);
+
+  // A full roster is unchanged by any of this.
+  const full = boot(undefined);
+  check('six players still gives six rotations', full.call.rotationCount() === 6);
+  check('and no empty zones', [1, 2, 3, 4, 5, 6].every((z) => full.call.zoneOccupied(z, 1)));
+  const seven = boot(JSON.stringify({ roster: shortRoster(7), layouts: {}, entrySlot: 1 }));
+  check('seven players still gives seven rotations', seven.call.rotationCount() === 7);
+  check('and one of them is benched', seven.peek().saved.roster
+    .some((_, i) => seven.call.slotFor(i, 1) === null));
+}
+
+console.log('\n41. Short-handed round trip and sharing');
+{
+  const shortRoster = (n) => Array.from({ length: n }, (_, i) =>
+    ({ id: 'P' + i, role: 'NONE', name: 'P' + i, fallback: 'Player ' + (i + 1) }));
+
+  const first = boot(JSON.stringify({ roster: shortRoster(4), layouts: {}, entrySlot: 1 }));
+  const written = first.memory['volleyball-rotations-v1'];
+  const second = boot(written);
+  check('four players survive a save and reload',
+    second.peek().saved.roster.length === 4, 'got ' + second.peek().saved.roster.length);
+
+  // Share links carry the roster, so a short one has to come back short.
+  const url = first.call.shareUrl();
+  // location.hash keeps its leading '#', and importFromUrl anchors on it.
+  const hash = '#' + (String(url).split('#')[1] || '');
+  const shared = boot(undefined, hash);
+  const sharedSize = shared.peek().saved.roster.length;
+  check('and survive a share link', sharedSize === 4, 'got ' + sharedSize);
+
+  // Passer choices can't exceed who is on court.
+  const app = boot(JSON.stringify({ roster: shortRoster(3), passers: 5, layouts: {} }));
+  app.call.setFormation('receive');
+  const positions = app.call.positionsFor('receive', 1);
+  check('receive still places every short-handed player',
+    Object.keys(positions).length === 3, JSON.stringify(Object.keys(positions)));
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

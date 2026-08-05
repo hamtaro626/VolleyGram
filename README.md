@@ -18,8 +18,10 @@ Built phone-first: it has to work one-handed, standing up, in a gym.
 - **Overlap-legality checking** — flags FIVB 7.4 violations at the moment of
   serve (base formation only, on purpose)
 - **Quiz mode** — tap the zone where a player belongs
-- **Rosters** up to 12 players, custom names, per-rotation role overrides,
+- **Rosters** of 2 to 12 players, custom names, per-rotation role overrides,
   configurable sub entry slot
+- **Short-handed play** — turn up with five and the empty zone rotates with you,
+  including the rotation where nobody is left to serve
 - **Multiple saved lineups**, plus 40-deep undo
 - **Export to image**, single rotation or all six, optional transparent
   background
@@ -35,8 +37,8 @@ style.css       ~17 KB
 script.js       ~82 KB, all application logic
 SPEC.md         the design log — read this first
 test/
-  migration.js  401 checks: storage, migration, roles, formations, quiz,
-                sharing, dragging
+  migration.js  424 checks: storage, migration, roles, formations, quiz,
+                sharing, dragging, short-handed rosters
   contrast.js   colour contrast and hue separation, parsed out of style.css
 ```
 
@@ -62,7 +64,7 @@ of a number. That's expected — see *Bumping the version* below.
 ## Tests
 
 ```sh
-node test/migration.js    # 401 checks across 39 groups
+node test/migration.js    # 424 checks across 41 groups
 node test/contrast.js     # colour contrast and hue separation
 ```
 
@@ -122,7 +124,7 @@ old one and add a case to `migration.js`. Its coverage already runs to every
 historical shape, missing `activeId`, and nine kinds of corrupt input.
 
 **Bump the cache-busting version on any CSS or JS change.** `index.html`
-references `style.css?v=0.19` and `script.js?v=0.19`. Browsers cache by URL, so
+references `style.css?v=0.20` and `script.js?v=0.20`. Browsers cache by URL, so
 without a bump phones keep serving the old file. Both references need it, and
 `APP_VERSION` is derived from the script's own `?v=`, which is why the corner
 marker reads `dev` on `file://`.
@@ -160,7 +162,7 @@ deliberately rejected. Keep it current when you change behaviour.
 
 ## Status
 
-v0.19. Working title, actively developed, no issues or PRs open yet.
+v0.20. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 
