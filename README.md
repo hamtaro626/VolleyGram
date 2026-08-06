@@ -26,6 +26,8 @@ Built phone-first: it has to work one-handed, standing up, in a gym.
 - **Export to image**, single rotation or all six, optional transparent
   background
 - **Share links** that carry the whole diagram in the URL — no server involved
+- **Playing surface** per lineup — indoor clay, grass green or beach sand,
+  contrast-checked against every role
 
 ## Stack
 
@@ -37,9 +39,10 @@ style.css       ~17 KB
 script.js       ~82 KB, all application logic
 SPEC.md         the design log — read this first
 test/
-  migration.js  424 checks: storage, migration, roles, formations, quiz,
-                sharing, dragging, short-handed rosters
-  contrast.js   colour contrast and hue separation, parsed out of style.css
+  migration.js  439 checks: storage, migration, roles, formations, quiz,
+                sharing, dragging, short-handed rosters, playing surface
+  contrast.js   contrast, hue separation, and every role against all three
+                court surfaces, all parsed out of style.css
 ```
 
 **No build step. No dependencies. No package.json. No backend.** No accounts, no
@@ -64,8 +67,8 @@ of a number. That's expected — see *Bumping the version* below.
 ## Tests
 
 ```sh
-node test/migration.js    # 424 checks across 41 groups
-node test/contrast.js     # colour contrast and hue separation
+node test/migration.js    # 439 checks across 42 groups
+node test/contrast.js     # contrast, hue separation, roles against the court
 ```
 
 Plain Node scripts, no runner, no install, no config. Any recent Node works.
@@ -152,7 +155,7 @@ and the stubbed tests can't see it.
 
 ### SPEC.md is the design log
 
-It's not boilerplate. It records, version by version, what was built and *why* —
+This file records, version by version, what was built and *why* —
 including things that were tried and removed (redo, in v0.13), decisions that
 were reversed, and a **Delivered — do not re-plan these** table that exists
 because the "not doing" list went three versions without being corrected.
@@ -162,7 +165,7 @@ deliberately rejected. Keep it current when you change behaviour.
 
 ## Status
 
-v0.20. Working title, actively developed, no issues or PRs open yet.
+v0.21. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

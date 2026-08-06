@@ -267,6 +267,24 @@ const SYSTEMS = {
 
 const DEFAULT_SYSTEM = '4-2';
 
+// --- Playing surface ---------------------------------------------------
+//
+// What the court is made of, which for now decides only what colour it is. It
+// sits on the lineup rather than at the top level next to showLabels because
+// it's a fact about where a team plays, not a display preference -- the same
+// reasoning that puts `system` here. It rides in share links for free that way.
+//
+// The actual colours live in style.css (`.court`, `.court.surface-grass`), so
+// exports pick them up through getComputedStyle and test/contrast.js checks the
+// ones that ship. Adding a surface means a key here and a rule there.
+const SURFACES = {
+  indoor: 'Indoor — clay',
+  grass: 'Grass — green',
+  beach: 'Beach — sand',
+};
+
+const DEFAULT_SURFACE = 'indoor';
+
 // Build a starting roster for a system. `fallback` is the name shown until you
 // type a real one; it's fixed at creation so it doesn't change when you reorder
 // the lineup. Roles that appear twice get numbered, roles that appear once
@@ -325,6 +343,7 @@ function newLineup(name) {
   return {
     name,
     system: DEFAULT_SYSTEM,
+    surface: DEFAULT_SURFACE,
     roster: rosterFromSystem(DEFAULT_SYSTEM),
     // formation -> rotation -> { player id -> {x, y} }. Only holds positions
     // you've dragged; anything absent is generated.
@@ -371,6 +390,7 @@ const rosterRows = document.getElementById('rosterRows');
 const undoButton = document.getElementById('undo');
 const holdButton = document.getElementById('resetAll');
 const entrySelect = document.getElementById('entrySlot');
+const surfaceSelect = document.getElementById('surface');
 const systemSelect = document.getElementById('system');
 const lineupSelect = document.getElementById('lineup');
 const passersSelect = document.getElementById('passers');
@@ -765,6 +785,10 @@ function normaliseLineup(raw, fallbackName) {
   return {
     name: raw.name || fallbackName,
     system,
+    // Added in v0.21, same treatment as roleOverrides: an optional field with a
+    // default is not a new storage shape, so no version bump. An unknown
+    // surface becomes indoor rather than leaving the court unpainted.
+    surface: SURFACES[raw.surface] ? raw.surface : DEFAULT_SURFACE,
     roster,
     layouts: normaliseLayouts(raw.layouts),
     // Added in v0.8. Absent in every earlier save, hence the default rather
@@ -1110,6 +1134,7 @@ function syncSelects() {
   syncLineupSelect();
   syncSystemSelect();
   syncEntrySelect();
+  syncSurfaceSelect();
 }
 
 // Point `saved` at a different lineup. Everything else reads through it, so
@@ -1206,6 +1231,27 @@ function syncEntrySelect() {
     option.textContent = `Zone ${zone} — ${ZONE_NAMES[zone]}`;
     option.selected = zone === saved.entrySlot;
     entrySelect.appendChild(option);
+  });
+}
+
+function syncSurfaceSelect() {
+  surfaceSelect.replaceChildren();
+  Object.entries(SURFACES).forEach(([key, label]) => {
+    const option = document.createElement('option');
+    option.value = key;
+    option.textContent = label;
+    option.selected = key === saved.surface;
+    surfaceSelect.appendChild(option);
+  });
+}
+
+// One class per surface, so the stylesheet owns every colour and the canvas
+// export reads the result back out through getComputedStyle. Toggled across all
+// of them rather than added, or switching back to indoor would leave the grass
+// class on and the two rules would fight on specificity.
+function applySurface() {
+  Object.keys(SURFACES).forEach((key) => {
+    court.classList.toggle(`surface-${key}`, saved.surface === key);
   });
 }
 
@@ -1354,6 +1400,7 @@ function render() {
 
   // No point drawing an empty bench strip when everyone's on court.
   court.classList.toggle('has-bench', rosterSize() > COURT_SPOTS);
+  applySurface();
 
   // Saying "overlap legal" out loud matters as much as flagging a breach --
   // otherwise a clean court is indistinguishable from the check being off.
@@ -2084,6 +2131,15 @@ document.getElementById('addPlayer').addEventListener('click', () => changeLineu
   // Unset rather than a guess -- you haven't said what they play yet.
   saved.roster.push({ id: `P${Date.now()}`, role: 'NONE', name: '', fallback: `Player ${n}` });
 }));
+
+// Deliberately not changeLineup(): that wipes every dragged position, which is
+// right when who-stands-where changes and wrong for a repaint. Nobody moves.
+surfaceSelect.addEventListener('change', () => {
+  pushHistory();
+  saved.surface = SURFACES[surfaceSelect.value] ? surfaceSelect.value : DEFAULT_SURFACE;
+  save();
+  render();
+});
 
 entrySelect.addEventListener('change', () => {
   changeLineup(() => { saved.entrySlot = Number(entrySelect.value); });

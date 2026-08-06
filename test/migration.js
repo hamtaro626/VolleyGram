@@ -116,14 +116,14 @@ function boot(seedJson, seedHash) {
       movePlayer, positionsFor, defaultLayout, setFormation, settingPlayer,
       startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory,
       settersThisRotation, shareUrl, encodeLineup, decodeLineup, importFromUrl,
-      startDrag, onDrag, endDrag, versionFrom, overlapViolations };
+      startDrag, onDrag, endDrag, versionFrom, overlapViolations, applySurface };
     globalThis.__players = () => playerElements;
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
     globalThis.__const = { ZONE_LABEL_POSITIONS, SERVE_SLOT, SLOT_POSITIONS,
       COURT_SPOTS, FORMATIONS, DEFENSE_SPOTS, SETTER_TARGET, FRONT_ROW_SLOTS,
       BACK_ROW_SLOTS, BACK_PASS_SPOTS, BACK_COVER_SPOTS, FRONT_PASS_SPOTS,
-      NET_SPOTS, ZONE_REGIONS, MIN_PLAYERS };
+      NET_SPOTS, ZONE_REGIONS, MIN_PLAYERS, SURFACES, DEFAULT_SURFACE };
     globalThis.__status = () => document.getElementById('status').textContent;
   `;
   vm.runInNewContext(source + expose, context, { filename: 'script.js' });
@@ -1487,6 +1487,88 @@ console.log('\n41. Short-handed round trip and sharing');
   const positions = app.call.positionsFor('receive', 1);
   check('receive still places every short-handed player',
     Object.keys(positions).length === 3, JSON.stringify(Object.keys(positions)));
+}
+
+console.log('\n42. Playing surface');
+{
+  const app = boot();
+  const courtEl = app.document.getElementById('court');
+
+  check('a fresh lineup is indoor', app.peek().saved.surface === 'indoor',
+    String(app.peek().saved.surface));
+  check('and the court carries no grass class',
+    !courtEl.classList.contains('surface-grass'));
+
+  // Pre-v0.21 saves have no surface at all. An optional field with a default is
+  // not a new storage shape, so this must work without a version bump.
+  const legacy = boot(JSON.stringify({ roster: [], layouts: { 1: {} }, entrySlot: 1 }));
+  check('a pre-v0.21 save defaults to indoor',
+    legacy.peek().saved.surface === 'indoor', String(legacy.peek().saved.surface));
+
+  const grass = boot(JSON.stringify({ version: 2, activeId: 'a',
+    lineups: { a: { name: 'Quads', surface: 'grass', roster: [], layouts: {} } } }));
+  check('a saved surface comes back', grass.peek().saved.surface === 'grass');
+  grass.call.render();
+  check('and paints the court', grass.document.getElementById('court')
+    .classList.contains('surface-grass'));
+
+  // Same defence as every other hand-editable field: it arrives from
+  // localStorage and from share links, so an unknown value can't leave the
+  // court unpainted.
+  const bogus = boot(JSON.stringify({ version: 2, activeId: 'a',
+    lineups: { a: { name: 'X', surface: 'astroturf', roster: [], layouts: {} } } }));
+  check('an unknown surface falls back to indoor',
+    bogus.peek().saved.surface === 'indoor', String(bogus.peek().saved.surface));
+  const nonString = boot(JSON.stringify({ version: 2, activeId: 'a',
+    lineups: { a: { name: 'X', surface: { hex: '#000' }, roster: [], layouts: {} } } }));
+  check('so does a non-string surface', nonString.peek().saved.surface === 'indoor');
+
+  // Switching back has to clear the old class, or two .court rules compete.
+  const both = boot(JSON.stringify({ version: 2, activeId: 'a',
+    lineups: { a: { name: 'X', surface: 'grass', roster: [], layouts: {} } } }));
+  both.call.render();
+  both.peek().saved.surface = 'indoor';
+  both.call.render();
+  const cls = both.document.getElementById('court').classList;
+  check('switching back to indoor clears the grass class',
+    !cls.contains('surface-grass') && cls.contains('surface-indoor'));
+
+  // It's a repaint, not a reshuffle: nobody moves, so dragged positions stay.
+  const dragged = boot(JSON.stringify({ version: 2, activeId: 'a', lineups: { a: {
+    name: 'X', roster: [], layouts: { base: { 1: { S1: { x: 20, y: 30 } } } } } } }));
+  dragged.peek().saved.surface = 'grass';
+  dragged.call.render();
+  const kept = dragged.peek().saved.layouts.base[1];
+  check('changing surface keeps dragged positions',
+    kept && kept.S1 && kept.S1.x === 20, JSON.stringify(kept));
+
+  // Surface belongs to the lineup, so it has to survive a share link.
+  const hash = '#' + (String(grass.call.shareUrl()).split('#')[1] || '');
+  const viaLink = boot(undefined, hash);
+  check('surface travels in a share link', viaLink.peek().saved.surface === 'grass',
+    String(viaLink.peek().saved.surface));
+
+  // Each lineup owns its own, the same way it owns its system.
+  const two = boot();
+  two.call.addLineup();
+  const ids = Object.keys(two.peek().store.lineups);
+  two.peek().store.lineups[ids[0]].surface = 'grass';
+  check('one lineup being grass leaves the other indoor',
+    two.peek().store.lineups[ids[1]].surface === 'indoor');
+
+  // Cross-file drift: every surface the script offers needs a rule to paint it,
+  // or picking it from the dropdown silently does nothing.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  const { SURFACES, DEFAULT_SURFACE } = app.consts;
+  check('the default surface is one of the offered ones',
+    Object.keys(SURFACES).includes(DEFAULT_SURFACE), DEFAULT_SURFACE);
+  Object.keys(SURFACES).forEach((key) => {
+    // The default is painted by the bare `.court` rule; the rest need their own.
+    const painted = key === DEFAULT_SURFACE
+      ? /\.court\s*\{[^}]*background:/.test(css)
+      : new RegExp(`\\.court\\.surface-${key}\\s*\\{[^}]*background:`).test(css);
+    check(`style.css paints the ${key} surface`, painted);
+  });
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

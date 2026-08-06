@@ -11,6 +11,26 @@ const CSS = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
 const MIN_CONTRAST = 4.5;
 const MIN_HUE_GAP = 25; // degrees, between two saturated colours
 
+// A role sits *on* the court rather than beside another role, and every player
+// circle carries a dark border, so the court gets a lower bar than two roles do.
+// It isn't zero: the clay court is 17 degrees off the setter's gold, which is
+// the tightest pair that ships and the reason this floor is 15 rather than 25.
+const MIN_COURT_HUE_GAP = 15;
+// The second route. Two colours sharing a hue are still tellable apart if one
+// is much darker than the other, and against the court that's available in a
+// way it isn't between two roles: every role fill is deliberately held to a
+// 5.4-7.6:1 band against the same text, so they all sit at a similar lightness
+// and hue is genuinely all they have. The court is under no such constraint.
+//
+// Beach is the case that needs it. Every sandy hue lands within a few degrees
+// of the setter's gold, so no shade of sand can clear the hue gap -- sand is
+// gold. It clears on contrast instead, at 3:1, WCAG's non-text figure.
+const MIN_ROLE_COURT_CONTRAST = 3;
+// Same figure, for the court against the white boundary lines, attack line and
+// zone numbers it has to hold.
+const MIN_LINE_CONTRAST = 3;
+const LINE_COLOUR = '#f2f4f8';
+
 const linear = (channel) => {
   const c = channel / 255;
   return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4);
@@ -101,6 +121,53 @@ for (let i = 0; i < saturated.length; i++) {
   const verdict = gap >= MIN_HUE_GAP ? 'ok' : 'FAIL';
   console.log(`  ${current.role.padEnd(5)} -> ${next.role.padEnd(5)} ${String(gap).padStart(3)} deg  ${verdict}`);
   if (gap < MIN_HUE_GAP) fail(`.role-${current.role} and .role-${next.role} are only ${gap} degrees apart`);
+}
+
+// --- The court underneath ---------------------------------------------
+//
+// Added in v0.21 with the grass surface. Before that there was one court colour
+// and this suite never looked at it -- which is exactly the drift the SPEC
+// warned about: a second palette shipping unverified while the suite still says
+// ALL PASS. Both courts are pulled out of the stylesheet, same as the roles.
+const surfaces = [
+  ...(CSS.match(/\.court\s*\{[^}]*background:\s*(#[0-9a-fA-F]{6})/)
+    ? [{ name: 'indoor', hex: CSS.match(/\.court\s*\{[^}]*background:\s*(#[0-9a-fA-F]{6})/)[1].toLowerCase() }]
+    : []),
+  ...[...CSS.matchAll(/\.court\.surface-([a-z]+)\s*\{[^}]*background:\s*(#[0-9a-fA-F]{6})/g)]
+    .map(([, name, hex]) => ({ name, hex: hex.toLowerCase() })),
+];
+
+console.log(`\nCourt surfaces (${surfaces.length}):`);
+if (surfaces.length === 0) fail('found no court background colours');
+
+for (const { name, hex } of surfaces) {
+  const lines = contrast(hex, LINE_COLOUR);
+  const courtHue = hsl(hex).hue;
+  console.log(`\n  ${name} ${hex}  hue ${courtHue}  vs lines ${lines.toFixed(2)}:1`);
+  if (lines < MIN_LINE_CONTRAST) {
+    fail(`the ${name} court is ${lines.toFixed(2)}:1 against the court lines, needs ${MIN_LINE_CONTRAST}`);
+  }
+
+  // Every role has to stay tellable from the surface it stands on, by hue or by
+  // lightness. Failing both is what makes a player disappear into the court.
+  for (const role of roles) {
+    const { hue, saturation } = hsl(role.hex);
+    const ratio = contrast(role.hex, hex);
+    // A grey has no hue to collide with, so contrast is all it has to answer to.
+    const raw = Math.abs(hue - courtHue);
+    const gap = saturation <= 0.15 ? null : Math.min(raw, 360 - raw);
+
+    const byHue = gap !== null && gap >= MIN_COURT_HUE_GAP;
+    const byContrast = ratio >= MIN_ROLE_COURT_CONTRAST;
+    const how = byHue ? `hue ${gap} deg` : byContrast ? `contrast ${ratio.toFixed(2)}:1` : 'NEITHER';
+    console.log(`    ${role.role.padEnd(5)} ${gap === null ? 'grey  ' : String(gap).padStart(3) + ' deg'}` +
+      `  ${ratio.toFixed(2).padStart(5)}:1  ${byHue || byContrast ? 'ok  via ' + how : 'FAIL'}`);
+
+    if (!byHue && !byContrast) {
+      fail(`.role-${role.role} clears the ${name} court on neither hue ` +
+        `(${gap === null ? 'grey' : gap + ' deg'}) nor contrast (${ratio.toFixed(2)}:1)`);
+    }
+  }
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

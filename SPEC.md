@@ -724,12 +724,133 @@ preference is untouched, so it comes back if the missing players do; only the
 displayed value is clamped, since assigning a select a value it doesn't have
 blanks it and reads back as 0.
 
+## v0.21 — playing surface
+
+A **Surface** setting in the roster panel: *Indoor — clay*, *Grass — green* or
+*Beach — sand*. Appearance only — no rule, formation or court dimension changes
+with it. Beach *doubles* remains unbuilt and out of scope for the reasons in
+*Still does NOT do*; this is paint.
+
+### It belongs to the lineup, not to the app
+
+`surface` sits on each VolleyGram beside `system` and `roster`, not at the top
+level beside `showLabels`. The rule that decides it is the one v0.6 set: a
+display preference is global, a fact about a team is per-lineup. Where you play
+is the second kind. Keep an indoor lineup and a grass lineup and each remembers
+its own court instead of being repainted every time you switch.
+
+Two things fall out of that. It rides in share links with no extra code, since
+the payload is the lineup object. And when grass quads eventually lands, the
+per-lineup `discipline` field it needs can *drive* this field rather than
+migrating it out of the top level.
+
+Changing it deliberately does **not** go through `changeLineup()`, which wipes
+every dragged position. That's correct when who-stands-where changes and wrong
+for a repaint — nobody moves, so the whiteboard survives.
+
+### Why this green
+
+`#2f5e2c`, at hue 116. Grassier greens were tried and rejected on clearance:
+
+| Court | Hue | Nearest role | Gap | vs court lines |
+|-------|-----|--------------|-----|----------------|
+| `#c87a45` clay | 24° | Setter gold | **17°** | 3.01:1 |
+| `#567d3a` | 95° | Libero green | **11°** | 4.34:1 |
+| `#4a7c3f` | 109° | Libero green | 25° | 4.49:1 |
+| `#2f5e2c` | 116° | Libero green | 32° | 6.91:1 |
+
+The libero's `#7aad30` is the constraint — the same collision the `.role-NONE`
+comment already worried about ("anything oranger runs into the court
+underneath"), just rotated round the wheel. The chosen green also holds the
+white boundary and attack lines far better than clay does.
+
+Worth recording, since it's the opposite of what you'd assume: **clay is the
+tighter pair.** At 17° from the setter's gold it's the closest role-to-court
+match that ships. Grass is the better-separated surface, not a compromise.
+
+### Beach is dark on purpose
+
+`#665132` — noticeably darker than sand actually is, and the reason is that
+**sand is gold.** Every sandy hue lands at 35–44°, and the setter's gold is 41°.
+There is no shade of sand that clears the hue rule, so hue can't do the
+separating here and lightness has to.
+
+A real pale sand was tried first and dropped on the numbers:
+
+| Role on `#d9c08a` pale sand | Contrast |
+|------|----------|
+| Setter | 1.32:1 |
+| Libero | 1.51:1 |
+| Outside | 1.61:1 |
+| Opposite | 1.60:1 |
+| No role | 1.68:1 |
+| Middle | 1.85:1 |
+
+It isn't the setter that washes out, it's **all six** — because v0.8 committed
+the whole palette to bright fills with near-black text, which assumes a court
+darker than the players. Pale sand also holds the white court lines at 1.61:1,
+against the 3:1 floor. Dark boundary lines, as a real beach court has, would
+have rescued the lines and done nothing for the players. Light sand isn't a
+matter of taste; it's incompatible with the palette.
+
+At `#665132` the gold clears the court at 3.22:1 and the lines at 6.84:1.
+
+### The court was never tested
+
+`contrast.js` checked roles against their text and against each other, and never
+against the thing they stand on. One court colour made that invisible; a second
+would have shipped unverified while the suite said ALL PASS — precisely the
+drift the quads note below predicted.
+
+It now pulls every court out of `style.css` and checks each role against each
+surface. A role has to clear the court **either way**:
+
+- **Hue**, by 15° — lower than the 25° between two roles, because a role sits
+  *on* a court rather than beside it and every circle carries a dark border. It
+  isn't zero, and clay at 17° from the gold is the reason it isn't 25.
+- **Contrast**, by 3:1 — WCAG's non-text figure.
+
+Two routes rather than one because the constraint that makes hue decisive
+between roles doesn't apply to the court. Every role fill is held to a 5.4–7.6:1
+band against the same text, so the roles all sit at a similar lightness and hue
+is genuinely all they have to separate them. A court is under no such
+constraint, so it can separate by being darker instead — which is the only thing
+that makes beach possible.
+
+Courts are also held to 3:1 against the white lines. Clay passes at 3.01:1,
+close enough to the edge to be worth knowing.
+
+**What this wouldn't catch.** Because the routes are OR'd, a court could be
+low-contrast against every role and still pass on hue alone — five of the six
+roles passed that way on the rejected pale sand, at ratios between 1.5:1 and
+1.9:1. That's deliberate rather than an oversight: contrast ratio measures
+lightness and says nothing about chromatic difference, and a teal circle 131°
+away on a pale court really is legible. Pale sand was still rejected, but by the
+line check and the setter, not by the other five.
+
+`migration.js` checks the cross-file link the other way: every key in `SURFACES`
+needs a rule in `style.css` to paint it, or picking it from the dropdown
+silently does nothing.
+
+### Exports needed no work
+
+`drawRotation()` already read the court fill with
+`getComputedStyle(court).backgroundColor`, so PNGs follow the surface for free.
+This is the one place the v0.8 duplication warning doesn't bite — the colour was
+never hard-coded into the canvas path, only the geometry was.
+
+`surface` was added without a storage version bump, same as `roleOverrides` and
+`checkOverlap`: an optional field with a default is not a new shape. An
+unrecognised value becomes indoor rather than leaving the court unpainted.
+
 ## Tests
 
 ```
-node test/migration.js    # 424 checks — storage, migration, roles, formations,
-                          #   quiz, sharing, dragging, short-handed rosters
-node test/contrast.js     # colour contrast and hue separation
+node test/migration.js    # 439 checks — storage, migration, roles, formations,
+                          #   quiz, sharing, dragging, short-handed rosters,
+                          #   playing surface
+node test/contrast.js     # colour contrast, hue separation, and every role
+                          #   against every court surface
 ```
 
 Both suites live in `test/`. The name is only convention — nothing requires it,
@@ -797,6 +918,18 @@ invent it.
 A palette keyed to discipline would want `test/contrast.js` to iterate palettes
 rather than find one — otherwise a second palette ships unverified while the
 suite still says ALL PASS, which is exactly the drift these tests exist to stop.
+
+**Still on the shelf as of v0.21, deliberately.** Two things happened that make
+it cheaper without making it due. Short-handed rosters (v0.20) mean quads with
+three players is a mechanism that already exists. And the surface setting
+(v0.21) is a per-lineup field of exactly the shape `discipline` wants, plus the
+green court quads would need — so when it lands, `discipline` drives `surface`
+rather than a second field appearing beside it. The court-vs-role checking that
+v0.21 added to `contrast.js` is the palette-iteration this paragraph asked for.
+
+What's still untouched is the expensive part: the fifty-odd references to
+`SLOT_POSITIONS`, `TRAVEL_ORDER`, `FRONT_ROW_SLOTS`, `OVERLAP_*` and
+`ZONE_REGIONS` that have to become per-discipline lookups.
 
 ## Still does NOT do
 

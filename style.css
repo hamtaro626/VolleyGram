@@ -74,6 +74,32 @@ h1 {
   touch-action: none; /* stop the browser scrolling the page mid-drag */
 }
 
+/* Grass. Deliberately dark: it has to carry the white court lines above it and
+   stay clear of the roles standing on it. At hue 116 it sits 32 degrees off the
+   libero's green -- the closest role, and above the 25 degree floor the rest of
+   the palette is held to. Lighter, grassier greens fail that: #567d3a lands 11
+   degrees from the libero and the two read as one colour.
+
+   Worth knowing that the clay court above is the *tighter* pair -- 17 degrees
+   from the setter's gold. Grass is the better-separated of the two surfaces,
+   not a compromise. Re-check both with: node test/contrast.js */
+.court.surface-grass {
+  background: #2f5e2c;
+}
+
+/* Sand, and darker than sand actually is. Every sandy hue lands within a few
+   degrees of the setter's gold -- 36 here against the gold's 41 -- so hue can't
+   do the separating and lightness has to. A real pale sand was tried and
+   dropped: at #d9c08a every role sits under 2:1 against it, because the whole
+   palette is bright fills by design, so it isn't the setter that washes out but
+   all six. Dark court lines would have rescued the lines and not the players.
+
+   At this darkness the gold clears the court by contrast (3.22:1) rather than
+   by hue, which is the second route test/contrast.js allows. */
+.court.surface-beach {
+  background: #665132;
+}
+
 /* The net sits along the top edge. */
 .net {
   position: absolute;
