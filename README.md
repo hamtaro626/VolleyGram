@@ -1,14 +1,14 @@
 # VolleyGram
 
-A volleyball rotation reference you can actually use courtside. Pick a rotation,
-see where all six players stand at the moment of serve — base, serve receive, or
+VolleyGram is a volleyball rotation reference you can actually use courtside. Pick a rotation,
+see where all six players (or more, or less) stand at the moment of serve — base, serve receive, or
 defense — then drag them where you want and save the diagram.
 
 **[Live app → hamtaro626.github.io/VolleyGram](https://hamtaro626.github.io/VolleyGram/)**
 
-Built phone-first: it has to work one-handed, standing up, in a gym.
+Built to use on mobile devices courtside
 
-## What it does
+## Features
 
 - **Rotations 1–6** for **4-2, 5-1 and 6-2** systems
 - **Three formations** — base, serve receive (2–5 passers), and defense
@@ -20,7 +20,7 @@ Built phone-first: it has to work one-handed, standing up, in a gym.
 - **Quiz mode** — tap the zone where a player belongs
 - **Rosters** of 2 to 12 players, custom names, per-rotation role overrides,
   configurable sub entry slot
-- **Short-handed play** — turn up with five and the empty zone rotates with you,
+- **Short-handed play** — field five players and the empty zone rotates with you,
   including the rotation where nobody is left to serve
 - **Multiple saved lineups**, plus 40-deep undo
 - **Export to image**, single rotation or all six, optional transparent
@@ -44,10 +44,6 @@ test/
   contrast.js   contrast, hue separation, and every role against all three
                 court surfaces, all parsed out of style.css
 ```
-
-**No build step. No dependencies. No package.json. No backend.** No accounts, no
-database, no sync. That is a deliberate constraint to allow flexible 
-compatibility across various devices — see *Still does NOT do* in [SPEC.md](SPEC.md).
 
 ## Running it
 
@@ -75,8 +71,6 @@ Plain Node scripts, no runner, no install, no config. Any recent Node works.
 Both print `ALL PASS` and exit 0. Run both before opening a PR; there's no CI to
 catch it for you.
 
-### The rule that matters most
-
 **Neither suite contains a copy of what it tests.**
 
 - `migration.js` reads `script.js` off disk and executes it against a stubbed
@@ -88,11 +82,11 @@ A test holding its own copy of the logic will eventually pass while the app is
 broken — the copy drifts from the original and the test keeps checking the copy.
 If you add tests, keep reading from the real source files.
 
-What the stub *can't* catch: layout, rendering, whether three buttons fit across
-a phone, whether a drag feels sluggish. Those need a real browser and a real
-thumb.
+The stub won't catch the following: 
+- layout
+- rendering
 
-## How the code is organised
+## How the code is organized
 
 `script.js` is one file, top to bottom:
 
@@ -105,7 +99,7 @@ thumb.
 | Rendering | court, players, labels, zone targets |
 | Interaction | drag, swipe, quiz, roster, export, share |
 
-Court numbering, net at the top:
+Court numbering is based on traditional volleyball zones, net at the top:
 
 ```
   4   3   2     front row
@@ -143,25 +137,15 @@ Degrade, don't assume.
 ## Contributing
 
 1. Fork, then branch off `main`.
-2. Make the change. Match the surrounding style — the codebase uses plain
-   functions, no framework, and comments that explain *why* rather than *what*.
+2. Make the change. 
 3. Run **both** test suites.
 4. Add tests for logic changes, reading from the real source files.
 5. Update [SPEC.md](SPEC.md) if you changed behaviour (see below).
 6. Open a PR describing what changed and why.
 
-Poke at it on a phone before you're confident. That's the whole target platform,
-and the stubbed tests can't see it.
-
 ### SPEC.md is the design log
 
-This file records, version by version, what was built and *why* —
-including things that were tried and removed (redo, in v0.13), decisions that
-were reversed, and a **Delivered — do not re-plan these** table that exists
-because the "not doing" list went three versions without being corrected.
-
-Read it before proposing something; it may already have been decided, built, or
-deliberately rejected. Keep it current when you change behaviour.
+This file records what was built, including things that were tried and removed, and a delivered table.
 
 ## Status
 
@@ -170,6 +154,3 @@ v0.21. Working title, actively developed, no issues or PRs open yet.
 ## License
 
 [MIT](LICENSE) — © 2026 Alec Vogelsang.
-
-Fork it, change it, build it into something else. Keep the copyright notice, and
-understand it comes with no warranty.
