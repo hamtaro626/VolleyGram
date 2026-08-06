@@ -12,7 +12,7 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.21">
+  <link rel="stylesheet" href="style.css?v=0.22">
 </head>
 <body>
   <main>
@@ -90,9 +90,11 @@
       <button id="shareLink">Share</button>
     </div>
 
-    <!-- The two panels that take over the screen. -->
-    <div class="actions two">
+    <!-- The panels that take over the screen. Three across needs the smaller
+         type, same as the row above. -->
+    <div class="actions compact">
       <button id="startQuiz">Quiz Mode</button>
+      <button id="openScoreboard">Scoreboard</button>
       <button id="toggleRoster" aria-expanded="false">Show roster</button>
     </div>
 
@@ -161,10 +163,54 @@
     </section>
   </main>
 
+  <!-- The scoreboard, outside <main> because it replaces the whole page rather
+       than sitting inside it. Landscape and iPad are the target: prop the thing
+       up on the bench and read it from the far side of the court. -->
+  <section class="scoreboard" id="scoreboard" hidden>
+    <div class="sb-head">
+      <span class="sb-game" id="sbGame">Game 1</span>
+      <span class="sb-rotation" id="sbRotation"></span>
+      <button id="closeScoreboard" class="sb-close">Done</button>
+    </div>
+
+    <div class="sb-teams">
+      <!-- Home is the team this app diagrams, and the only one whose side-out
+           moves the rotation. Said out loud, because nothing else on this
+           screen would tell you which half is yours. -->
+      <div class="sb-team">
+        <input class="sb-name" id="sbHomeName" maxlength="20"
+               aria-label="Home team name" autocomplete="off" spellcheck="false">
+        <button class="sb-point" id="sbHomePoint" aria-label="Point to the home team">
+          <span class="sb-score" id="sbHomeScore">0</span>
+        </button>
+        <div class="sb-under">
+          <span class="sb-yours">your rotation</span>
+          <button class="sb-serve" id="sbHomeServe" aria-pressed="true">Serving</button>
+        </div>
+      </div>
+
+      <div class="sb-team">
+        <input class="sb-name" id="sbAwayName" maxlength="20"
+               aria-label="Away team name" autocomplete="off" spellcheck="false">
+        <button class="sb-point" id="sbAwayPoint" aria-label="Point to the away team">
+          <span class="sb-score" id="sbAwayScore">0</span>
+        </button>
+        <div class="sb-under">
+          <button class="sb-serve" id="sbAwayServe" aria-pressed="false">Serve</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="sb-actions">
+      <button id="sbUndo" disabled>Undo point</button>
+      <button id="sbNewGame">New game</button>
+    </div>
+  </section>
+
   <!-- Which build you're actually looking at. Fixed in the corner so checking it
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.21"></script>
+  <script src="script.js?v=0.22"></script>
 </body>
 </html>

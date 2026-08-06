@@ -471,6 +471,162 @@ body.hide-labels .player .label {
   padding: 0.7rem 0.2rem;
 }
 
+/* --- Scoreboard ------------------------------------------------------- */
+
+/* This one is not phone-first. It's meant to be propped on a bench and read
+   from the far side of a court, so everything sizes off vmin -- the short edge
+   -- which is what actually limits how big a digit can be in either
+   orientation, and grows properly on an iPad. */
+
+body.scoring > main,
+body.scoring > .version {
+  display: none;
+}
+
+.scoreboard {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5vmin;
+  padding: 2vmin;
+  background: #16181d;
+  /* Behind the notch and the home indicator on a phone lying sideways. */
+  padding-left: max(2vmin, env(safe-area-inset-left));
+  padding-right: max(2vmin, env(safe-area-inset-right));
+  padding-bottom: max(2vmin, env(safe-area-inset-bottom));
+}
+
+/* Same trap the roster panel hit: `hidden` sets display:none, but the author
+   rule above sets display:flex and wins. This puts it back. */
+.scoreboard[hidden] {
+  display: none;
+}
+
+.sb-head {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  flex: 0 0 auto;
+}
+
+.sb-game {
+  font-size: clamp(0.9rem, 3vmin, 1.6rem);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+/* The link back to the diagram, and the reason this screen exists. Allowed to
+   shrink and ellipsis: it's the one thing here you read up close. */
+.sb-rotation {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-size: clamp(0.7rem, 2.2vmin, 1.2rem);
+  color: #a9b2c6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sb-close {
+  flex: 0 0 auto;
+  padding: 0.6rem 1.2rem;
+}
+
+.sb-teams {
+  flex: 1 1 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2vmin;
+  min-height: 0; /* let the halves shrink instead of overflowing the screen */
+}
+
+.sb-team {
+  display: flex;
+  flex-direction: column;
+  gap: 1vmin;
+  min-height: 0;
+  min-width: 0;
+}
+
+.sb-name {
+  font: inherit;
+  font-size: clamp(0.9rem, 3.4vmin, 2rem);
+  font-weight: 700;
+  text-align: center;
+  width: 100%;
+  padding: 0.4rem;
+  border: 1px solid #3a4152;
+  border-radius: 8px;
+  background: #232833;
+  color: #f2f4f8;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+/* The whole half is the tap target. Courtside you are not aiming. */
+.sb-point {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  border: 2px solid #3a4152;
+  border-radius: 14px;
+  background: #1d2129;
+  /* Stops iOS treating a fast second tap as a zoom rather than a second point. */
+  touch-action: manipulation;
+}
+
+.sb-point:active {
+  background: #2b313d;
+}
+
+.sb-score {
+  font-size: clamp(3rem, 30vmin, 20rem);
+  font-weight: 700;
+  line-height: 1;
+  /* Digits keep their own width, so the number stops jittering as it climbs. */
+  font-variant-numeric: tabular-nums;
+}
+
+.sb-under {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.6rem;
+  flex: 0 0 auto;
+  min-height: 2.2rem;
+}
+
+.sb-yours {
+  font-size: clamp(0.6rem, 1.8vmin, 0.95rem);
+  color: #6f7891;
+  white-space: nowrap;
+}
+
+.sb-serve {
+  padding: 0.5rem 1rem;
+  font-size: clamp(0.7rem, 2vmin, 1.1rem);
+  background: #232833;
+  color: #a9b2c6;
+}
+
+/* Gold, because that is already what this app means by "the ball is here" --
+   the setter's ring and the server's pill both use it. */
+.sb-serve.is-serving {
+  background: #d8a029;
+  color: #16181d;
+}
+
+.sb-actions {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
 /* --- Version marker --------------------------------------------------- */
 
 /* Small, dim, and pinned to the corner so it's readable without scrolling the

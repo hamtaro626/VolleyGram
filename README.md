@@ -26,6 +26,8 @@ Built to use on mobile devices courtside
 - **Export to image**, single rotation or all six, optional transparent
   background
 - **Share links** that carry the whole diagram in the URL — no server involved
+- **Scoreboard** — a full-screen, read-it-from-across-the-gym score counter for
+  two named teams, where a side-out advances the rotation on the diagram
 - **Playing surface** per lineup — indoor clay, grass green or beach sand,
   contrast-checked against every role
 
@@ -39,8 +41,9 @@ style.css       ~17 KB
 script.js       ~82 KB, all application logic
 SPEC.md         the design log — read this first
 test/
-  migration.js  439 checks: storage, migration, roles, formations, quiz,
-                sharing, dragging, short-handed rosters, playing surface
+  migration.js  487 checks: storage, migration, roles, formations, quiz,
+                sharing, dragging, short-handed rosters, playing surface,
+                scoreboard
   contrast.js   contrast, hue separation, and every role against all three
                 court surfaces, all parsed out of style.css
 ```
@@ -63,7 +66,7 @@ of a number. That's expected — see *Bumping the version* below.
 ## Tests
 
 ```sh
-node test/migration.js    # 439 checks across 42 groups
+node test/migration.js    # 487 checks across 44 groups
 node test/contrast.js     # contrast, hue separation, roles against the court
 ```
 
@@ -149,7 +152,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.21. Working title, actively developed, no issues or PRs open yet.
+v0.22. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

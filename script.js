@@ -212,6 +212,14 @@ const MIN_PLAYERS = 2;
 const HOLD_MS = 1500;
 const HISTORY_LIMIT = 40;
 
+// One entry per point scored, kept so the scoreboard can undo a mis-tap. A set
+// to 25 runs 45-90 rallies, so this holds a long one whole and still costs
+// almost nothing in localStorage.
+const RALLY_LIMIT = 120;
+// Long enough for a real club name, short enough to stay legible from across a
+// gym, which is the entire point of the scoreboard.
+const MAX_TEAM_NAME = 20;
+
 // NONE is a real role meaning "not decided yet". Listed first so it's the top
 // option in the roster dropdown.
 // Libero is last and appears in no system's default lineup -- it exists if you
@@ -367,6 +375,11 @@ let store = {
   roleScope: 'all',      // whether a role edit hits every rotation or just this one
   transparentExport: false,
   checkOverlap: false,   // flag base positions that break rotational order
+  // The live match. Top level rather than on a lineup: a score is something
+  // happening right now, not a fact about a team, and it would be wrong to
+  // carry one into a share link. newMatch() is a function declaration, so it's
+  // hoisted and callable from up here.
+  match: newMatch(),
 };
 
 // A live reference into store.lineups, so the rest of the code can go on
@@ -891,6 +904,9 @@ function load() {
       transparentExport: parsed.transparentExport === true,
       // Added in v0.19. Defaults off, so an older save needs no version bump.
       checkOverlap: parsed.checkOverlap === true,
+      // Added in v0.22, same treatment: absent in every earlier save, so
+      // normaliseMatch() hands back a fresh 0-0 rather than a version bump.
+      match: normaliseMatch(parsed.match),
     };
     saved = store.lineups[store.activeId];
   } catch (error) {
@@ -1713,6 +1729,226 @@ function renderQuiz() {
   render();
 }
 
+// --- Scoreboard -------------------------------------------------------
+//
+// A scoreboard is not what this app is for, and a generic one would be doing
+// too much. What earns its place is the link: winning a rally the other team
+// served is a side-out, and a side-out is *why* you rotate. Tracking the score
+// therefore tells the diagram which rotation you're actually in, which is the
+// one input the rotation model never had -- until now it was something you
+// tapped.
+//
+// Only the home side is diagrammed, so only the home side's side-out moves the
+// rotation. The away team rotates too, in real life; this app has never modelled
+// them and doesn't start here.
+//
+// What it deliberately does NOT know: how many points win a set, win-by-two,
+// a shorter fifth, when to switch ends, or how many substitutions you have
+// left. Leagues disagree on all of it. Same position v0.20 took on the missing
+// server -- state the fact, stop before the consequence.
+
+const SIDES = ['home', 'away'];
+
+function newMatch() {
+  return {
+    home: 'Home',
+    away: 'Away',
+    homeScore: 0,
+    awayScore: 0,
+    game: 1,
+    serving: 'home',
+    // The state *before* each point, newest last. Undo pops one and puts it
+    // back. Kept here rather than in the app's 40-step history because that
+    // stack is for the whiteboard: tapping a point should not bury the undo
+    // for a drag you want back, and undoing a drag should not rewind the score.
+    rallies: [],
+  };
+}
+
+// The match blob is hand-editable in devtools like everything else, and it now
+// drives the rotation, so a bad value here would move the diagram rather than
+// just look wrong.
+function normaliseMatch(raw) {
+  const base = newMatch();
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return base;
+
+  const name = (value, fallback) => (typeof value === 'string' && value.trim()
+    ? value.trim().slice(0, MAX_TEAM_NAME) : fallback);
+  // Scores are counts: whole, and never below zero.
+  const count = (value) => (Number.isFinite(value) && value > 0 ? Math.floor(value) : 0);
+  const side = (value, fallback) => (SIDES.includes(value) ? value : fallback);
+
+  const rallies = (Array.isArray(raw.rallies) ? raw.rallies : [])
+    .filter((rally) => rally && typeof rally === 'object'
+      && SIDES.includes(rally.side) && SIDES.includes(rally.serving)
+      && Number.isFinite(rally.rotation) && rally.rotation >= 1)
+    .map((rally) => ({
+      side: rally.side,
+      serving: rally.serving,
+      rotation: Math.floor(rally.rotation),
+    }))
+    .slice(-RALLY_LIMIT);
+
+  return {
+    home: name(raw.home, base.home),
+    away: name(raw.away, base.away),
+    homeScore: count(raw.homeScore),
+    awayScore: count(raw.awayScore),
+    game: Math.max(1, count(raw.game) || 1),
+    serving: side(raw.serving, base.serving),
+    rallies,
+  };
+}
+
+const scoreKey = (which) => (which === 'home' ? 'homeScore' : 'awayScore');
+
+// The whole mechanism, in four lines. Everything else on this screen is display.
+function scorePoint(which) {
+  if (!SIDES.includes(which)) return;
+  const match = store.match;
+
+  match.rallies.push({ side: which, serving: match.serving, rotation: currentRotation });
+  if (match.rallies.length > RALLY_LIMIT) match.rallies.shift();
+
+  const sideOut = which !== match.serving;
+  match[scoreKey(which)] += 1;
+  match.serving = which;
+
+  // Winning your own serve is a point and nothing else. Winning the other
+  // team's serve is a side-out: you get the ball back, and you rotate.
+  if (sideOut && which === 'home') step(1);
+
+  save();
+  renderScoreboard();
+}
+
+// Courtside, on a phone, with a rally starting: the mis-tap is not a rare case,
+// it's the normal one. Restoring the rotation as well as the score is the part
+// that matters -- a point undone that left the diagram rotated would be worse
+// than no undo at all.
+function undoRally() {
+  const match = store.match;
+  const last = match.rallies.pop();
+  if (!last) return;
+
+  const key = scoreKey(last.side);
+  match[key] = Math.max(0, match[key] - 1);
+  match.serving = last.serving;
+
+  // The roster can shrink between a point and its undo, taking rotations with
+  // it, so the stored rotation is checked rather than trusted.
+  const rotation = last.rotation <= rotationCount() ? last.rotation : 1;
+  if (rotation !== currentRotation) setRotation(rotation);
+
+  save();
+  renderScoreboard();
+}
+
+// Who serves first in the next game is a coin toss, an alternation, or a league
+// rule, so it's left where it is and set by hand.
+function newGame() {
+  const match = store.match;
+  match.game += 1;
+  match.homeScore = 0;
+  match.awayScore = 0;
+  match.rallies = [];
+  setRotation(1);
+  save();
+  renderScoreboard();
+}
+
+// A correction, not a rally: it fixes who had the ball rather than recording
+// that anything happened, so it takes no undo step and appears in no rally.
+function setServing(which) {
+  if (!SIDES.includes(which)) return;
+  store.match.serving = which;
+  save();
+  renderScoreboard();
+}
+
+function renameTeam(which, value) {
+  if (!SIDES.includes(which)) return;
+  store.match[which] = String(value || '').slice(0, MAX_TEAM_NAME);
+  save();
+  renderScoreboard();
+}
+
+const scorePanel = document.getElementById('scoreboard');
+const scoreElements = {
+  home: {
+    name: document.getElementById('sbHomeName'),
+    score: document.getElementById('sbHomeScore'),
+    serve: document.getElementById('sbHomeServe'),
+  },
+  away: {
+    name: document.getElementById('sbAwayName'),
+    score: document.getElementById('sbAwayScore'),
+    serve: document.getElementById('sbAwayServe'),
+  },
+};
+
+function renderScoreboard() {
+  const match = store.match;
+
+  SIDES.forEach((which) => {
+    const el = scoreElements[which];
+    el.score.textContent = String(match[scoreKey(which)]);
+    // Only written when it differs, or typing in the field would fight the
+    // cursor back to the end on every keystroke.
+    if (el.name.value !== match[which]) el.name.value = match[which];
+    const serving = match.serving === which;
+    el.serve.classList.toggle('is-serving', serving);
+    el.serve.setAttribute('aria-pressed', String(serving));
+    el.serve.textContent = serving ? 'Serving' : 'Serve';
+  });
+
+  document.getElementById('sbGame').textContent = `Game ${match.game}`;
+  // describeRotation() is what the main status line says, so the scoreboard and
+  // the diagram can't disagree about who's setting or which rotation you're in.
+  document.getElementById('sbRotation').textContent = describeRotation();
+  document.getElementById('sbUndo').disabled = match.rallies.length === 0;
+}
+
+// A scoreboard whose screen sleeps mid-set is worse than no scoreboard, which
+// is the whole reason this is here. Every part of it is optional: unsupported,
+// denied, or a backgrounded tab all land in the same catch, and the scoreboard
+// works the same either way.
+let wakeLock = null;
+
+async function keepAwake(want) {
+  try {
+    if (want && !wakeLock && navigator.wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      // The browser drops it when the tab is hidden and won't tell us twice.
+      if (wakeLock.addEventListener) {
+        wakeLock.addEventListener('release', () => { wakeLock = null; });
+      }
+    } else if (!want && wakeLock) {
+      const held = wakeLock;
+      wakeLock = null;
+      await held.release();
+    }
+  } catch (error) {
+    wakeLock = null;
+  }
+}
+
+function openScoreboard() {
+  // Both take over the screen, and a quiz hides the players the scoreboard's
+  // rotation line is describing.
+  if (quiz) endQuiz();
+  document.body.classList.add('scoring');
+  scorePanel.hidden = false;
+  renderScoreboard();
+  keepAwake(true);
+}
+
+function closeScoreboard() {
+  document.body.classList.remove('scoring');
+  scorePanel.hidden = true;
+  keepAwake(false);
+}
+
 // --- Export to image --------------------------------------------------
 
 // Drawing to a canvas means redescribing the court in a second place, which is
@@ -2288,6 +2524,28 @@ function syncRosterButton() {
   rosterButton.setAttribute('aria-expanded', String(open));
 }
 
+document.getElementById('openScoreboard').addEventListener('click', openScoreboard);
+document.getElementById('closeScoreboard').addEventListener('click', closeScoreboard);
+document.getElementById('sbUndo').addEventListener('click', undoRally);
+
+// The one control on this screen that throws away a score, so it asks first.
+document.getElementById('sbNewGame').addEventListener('click', () => {
+  const { homeScore, awayScore } = store.match;
+  if (homeScore + awayScore > 0
+    && !confirm(`Start game ${store.match.game + 1}? The current score is lost.`)) return;
+  newGame();
+});
+
+SIDES.forEach((which) => {
+  const capitalised = which[0].toUpperCase() + which.slice(1);
+  document.getElementById(`sb${capitalised}Point`)
+    .addEventListener('click', () => scorePoint(which));
+  document.getElementById(`sb${capitalised}Serve`)
+    .addEventListener('click', () => setServing(which));
+  document.getElementById(`sb${capitalised}Name`)
+    .addEventListener('input', (event) => renameTeam(which, event.target.value));
+});
+
 const labelsButton = document.getElementById('toggleLabels');
 labelsButton.addEventListener('click', () => {
   store.showLabels = !store.showLabels;
@@ -2318,6 +2576,7 @@ buildFormationOptionSelects();
 transparentToggle.checked = store.transparentExport;
 overlapToggle.checked = store.checkOverlap;
 rebuild();
+renderScoreboard();
 
 // Write straight back after loading, so data saved by an older version gets
 // upgraded on the spot instead of sitting in its old shape until the first
