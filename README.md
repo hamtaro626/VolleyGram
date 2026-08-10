@@ -18,8 +18,8 @@ Built to use on mobile devices courtside
 - **Overlap-legality checking** — flags FIVB 7.4 violations at the moment of
   serve (base formation only, on purpose)
 - **Quiz mode** — tap the zone where a player belongs
-- **Rosters** of 2 to 12 players, custom names, per-rotation role overrides;
-  the roster order is the serving order
+- **Rosters** of 2 to 12 players, custom names, per-rotation role overrides,
+  configurable sub entry zone; the roster order is the serving order
 - **Short-handed play** — field five players and the empty zone rotates with you,
   including the rotation where nobody is left to serve
 - **Multiple saved lineups**, plus 40-deep undo
@@ -41,7 +41,7 @@ style.css       ~17 KB
 script.js       ~82 KB, all application logic
 SPEC.md         the design log — read this first
 test/
-  migration.js  504 checks: storage, migration, roles, formations, quiz,
+  migration.js  518 checks: storage, migration, roles, formations, quiz,
                 sharing, dragging, short-handed rosters, playing surface,
                 scoreboard
   contrast.js   contrast, hue separation, every role against all three court
@@ -67,7 +67,7 @@ of a number. That's expected — see *Bumping the version* below.
 ## Tests
 
 ```sh
-node test/migration.js    # 504 checks across 46 groups
+node test/migration.js    # 518 checks across 46 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
@@ -153,7 +153,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.23. Working title, actively developed, no issues or PRs open yet.
+v0.24. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

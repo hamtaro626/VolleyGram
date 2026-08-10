@@ -12,7 +12,7 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.23">
+  <link rel="stylesheet" href="style.css?v=0.24">
 </head>
 <body>
   <main>
@@ -87,7 +87,7 @@
     <div class="actions compact">
       <button id="toggleLabels" aria-pressed="true">Labels: on</button>
       <button id="exportImage">Save image</button>
-      <button id="shareLink">Share</button>
+      <button id="shareLink">Share team</button>
     </div>
 
     <!-- The panels that take over the screen. Three across needs the smaller
@@ -127,6 +127,17 @@
         <span>Surface</span>
         <select id="surface"><!-- filled by script.js --></select>
       </label>
+
+      <label class="setting">
+        <span>Subs enter at</span>
+        <select id="entrySlot"><!-- filled by script.js --></select>
+      </label>
+
+      <!-- Shown only when the choice has a visible consequence. -->
+      <p class="setting-note" id="entryNote" hidden>
+        Subs walk on mid-lineup, so rows 1&ndash;6 aren't all on court at
+        rotation 1. Serving order still follows the roster.
+      </p>
 
       <label class="setting">
         <span>Role edits apply to</span>
@@ -211,6 +222,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.23"></script>
+  <script src="script.js?v=0.24"></script>
 </body>
 </html>

@@ -595,6 +595,8 @@ body.scoring > .version {
   color: #f2f4f8;
   /* Stops iOS treating a fast second tap as a zoom rather than a second point. */
   touch-action: manipulation;
+  /* Lets .sb-score size off this panel rather than the viewport -- see below. */
+  container-type: size;
 }
 
 /* Darkening rather than lightening: the fills already carry white text, and
@@ -603,12 +605,35 @@ body.scoring > .version {
   filter: brightness(0.8);
 }
 
+/* vmin was the wrong yardstick and an iPad is where it shows.
+
+   vmin is the *viewport's* short edge, so on an iPad in landscape it measures
+   the height -- 820pt or so -- and 30% of that left the score at about 250pt
+   in a panel with room for far more. On a phone held upright the same rule
+   measured the width, which really is the binding constraint there, and landed
+   at a size that reads correctly. One rule, two different questions.
+
+   The digits should size off the panel they sit in, not the screen. Container
+   query units ask exactly that: cqw and cqh are the width and height of
+   .sb-point. Width is what limits a two-digit score, so 65cqw does the work
+   and 70cqh only steps in on a panel that is wider than it is tall.
+
+   Portrait phone lands within a few percent of where it was, which is the
+   size that was already right. An iPad gains about half again. */
 .sb-score {
   font-size: clamp(3rem, 30vmin, 20rem);
   font-weight: 700;
   line-height: 1;
   /* Digits keep their own width, so the number stops jittering as it climbs. */
   font-variant-numeric: tabular-nums;
+}
+
+/* The vmin rule above stays as the fallback for anything without container
+   queries, which is why it isn't simply replaced. */
+@supports (container-type: size) {
+  .sb-score {
+    font-size: min(70cqh, 65cqw);
+  }
 }
 
 .sb-actions {
@@ -866,6 +891,28 @@ button.glyph {
 
 .roster button.icon.remove:hover:not(:disabled) {
   color: #ff9f9f;
+}
+
+/* A consequence worth stating next to the control that causes it, rather than
+   letting someone discover it on the court and report it as a bug. */
+.setting-note {
+  margin: -0.2rem 0 0.2rem;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  color: #a9b2c6;
+}
+
+.setting-note[hidden] {
+  display: none;
+}
+
+/* Open panels read as pressed. Same treatment the formation tabs and rotation
+   numbers already use for "this is the one you're on", so there is one visual
+   language for selected in the app rather than two. */
+#toggleRoster[aria-expanded="true"] {
+  background: #f2f4f8;
+  border-color: #f2f4f8;
+  color: #16181d;
 }
 
 /* --- Quiz panel ------------------------------------------------------- */

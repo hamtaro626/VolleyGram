@@ -297,6 +297,11 @@ const SURFACES = {
 
 const DEFAULT_SURFACE = 'indoor';
 
+// Middle back, which is where subs entered before v0.4 and where they entered
+// again in v0.23. It's the one entry zone that also keeps roster rows 1-6 on
+// court together at rotation 1, so it stays the default.
+const DEFAULT_ENTRY = 6;
+
 // Build a starting roster for a system. `fallback` is the name shown until you
 // type a real one; it's fixed at creation so it doesn't change when you reorder
 // the lineup. Roles that appear twice get numbered, roles that appear once
@@ -356,6 +361,7 @@ function newLineup(name) {
     name,
     system: DEFAULT_SYSTEM,
     surface: DEFAULT_SURFACE,
+    entrySlot: DEFAULT_ENTRY,  // the zone off-court players walk on to
     roster: rosterFromSystem(DEFAULT_SYSTEM),
     // formation -> rotation -> { player id -> {x, y} }. Only holds positions
     // you've dragged; anything absent is generated.
@@ -406,6 +412,7 @@ const rosterRows = document.getElementById('rosterRows');
 const undoButton = document.getElementById('undo');
 const holdButton = document.getElementById('resetAll');
 const surfaceSelect = document.getElementById('surface');
+const entrySelect = document.getElementById('entrySlot');
 const systemSelect = document.getElementById('system');
 const lineupSelect = document.getElementById('lineup');
 const passersSelect = document.getElementById('passers');
@@ -445,23 +452,38 @@ function rotationCount() {
 }
 
 // The rotational ring: every position a player passes through, in the order
-// they pass through it. Zone 1 first, then the bench, then the rest of the
-// zones in travel order. `null` is a bench seat.
+// they pass through it. `null` is a bench seat. With subs entering at middle
+// back, the default:
 //
 //   z1 -> bench... -> z6 -> z5 -> z4 -> z3 -> z2 -> z1
 //
-// So the server rotates off, the bench queue shuffles along, and whoever
-// reaches the end of it walks back on at middle back.
+// The server rotates off, the bench queue shuffles along, and whoever reaches
+// the end of it walks back on wherever "subs enter at" says.
 //
-// The bench sitting *directly after zone 1* is the whole thing, and it is
-// forced rather than chosen. Two properties have to hold at once: the roster
-// list is the serving order (that's what a lineup is), and rotation 1 puts
-// roster row N in zone N. Work through where each roster row must sit for both
-// to be true and only this arrangement satisfies them -- see v0.23 in SPEC.md,
-// and the v0.4 bug it fixes.
+// What matters, and what v0.4 got wrong, is that the *roster order is the
+// serving order* whatever the entry zone. v0.4 kept the first six roster rows
+// on court by construction and let the bench land where it may, which shoved
+// substitutes up the serving queue. This keeps the queue and lets the bench
+// land where it may instead -- so with any entry zone other than middle back,
+// the player sitting out at rotation 1 is somewhere in the middle of the
+// lineup rather than last. That is the honest reading: if subs walk on at
+// zone 1, whoever serves next has to be off court now, waiting to do it.
+//
+// See v0.24 in SPEC.md, and v0.23 for the bug this shape fixes.
 function courtRing() {
   const bench = cycleLength() - COURT_SPOTS;
-  return [TRAVEL_ORDER[0], ...Array(bench).fill(null), ...TRAVEL_ORDER.slice(1)];
+  // The bench block sits immediately *before* the zone subs walk on to, so
+  // whoever reaches the end of it steps into that zone next rotation.
+  const at = TRAVEL_ORDER.indexOf(saved.entrySlot);
+  const ring = [
+    ...TRAVEL_ORDER.slice(0, at),
+    ...Array(bench).fill(null),
+    ...TRAVEL_ORDER.slice(at),
+  ];
+  // Turned so zone 1 leads. Roster row 0 sits at position 0, which is what
+  // makes it serve first -- and every row after it serve in order.
+  const start = ring.indexOf(SERVE_SLOT);
+  return [...ring.slice(start), ...ring.slice(0, start)];
 }
 
 // Position around the ring. Roster row N starts N places *back* from the front,
@@ -816,6 +838,10 @@ function normaliseLineup(raw, fallbackName) {
     // default is not a new storage shape, so no version bump. An unknown
     // surface becomes indoor rather than leaving the court unpainted.
     surface: SURFACES[raw.surface] ? raw.surface : DEFAULT_SURFACE,
+    // Back in v0.24 after v0.23 dropped it. A save written by v0.23 has no
+    // entrySlot and gets the default; one written by v0.4 to v0.22 still has
+    // the zone that was chosen back then, and it now means what it said.
+    entrySlot: TRAVEL_ORDER.includes(raw.entrySlot) ? raw.entrySlot : DEFAULT_ENTRY,
     roster,
     layouts: normaliseLayouts(raw.layouts),
     // Added in v0.8. Absent in every earlier save, hence the default rather
@@ -1163,6 +1189,7 @@ function syncSelects() {
   syncLineupSelect();
   syncSystemSelect();
   syncSurfaceSelect();
+  syncEntrySelect();
 }
 
 // Point `saved` at a different lineup. Everything else reads through it, so
@@ -1251,6 +1278,21 @@ function applySystem(key) {
   });
 }
 
+
+function syncEntrySelect() {
+  entrySelect.replaceChildren();
+  TRAVEL_ORDER.slice().sort((a, b) => a - b).forEach((zone) => {
+    const option = document.createElement('option');
+    option.value = zone;
+    option.textContent = `Zone ${zone} — ${ZONE_NAMES[zone]}`;
+    option.selected = zone === saved.entrySlot;
+    entrySelect.appendChild(option);
+  });
+  // Only middle back keeps roster rows 1-6 on court together at rotation 1.
+  // Any other choice interleaves the bench, which looks like a bug unless it
+  // says so -- and it looking like a bug is exactly how v0.23 got reported.
+  document.getElementById('entryNote').hidden = saved.entrySlot === DEFAULT_ENTRY;
+}
 
 function syncSurfaceSelect() {
   surfaceSelect.replaceChildren();
@@ -2398,6 +2440,13 @@ document.getElementById('addPlayer').addEventListener('click', () => changeLineu
 
 // Deliberately not changeLineup(): that wipes every dragged position, which is
 // right when who-stands-where changes and wrong for a repaint. Nobody moves.
+// Changing where subs walk on reshuffles who stands where in every rotation,
+// so dragged positions no longer mean anything -- same as reordering the
+// roster. Undo covers it.
+entrySelect.addEventListener('change', () => {
+  changeLineup(() => { saved.entrySlot = Number(entrySelect.value); });
+});
+
 surfaceSelect.addEventListener('change', () => {
   pushHistory();
   saved.surface = SURFACES[surfaceSelect.value] ? surfaceSelect.value : DEFAULT_SURFACE;

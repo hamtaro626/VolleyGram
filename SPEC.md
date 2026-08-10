@@ -1077,12 +1077,89 @@ Plus the reported roster by name, asserting Ashley serves seventh. Run against
 the v0.4 algorithm, eight of these fail and the six-player cases pass — which
 is the shape of the blind spot that let this through.
 
+## v0.24 — the entry zone comes back, and a bigger score
+
+### "Subs enter at" is restored
+
+v0.23 removed it, reasoning that the bench block had exactly one legal position.
+That was true only because v0.23 also insisted rotation 1 put roster row N in
+zone N. Drop *that* and the setting works fine, with the serving order intact:
+
+```
+entry z6  ring [1, B, 6, 5, 4, 3, 2]   rot 1: rows 1-6 on court, row 7 sits
+entry z1  ring [1, 6, 5, 4, 3, 2, B]   rot 1: row 2 sits, rows 3-7 fill z2-z6
+entry z3  ring [1, 6, 5, 4, B, 3, 2]   rot 1: row 4 sits
+```
+
+All six choices keep the roster as the serving order, which was the actual v0.23
+fix and is the part that must not regress.
+
+The cost is smaller than the one v0.23 paid: with any entry zone other than
+middle back, the player sitting out at rotation 1 is somewhere in the middle of
+the lineup rather than last. That is the honest reading rather than a defect —
+**if substitutes walk on at zone 1, whoever serves next has to be off court
+right now, waiting to do it.**
+
+v0.4 made the opposite trade: it kept rows 1–6 on court by construction and let
+the bench land where it may, which shoved substitutes up the serving queue. This
+keeps the queue and lets the bench land where it may.
+
+`DEFAULT_ENTRY` is zone 6, so a v0.23 save is unchanged. A save from v0.4–v0.22
+still carries the zone chosen back then and now gets what it asked for. `§46`
+checks the serving order across all six entry zones, and asserts that middle
+back is the only one keeping rows 1–6 together at rotation 1.
+
+A note appears in the roster panel when the choice is anything but middle back,
+saying rows 1–6 won't all be on court and the serving order still follows the
+roster. v0.23 got reported as a bug precisely because that consequence was
+invisible; a control with a surprising effect should say so next to itself.
+
+### Reverting drag-to-reorder would not have helped
+
+Offered as a possible price for getting the setting back. It isn't one — arrows
+versus dragging is how you *edit* the roster, and the v0.4 bug was in how the
+roster maps onto the ring. Dragging stays.
+
+### The score was sized off the wrong thing
+
+`clamp(3rem, 30vmin, 20rem)`. vmin is the *viewport's* short edge, so:
+
+| Device | vmin measures | Score | Verdict |
+|--------|---------------|-------|---------|
+| Phone, portrait | width, ~390 | ~117pt | right |
+| iPad, landscape | height, ~820 | ~250pt | far too small |
+
+One rule answering two different questions. On a phone held upright the width
+really is what limits a two-digit score, so vmin happened to be correct. On an
+iPad it measured the height of a panel that had room for much more.
+
+Fixed with container query units: `.sb-point` becomes a size container and the
+score is `min(70cqh, 65cqw)` — the width and height of *the panel it sits in*
+rather than of the screen. Width is the binding constraint for two digits, so
+`65cqw` does the work and `70cqh` only intervenes on a panel wider than it is
+tall.
+
+Portrait phone lands within a few percent of where it was, which was already
+right. An iPad gains about half again. The old `vmin` rule stays as the fallback
+under `@supports (container-type: size)` rather than being replaced.
+
+Portrait stays a supported orientation — the two halves are a 1fr 1fr grid at
+any aspect, and nothing forces landscape.
+
+### Smaller things
+
+- **Show roster / Hide roster reads as pressed** when open, using the same white
+  fill the formation tabs and rotation numbers already use for "this is the one
+  you're on". One visual language for selected, rather than two.
+- **"Share" became "Share team."** Same length as "Save image" beside it, so the
+  three-across row that v0.17 shortened it for still fits at 320px.
+
 ## Tests
 
 ```
-node test/migration.js    # 504 checks — storage, migration, roles, formations,
+node test/migration.js    # 518 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
-                          #   playing surface, scoreboard, rotation order
+                          #   playing surface, scoreboard, rotation order, entry zones
 node test/contrast.js     # colour contrast, hue separation, and every role
                           #   against every court surface
 ```

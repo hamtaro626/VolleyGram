@@ -159,8 +159,8 @@ console.log('\n1. Fresh install, nothing in storage');
   check('named "My team"', saved.name === 'My team', saved.name);
   check('defaults to 4-2', saved.system === '4-2', saved.system);
   check('six players', saved.roster.length === 6, String(saved.roster.length));
-  check('no entry-zone setting survives v0.23', !('entrySlot' in saved),
-    Object.keys(saved).join(','));
+  check('subs enter at middle back by default', saved.entrySlot === 6,
+    String(saved.entrySlot));
   check('version stamped', store.version === 2, String(store.version));
 }
 
@@ -194,10 +194,10 @@ console.log('\n3. v0.3 / v0.4 save — roster array plus entrySlot');
   const app = boot(JSON.stringify({ roster, layouts: {}, entrySlot: 6, showLabels: true }));
   const { saved } = app.peek();
   check('seven players kept', saved.roster.length === 7, String(saved.roster.length));
-  // v0.4's entrySlot is read and discarded from v0.23 on -- the bench position
-  // in the ring is fixed, so there is nothing for it to mean.
-  check('a v0.4 entrySlot is dropped, not carried', !('entrySlot' in saved),
-    Object.keys(saved).join(','));
+  // Dropped by v0.23, honoured again from v0.24 -- and it now means what it
+  // always said without disturbing the serving order.
+  check('a v0.4 entrySlot is honoured again', saved.entrySlot === 6,
+    String(saved.entrySlot));
   check('bench player name kept', saved.roster[6].name === 'Bench Bob');
   check('fallback derived for pre-v0.4 rows', saved.roster[0].fallback === 'Setter 1',
     saved.roster[0].fallback);
@@ -276,7 +276,7 @@ console.log('\n6. Multiple lineups persist and stay independent');
   check('both lineups loaded', Object.keys(store.lineups).length === 2);
   check('active one respected', saved.name === 'JV', saved.name);
   check('active system is 6-2', saved.system === '6-2', saved.system);
-  check('the dropped entrySlot leaves no trace', !('entrySlot' in saved));
+  check('active entrySlot is 5', saved.entrySlot === 5, String(saved.entrySlot));
   check('other lineup untouched', store.lineups.a.name === 'Tuesday league');
   check('other lineup keeps its own system', store.lineups.a.system === '4-2');
 }
@@ -1136,7 +1136,7 @@ console.log('\n34. Share links');
 
   // Everything about it should have travelled.
   check('system travelled', saved.system === '6-2', saved.system);
-  check('no entry zone travels any more', !('entrySlot' in saved));
+  check('entry zone travels', saved.entrySlot === 5, String(saved.entrySlot));
   check('passer count travelled', saved.passers === 5, String(saved.passers));
   check('defense system travelled', saved.defenseSystem === 'rotation', saved.defenseSystem);
   check('defense side travelled', saved.defenseSide === 'left', saved.defenseSide);
@@ -1844,6 +1844,40 @@ console.log('\n46. The roster is the serving order');
   });
   check('with seven players everyone sits exactly once per cycle',
     benchCounts.every((n) => n === 1), benchCounts.join(','));
+
+  // The serving order has to survive every entry zone, not just the default.
+  // v0.4's whole failure was that one choice of bench position silently
+  // reordered the queue, so this asks all six.
+  [1, 2, 3, 4, 5, 6].forEach((zone) => {
+    const app = boot(JSON.stringify({ version: 2, activeId: 'a', lineups: { a: {
+      name: 'T', system: 'simple', entrySlot: zone, layouts: {},
+      roster: rosterOf(7) } } }));
+    check(`entry zone ${zone}: roster order is still the serving order`,
+      servingOrder(app).join(',') === namesFor(7).join(','),
+      servingOrder(app).join(','));
+
+    // And exactly one player is off court in each rotation, wherever they enter.
+    let benchPerRotation = true;
+    for (let r = 1; r <= 7; r++) {
+      const off = rosterOf(7).filter((_, i) => app.call.slotFor(i, r) === null);
+      if (off.length !== 1) benchPerRotation = false;
+    }
+    check(`entry zone ${zone}: exactly one player sits each rotation`,
+      benchPerRotation);
+  });
+
+  // Only middle back keeps rows 1-6 on court together at rotation 1. That is
+  // the documented cost of the other five, and the note in the roster panel
+  // is driven by the same fact.
+  const together = (zone) => {
+    const app = boot(JSON.stringify({ version: 2, activeId: 'a', lineups: { a: {
+      name: 'T', system: 'simple', entrySlot: zone, layouts: {},
+      roster: rosterOf(7) } } }));
+    return [1, 2, 3, 4, 5, 6].every((z) => app.call.slotFor(z - 1, 1) === z);
+  };
+  check('middle back keeps rows 1-6 on court at rotation 1', together(6));
+  check('and no other entry zone does',
+    [1, 2, 3, 4, 5].every((zone) => !together(zone)));
 
   // Short-handed has no bench at all, so the ring is just the six zones.
   const short = boot(JSON.stringify({ version: 2, activeId: 'a',
