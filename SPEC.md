@@ -980,12 +980,109 @@ How many points win a set, win-by-two, a shorter fifth, when to switch ends, or
 how many substitutions are left. Leagues disagree on all of it. Same position
 v0.20 took on the missing server: state the fact, stop before the consequence.
 
+## v0.23 — the roster is the serving order again
+
+### The bug
+
+A seven-player lineup rotated in the wrong order. Roster row 7 served **second**.
+
+```
+roster  : Jen → Matt → Taylor → Evi → Cammi → Alec → Ashley
+serving : Jen → Ashley → Matt → Taylor → Evi → Cammi → Alec
+```
+
+Reported as "reordering the roster doesn't follow on the court", which is
+exactly how it presents: two players adjacent in the roster are drawn nowhere
+near each other, and dragging rows around never fixes it.
+
+### The cause, in v0.4
+
+Bench slots sat at the **end** of the ring. `courtPath()` returned the six zones
+in travel order and anything past index 5 was bench, so the cycle ran:
+
+```
+z1 → z6 → z5 → z4 → z3 → z2 → bench → z1
+```
+
+The player in zone 2 dropped to the bench and the bench player walked straight
+into zone 1. That is what "subs enter at Zone 1" meant, and entering at zone 1
+*is* entering at the front of the serving queue — so a substitute jumped six
+places ahead of where the roster put them.
+
+With exactly six players there is no bench, the ring is just the six zones, and
+the order is correct. That is why this survived from v0.4 to v0.22: every test
+that checked rotation order used a six-player roster.
+
+### The fix
+
+The bench moves to directly **after** zone 1:
+
+```
+z1 → bench… → z6 → z5 → z4 → z3 → z2 → z1
+```
+
+The server rotates off, the bench queue shuffles along, and whoever reaches the
+end of it walks back on at middle back. This is v0.3's original model —
+"the server rotates off, the next player returns at middle back" — which v0.4
+replaced without noticing what it cost.
+
+`cycleIndex()` collapses to one line as a result:
+
+```js
+mod(rotation - 1 - rosterIndex, cycleLength())
+```
+
+Roster row N starts N places back from the front of the ring, so it reaches
+zone 1 N rotations later. That subtraction *is* the serving order.
+
+### Why the bench has to sit there
+
+Not a preference. Two things have to hold at once:
+
+1. The roster list is the serving order — that's what a lineup is.
+2. Rotation 1 puts roster row N in zone N.
+
+Take (1): row *i* must serve *i*-th, so it must sit at ring position
+`mod(-i, N)`. Take (2): row 0 is in zone 1, row 1 in zone 2, and so on. Put them
+together and the zones are pinned to positions `0, N-1, N-2, N-3, N-4, N-5` —
+which leaves positions `1 … N-6` for the bench, immediately after zone 1. There
+is no freedom left. Any other bench placement breaks one of the two.
+
+### So "Subs enter at" is gone
+
+It has no meaning left. The setting chose where the bench block sat, and the
+bench block now has exactly one legal position. Keeping the control would mean
+offering five choices that quietly corrupt the rotation and one that doesn't.
+
+`entrySlot` is read out of old saves and discarded, so nothing needs migrating
+and no version bump is needed. Subs always enter at zone 6 now, which is where
+they entered before v0.4.
+
+Bench seating is unchanged to look at: players still rotate off into the
+leftmost seat and advance rightward, walking on from the right end. The ring
+now reaches the bench from the other side, but the seats read the same.
+
+### The test that should have existed
+
+The suite had 487 checks and none of them asked whether the roster order was
+the serving order. Section 46 asks it directly, for 6, 7, 8 and 12 players:
+
+- everyone serves exactly once per cycle, in roster order
+- rotation 1 puts row N in zone N
+- roster neighbours stay neighbours around the ring
+- with seven players everyone sits exactly once per cycle
+- short-handed, nobody is benched at all
+
+Plus the reported roster by name, asserting Ashley serves seventh. Run against
+the v0.4 algorithm, eight of these fail and the six-player cases pass — which
+is the shape of the blind spot that let this through.
+
 ## Tests
 
 ```
-node test/migration.js    # 487 checks — storage, migration, roles, formations,
+node test/migration.js    # 504 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
-                          #   playing surface, scoreboard
+                          #   playing surface, scoreboard, rotation order
 node test/contrast.js     # colour contrast, hue separation, and every role
                           #   against every court surface
 ```

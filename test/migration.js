@@ -117,6 +117,7 @@ function boot(seedJson, seedHash) {
       startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory,
       settersThisRotation, shareUrl, encodeLineup, decodeLineup, importFromUrl,
       startDrag, onDrag, endDrag, versionFrom, overlapViolations, applySurface,
+      cycleIndexFor: cycleIndex, courtRing,
       scorePoint, undoRally, newGame, renameTeam, normaliseMatch, gamesWon,
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
       closeNewGame };
@@ -135,6 +136,8 @@ function boot(seedJson, seedHash) {
            consts: context.__const, status: context.__status, quiz: context.__quiz,
            stacks: context.__stacks, players: context.__players };
 }
+
+const mod6 = (n, m) => ((n % m) + m) % m;
 
 let failures = 0;
 function check(label, condition, detail) {
@@ -156,7 +159,8 @@ console.log('\n1. Fresh install, nothing in storage');
   check('named "My team"', saved.name === 'My team', saved.name);
   check('defaults to 4-2', saved.system === '4-2', saved.system);
   check('six players', saved.roster.length === 6, String(saved.roster.length));
-  check('subs enter at zone 1', saved.entrySlot === 1, String(saved.entrySlot));
+  check('no entry-zone setting survives v0.23', !('entrySlot' in saved),
+    Object.keys(saved).join(','));
   check('version stamped', store.version === 2, String(store.version));
 }
 
@@ -190,7 +194,10 @@ console.log('\n3. v0.3 / v0.4 save — roster array plus entrySlot');
   const app = boot(JSON.stringify({ roster, layouts: {}, entrySlot: 6, showLabels: true }));
   const { saved } = app.peek();
   check('seven players kept', saved.roster.length === 7, String(saved.roster.length));
-  check('entrySlot 6 preserved', saved.entrySlot === 6, String(saved.entrySlot));
+  // v0.4's entrySlot is read and discarded from v0.23 on -- the bench position
+  // in the ring is fixed, so there is nothing for it to mean.
+  check('a v0.4 entrySlot is dropped, not carried', !('entrySlot' in saved),
+    Object.keys(saved).join(','));
   check('bench player name kept', saved.roster[6].name === 'Bench Bob');
   check('fallback derived for pre-v0.4 rows', saved.roster[0].fallback === 'Setter 1',
     saved.roster[0].fallback);
@@ -269,7 +276,7 @@ console.log('\n6. Multiple lineups persist and stay independent');
   check('both lineups loaded', Object.keys(store.lineups).length === 2);
   check('active one respected', saved.name === 'JV', saved.name);
   check('active system is 6-2', saved.system === '6-2', saved.system);
-  check('active entrySlot is 5', saved.entrySlot === 5, String(saved.entrySlot));
+  check('the dropped entrySlot leaves no trace', !('entrySlot' in saved));
   check('other lineup untouched', store.lineups.a.name === 'Tuesday league');
   check('other lineup keeps its own system', store.lineups.a.system === '4-2');
 }
@@ -319,7 +326,6 @@ console.log('\n8. Corrupt and hostile data');
       // roster and is kept. Only below that is a save treated as unrecoverable.
       if (!saved || saved.roster.length < 2) { ok = false; detail = 'roster too small'; }
       if (!SystemsOk(saved)) { ok = false; detail = 'bad system ' + saved.system; }
-      if (![1, 2, 3, 4, 5, 6].includes(saved.entrySlot)) { ok = false; detail = 'bad entrySlot'; }
       if (typeof saved.layouts !== 'object') { ok = false; detail = 'bad layouts'; }
       if (Object.keys(store.lineups).length < 1) { ok = false; detail = 'no lineups'; }
       // Rendering must not throw either.
@@ -1130,7 +1136,7 @@ console.log('\n34. Share links');
 
   // Everything about it should have travelled.
   check('system travelled', saved.system === '6-2', saved.system);
-  check('entry zone travelled', saved.entrySlot === 5, String(saved.entrySlot));
+  check('no entry zone travels any more', !('entrySlot' in saved));
   check('passer count travelled', saved.passers === 5, String(saved.passers));
   check('defense system travelled', saved.defenseSystem === 'rotation', saved.defenseSystem);
   check('defense side travelled', saved.defenseSide === 'left', saved.defenseSide);
@@ -1766,6 +1772,88 @@ console.log('\n45. Scoreboard — storage and bad data');
   check('an empty name still shows something',
     blank.document.getElementById('sbHomeWon').textContent === 'Home won',
     blank.document.getElementById('sbHomeWon').textContent);
+}
+
+console.log('\n46. The roster is the serving order');
+{
+  // The invariant v0.4 broke and v0.23 restored, and the reason this section
+  // exists: with a bench, roster row 7 was serving second. Nothing in this
+  // suite noticed, because nothing asked.
+  const namesFor = (n) => Array.from({ length: n }, (_, i) => 'P' + i);
+  const rosterOf = (n) => namesFor(n).map((name, i) =>
+    ({ id: 'P' + i, role: 'NONE', name, fallback: name }));
+
+  const servingOrder = (app) => {
+    const order = [];
+    const { saved } = app.peek();
+    for (let r = 1; r <= app.call.rotationCount(); r++) {
+      const server = saved.roster.find((_, i) =>
+        app.call.slotFor(i, r) === app.consts.SERVE_SLOT);
+      order.push(server ? server.name : null);
+    }
+    return order;
+  };
+
+  [6, 7, 8, 12].forEach((size) => {
+    const app = boot(JSON.stringify({ version: 2, activeId: 'a',
+      lineups: { a: { name: 'T', system: 'simple', roster: rosterOf(size), layouts: {} } } }));
+
+    check(`${size} players: everyone serves exactly once per cycle`,
+      servingOrder(app).join(',') === namesFor(size).join(','),
+      servingOrder(app).join(','));
+
+    // The other half of the contract, unchanged since v0.4.
+    const rotationOne = [1, 2, 3, 4, 5, 6]
+      .every((zone) => app.call.slotFor(zone - 1, 1) === zone);
+    check(`${size} players: rotation 1 puts row N in zone N`, rotationOne);
+
+    // Consecutive roster rows must be consecutive around the ring, or the
+    // lineup you typed is not the lineup being drawn.
+    let adjacent = true;
+    for (let r = 1; r <= app.call.rotationCount(); r++) {
+      for (let i = 0; i < size - 1; i++) {
+        const mine = app.call.cycleIndexFor(i, r);
+        const next = app.call.cycleIndexFor(i + 1, r);
+        if (mod6(mine - next, app.call.cycleLength()) !== 1) adjacent = false;
+      }
+    }
+    check(`${size} players: neighbours in the roster stay neighbours in the ring`,
+      adjacent);
+  });
+
+  // The exact roster from the bug report, with the reported symptom named.
+  const reported = ['Jen', 'Matt', 'Taylor', 'Evi', 'Cammi', 'Alec', 'Ashley'];
+  const app = boot(JSON.stringify({ version: 2, activeId: 'a', lineups: { a: {
+    name: 'My team', system: '4-2', layouts: {},
+    roster: reported.map((name, i) => ({ id: 'P' + i,
+      role: ['S', 'MB', 'OH', 'S', 'MB', 'S', 'OH'][i], name, fallback: name })) } } }));
+
+  check('the reported roster serves in roster order',
+    servingOrder(app).join(' → ') === reported.join(' → '), servingOrder(app).join(' → '));
+  check('Ashley serves seventh, not second',
+    servingOrder(app)[6] === 'Ashley', servingOrder(app)[1]);
+
+  // Everybody spends exactly one rotation per cycle on the bench, and nobody
+  // sits twice in a row while someone else never sits.
+  const benchCounts = reported.map((_, i) => {
+    let sat = 0;
+    for (let r = 1; r <= app.call.rotationCount(); r++) {
+      if (app.call.slotFor(i, r) === null) sat += 1;
+    }
+    return sat;
+  });
+  check('with seven players everyone sits exactly once per cycle',
+    benchCounts.every((n) => n === 1), benchCounts.join(','));
+
+  // Short-handed has no bench at all, so the ring is just the six zones.
+  const short = boot(JSON.stringify({ version: 2, activeId: 'a',
+    lineups: { a: { name: 'T', system: 'simple', roster: rosterOf(4), layouts: {} } } }));
+  check('four players still gives six rotations', short.call.rotationCount() === 6);
+  let everOnBench = false;
+  for (let r = 1; r <= 6; r++) {
+    for (let i = 0; i < 4; i++) if (short.call.slotFor(i, r) === null) everOnBench = true;
+  }
+  check('and nobody is ever benched short-handed', !everOnBench);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

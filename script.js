@@ -361,7 +361,6 @@ function newLineup(name) {
     // you've dragged; anything absent is generated.
     layouts: emptyLayouts(),
     roleOverrides: {},  // rotation -> { player id -> role }
-    entrySlot: 1,       // the zone off-court players sub in at
     passers: DEFAULT_PASSERS,
     defenseSystem: 'perimeter',
     defenseSide: 'right',
@@ -406,7 +405,6 @@ const rosterPanel = document.getElementById('roster');
 const rosterRows = document.getElementById('rosterRows');
 const undoButton = document.getElementById('undo');
 const holdButton = document.getElementById('resetAll');
-const entrySelect = document.getElementById('entrySlot');
 const surfaceSelect = document.getElementById('surface');
 const systemSelect = document.getElementById('system');
 const lineupSelect = document.getElementById('lineup');
@@ -446,29 +444,36 @@ function rotationCount() {
   return cycleLength();
 }
 
-// The six zones in travel order, beginning wherever subs enter. Rotating this
-// list is the whole mechanism behind the "subs enter at" setting: the bench
-// always sits at the end, so whichever zone leads is the one players walk on
-// to, and whichever trails is the one they rotate off from.
-function courtPath() {
-  const start = TRAVEL_ORDER.indexOf(saved.entrySlot);
-  return [...TRAVEL_ORDER.slice(start), ...TRAVEL_ORDER.slice(0, start)];
+// The rotational ring: every position a player passes through, in the order
+// they pass through it. Zone 1 first, then the bench, then the rest of the
+// zones in travel order. `null` is a bench seat.
+//
+//   z1 -> bench... -> z6 -> z5 -> z4 -> z3 -> z2 -> z1
+//
+// So the server rotates off, the bench queue shuffles along, and whoever
+// reaches the end of it walks back on at middle back.
+//
+// The bench sitting *directly after zone 1* is the whole thing, and it is
+// forced rather than chosen. Two properties have to hold at once: the roster
+// list is the serving order (that's what a lineup is), and rotation 1 puts
+// roster row N in zone N. Work through where each roster row must sit for both
+// to be true and only this arrangement satisfies them -- see v0.23 in SPEC.md,
+// and the v0.4 bug it fixes.
+function courtRing() {
+  const bench = cycleLength() - COURT_SPOTS;
+  return [TRAVEL_ORDER[0], ...Array(bench).fill(null), ...TRAVEL_ORDER.slice(1)];
 }
 
-// Position around the full cycle: 0-5 are court zones (in travel order),
-// anything higher is a bench spot. Rotation 1 puts roster row N in zone N and
-// everyone past the sixth on the bench, whatever the entry setting is.
+// Position around the ring. Roster row N starts N places *back* from the front,
+// so it reaches zone 1 -- and serves -- N rotations later. That subtraction is
+// what makes the roster order the serving order.
 function cycleIndex(rosterIndex, rotation) {
-  const start = rosterIndex < COURT_SPOTS
-    ? courtPath().indexOf(rosterIndex + 1)
-    : rosterIndex;
-  return mod(start + rotation - 1, cycleLength());
+  return mod(rotation - 1 - rosterIndex, cycleLength());
 }
 
 // The zone this player is in, or null if they're off court.
 function slotFor(rosterIndex, rotation) {
-  const index = cycleIndex(rosterIndex, rotation);
-  return index < COURT_SPOTS ? courtPath()[index] : null;
+  return courtRing()[cycleIndex(rosterIndex, rotation)];
 }
 
 // Whether anyone is standing in a zone this rotation. Always true with a full
@@ -507,8 +512,13 @@ function overrideCount() {
 // Short-handed nobody is ever off court -- cycleIndex can't reach COURT_SPOTS
 // when the cycle is only that long -- so this isn't reached at all. The guard is
 // still here so a stray call divides by something sane instead of by zero.
+// Bench seats are ring positions 1 .. cycleLength - COURT_SPOTS, so seat 0 is
+// whoever just rotated off zone 1 and the last seat is whoever goes on next.
+// Players still enter at the left and advance rightward, walking on from the
+// right end -- which is where they always did, the ring just reaches the bench
+// from the other side now.
 function benchPosition(rosterIndex, rotation) {
-  const benchIndex = cycleIndex(rosterIndex, rotation) - COURT_SPOTS;
+  const benchIndex = cycleIndex(rosterIndex, rotation) - 1;
   const benchCount = Math.max(rosterSize() - COURT_SPOTS, 1);
   return { x: (100 / (benchCount + 1)) * (benchIndex + 1), y: BENCH_Y };
 }
@@ -762,7 +772,7 @@ function save() {
 //
 //   v0.2  { names: {id: name}, layouts }        -- names in a side lookup
 //   v0.3  { roster: [...], layouts }            -- names moved onto the roster
-//   v0.4  { ..., entrySlot }
+//   v0.4  { ..., entrySlot }  -- dropped in v0.23, read and discarded
 //   v0.5  { ..., system }
 //
 // It also guards against data that's merely broken, since a stored blob is
@@ -812,7 +822,6 @@ function normaliseLineup(raw, fallbackName) {
     // than a version bump -- an extra optional field breaks nothing.
     roleOverrides: raw.roleOverrides && typeof raw.roleOverrides === 'object'
       ? raw.roleOverrides : {},
-    entrySlot: TRAVEL_ORDER.includes(raw.entrySlot) ? raw.entrySlot : 1,
     passers: PASSER_COUNTS.includes(raw.passers) ? raw.passers : DEFAULT_PASSERS,
     defenseSystem: DEFENSE_SPOTS[raw.defenseSystem] ? raw.defenseSystem : 'perimeter',
     defenseSide: raw.defenseSide === 'left' ? 'left' : 'right',
@@ -1153,7 +1162,6 @@ function syncLineupSelect() {
 function syncSelects() {
   syncLineupSelect();
   syncSystemSelect();
-  syncEntrySelect();
   syncSurfaceSelect();
 }
 
@@ -1243,16 +1251,6 @@ function applySystem(key) {
   });
 }
 
-function syncEntrySelect() {
-  entrySelect.replaceChildren();
-  TRAVEL_ORDER.slice().sort((a, b) => a - b).forEach((zone) => {
-    const option = document.createElement('option');
-    option.value = zone;
-    option.textContent = `Zone ${zone} — ${ZONE_NAMES[zone]}`;
-    option.selected = zone === saved.entrySlot;
-    entrySelect.appendChild(option);
-  });
-}
 
 function syncSurfaceSelect() {
   surfaceSelect.replaceChildren();
@@ -2407,9 +2405,6 @@ surfaceSelect.addEventListener('change', () => {
   render();
 });
 
-entrySelect.addEventListener('change', () => {
-  changeLineup(() => { saved.entrySlot = Number(entrySelect.value); });
-});
 
 systemSelect.addEventListener('change', () => applySystem(systemSelect.value));
 lineupSelect.addEventListener('change', () => useLineup(lineupSelect.value));
