@@ -117,8 +117,9 @@ function boot(seedJson, seedHash) {
       startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory,
       settersThisRotation, shareUrl, encodeLineup, decodeLineup, importFromUrl,
       startDrag, onDrag, endDrag, versionFrom, overlapViolations, applySurface,
-      scorePoint, undoRally, newGame, setServing, renameTeam, normaliseMatch,
-      renderScoreboard, openScoreboard, closeScoreboard };
+      scorePoint, undoRally, newGame, renameTeam, normaliseMatch, gamesWon,
+      renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
+      closeNewGame };
     globalThis.__players = () => playerElements;
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
@@ -126,7 +127,7 @@ function boot(seedJson, seedHash) {
       COURT_SPOTS, FORMATIONS, DEFENSE_SPOTS, SETTER_TARGET, FRONT_ROW_SLOTS,
       BACK_ROW_SLOTS, BACK_PASS_SPOTS, BACK_COVER_SPOTS, FRONT_PASS_SPOTS,
       NET_SPOTS, ZONE_REGIONS, MIN_PLAYERS, SURFACES, DEFAULT_SURFACE,
-      RALLY_LIMIT, MAX_TEAM_NAME, SIDES };
+      RALLY_LIMIT, MAX_TEAM_NAME, GAME_LIMIT, SIDES };
     globalThis.__status = () => document.getElementById('status').textContent;
   `;
   vm.runInNewContext(source + expose, context, { filename: 'script.js' });
@@ -1574,173 +1575,41 @@ console.log('\n42. Playing surface');
   });
 }
 
-console.log('\n43. Scoreboard — scoring and the rotation link');
-{
-  const app = boot();
-  const match = () => app.peek().store.match;
-  const rotation = () => app.peek().currentRotation;
-
-  check('a fresh match is 0-0, game 1, home serving',
-    match().homeScore === 0 && match().awayScore === 0
-    && match().game === 1 && match().serving === 'home');
-  check('and starts in rotation 1', rotation() === 1);
-
-  // Holding your own serve is a point and nothing else. This is the case a
-  // generic scoreboard gets right by accident and the rotation link must not
-  // get wrong.
-  app.call.scorePoint('home');
-  check('winning your own serve scores', match().homeScore === 1);
-  check('and does not rotate', rotation() === 1, 'rotation ' + rotation());
-  check('and you keep the serve', match().serving === 'home');
-
-  // Losing your serve hands it over. You do not rotate -- they do, and this app
-  // has never modelled them.
-  app.call.scorePoint('away');
-  check('losing your serve scores for them', match().awayScore === 1);
-  check('and hands over the serve', match().serving === 'away');
-  check('and still does not rotate you', rotation() === 1, 'rotation ' + rotation());
-
-  // The whole point of the feature: winning a rally they served is a side-out.
-  app.call.scorePoint('home');
-  check('winning their serve is a side-out that rotates you', rotation() === 2,
-    'rotation ' + rotation());
-  check('and takes the serve back', match().serving === 'home');
-  check('and scores', match().homeScore === 2);
-
-  // Their side-out is theirs, not yours.
-  app.call.scorePoint('home');
-  app.call.scorePoint('away');
-  check('their side-out does not rotate you', rotation() === 2, 'rotation ' + rotation());
-
-  // The rotation has to wrap, not run off the end.
-  const wrap = boot();
-  wrap.call.setRotation(wrap.call.rotationCount());
-  wrap.call.scorePoint('away');   // hand them the serve
-  wrap.call.scorePoint('home');   // side-out from the last rotation
-  check('a side-out from the last rotation wraps to 1',
-    wrap.peek().currentRotation === 1, 'rotation ' + wrap.peek().currentRotation);
-}
-
-console.log('\n44. Scoreboard — undo, games and bad data');
+console.log('\n43. Scoreboard — scoring, undo, and staying out of the diagram');
 {
   const app = boot();
   const match = () => app.peek().store.match;
 
-  app.call.scorePoint('away');   // they take the serve
-  app.call.scorePoint('home');   // side-out: rotates to 2
-  check('set up: rotated to 2', app.peek().currentRotation === 2);
+  check('a fresh match is 0-0 in game 1',
+    match().homeScore === 0 && match().awayScore === 0 && match().game === 1);
+  check('with no games recorded', match().games.length === 0);
 
-  // Undoing a point that rotated has to put the rotation back too. A score
-  // undone that left the diagram rotated would be worse than no undo.
-  app.call.undoRally();
-  check('undo takes the point back', match().homeScore === 0);
-  check('undo restores the rotation', app.peek().currentRotation === 1,
+  app.call.scorePoint('home');
+  app.call.scorePoint('home');
+  app.call.scorePoint('away');
+  check('points land on the right side',
+    match().homeScore === 2 && match().awayScore === 1);
+
+  // The whole point of the decision to keep these apart: scoring is not
+  // allowed to move the diagram. This is the test that would have caught the
+  // side-out link coming back by accident.
+  check('scoring never moves the rotation', app.peek().currentRotation === 1,
     'rotation ' + app.peek().currentRotation);
-  check('undo restores who was serving', match().serving === 'away');
+  const stacksBefore = app.stacks().undos;
+  app.call.scorePoint('home');
+  check('and never touches the whiteboard undo stack',
+    app.stacks().undos === stacksBefore, `${stacksBefore} -> ${app.stacks().undos}`);
+  check('and the match carries no serving field',
+    !('serving' in match()), Object.keys(match()).join(','));
 
   app.call.undoRally();
-  check('undo again empties the score', match().awayScore === 0);
-  check('and the trail is empty', match().rallies.length === 0);
-  // Popping an empty trail must not go negative.
-  app.call.undoRally();
+  check('undo takes the last point back', match().homeScore === 2);
+  check('undo does not move the rotation either', app.peek().currentRotation === 1);
+
+  const empty = boot();
+  empty.call.undoRally();
   check('undo on an empty trail does nothing',
-    match().homeScore === 0 && match().awayScore === 0);
-
-  // Scoring never touches the whiteboard's undo stack -- a tapped point must
-  // not bury a drag you want back.
-  const stacks = boot();
-  const before = stacks.stacks().undos;
-  stacks.call.scorePoint('home');
-  stacks.call.scorePoint('away');
-  check('scoring costs no whiteboard undo steps',
-    stacks.stacks().undos === before, `${before} -> ${stacks.stacks().undos}`);
-
-  // A new game resets the score and the rotation but keeps the names.
-  const game = boot();
-  game.call.renameTeam('home', 'Riptide');
-  game.call.scorePoint('home');
-  game.call.scorePoint('away');
-  game.call.setRotation(4);
-  game.call.newGame();
-  check('a new game increments the number', game.peek().store.match.game === 2);
-  check('and zeroes the score', game.peek().store.match.homeScore === 0
-    && game.peek().store.match.awayScore === 0);
-  check('and returns to rotation 1', game.peek().currentRotation === 1);
-  check('and clears the undo trail', game.peek().store.match.rallies.length === 0);
-  check('but keeps the team names', game.peek().store.match.home === 'Riptide');
-
-  // The match survives a reload, because a phone will background the tab
-  // mid-set and a scoreboard that forgets is not a scoreboard.
-  const live = boot();
-  live.call.renameTeam('away', 'Sharks');
-  live.call.scorePoint('home');
-  live.call.scorePoint('home');
-  const reloaded = boot(live.memory['volleyball-rotations-v1']);
-  check('the score survives a reload', reloaded.peek().store.match.homeScore === 2);
-  check('so do the names', reloaded.peek().store.match.away === 'Sharks');
-
-  // But it must never ride in a share link -- that carries a lineup, and a
-  // score is not a fact about a team.
-  const hash = '#' + (String(live.call.shareUrl()).split('#')[1] || '');
-  const shared = boot(undefined, hash);
-  check('a share link carries no score', shared.peek().store.match.homeScore === 0,
-    'got ' + shared.peek().store.match.homeScore);
-  check('and no team names', shared.peek().store.match.away === 'Away');
-
-  // Pre-v0.22 saves have no match at all.
-  const legacy = boot(JSON.stringify({ roster: [], layouts: {}, entrySlot: 1 }));
-  check('a pre-v0.22 save gets a fresh match',
-    legacy.peek().store.match.homeScore === 0 && legacy.peek().store.match.game === 1);
-
-  // The blob is hand-editable and now drives the rotation, so a bad value here
-  // would move the diagram rather than merely look wrong.
-  const junk = boot(JSON.stringify({ version: 2, activeId: 'a',
-    lineups: { a: { name: 'X', roster: [], layouts: {} } },
-    match: { home: 42, away: '   ', homeScore: -5, awayScore: 3.7, game: 0,
-      serving: 'nobody', rallies: 'not an array' } }));
-  const m = junk.peek().store.match;
-  check('a non-string team name falls back', m.home === 'Home', String(m.home));
-  check('a blank team name falls back', m.away === 'Away', String(m.away));
-  check('a negative score becomes zero', m.homeScore === 0, String(m.homeScore));
-  check('a fractional score is floored', m.awayScore === 3, String(m.awayScore));
-  check('game zero becomes game one', m.game === 1, String(m.game));
-  check('an unknown serving side falls back', m.serving === 'home', String(m.serving));
-  check('a non-array rally trail becomes empty',
-    Array.isArray(m.rallies) && m.rallies.length === 0);
-
-  const badRallies = boot(JSON.stringify({ version: 2, activeId: 'a',
-    lineups: { a: { name: 'X', roster: [], layouts: {} } },
-    match: { rallies: [null, { side: 'home', serving: 'away', rotation: 2 },
-      { side: 'sideways', serving: 'home', rotation: 1 },
-      { side: 'home', serving: 'home', rotation: 'three' }] } }));
-  check('malformed rallies are dropped, good ones kept',
-    badRallies.peek().store.match.rallies.length === 1,
-    JSON.stringify(badRallies.peek().store.match.rallies));
-
-  // A rally recorded against a rotation the roster no longer has.
-  const shrunk = boot(JSON.stringify({ version: 2, activeId: 'a',
-    lineups: { a: { name: 'X',
-      roster: Array.from({ length: 3 }, (_, i) =>
-        ({ id: 'P' + i, role: 'NONE', name: 'P' + i, fallback: 'Player ' + (i + 1) })),
-      layouts: {} } },
-    match: { homeScore: 1, rallies: [{ side: 'home', serving: 'away', rotation: 99 }] } }));
-  shrunk.call.undoRally();
-  check('undo to a rotation that no longer exists lands on 1',
-    shrunk.peek().currentRotation === 1, 'rotation ' + shrunk.peek().currentRotation);
-
-  // The trail is capped, or a long match grows localStorage without limit.
-  const long = boot();
-  const cap = long.consts.RALLY_LIMIT;
-  for (let i = 0; i < cap + 25; i++) long.call.scorePoint(i % 2 ? 'home' : 'away');
-  check('the rally trail is capped', long.peek().store.match.rallies.length === cap,
-    'got ' + long.peek().store.match.rallies.length);
-
-  // Names are capped too -- an essay would be unreadable from across a gym and
-  // is the kind of thing a share link or devtools can inject.
-  const longName = boot();
-  longName.call.renameTeam('home', 'x'.repeat(200));
-  check('team names are capped',
-    longName.peek().store.match.home.length === longName.consts.MAX_TEAM_NAME);
+    empty.peek().store.match.homeScore === 0 && empty.peek().store.match.awayScore === 0);
 
   // An unknown side must not invent a score key.
   const bogus = boot();
@@ -1749,24 +1618,154 @@ console.log('\n44. Scoreboard — undo, games and bad data');
     bogus.peek().store.match.rallies.length === 0
     && bogus.peek().store.match.homeScore === 0);
 
-  // Serve correction is not a rally: it fixes who had the ball.
-  const serve = boot();
-  serve.call.setServing('away');
-  check('setting the serve changes it', serve.peek().store.match.serving === 'away');
-  check('and records no rally', serve.peek().store.match.rallies.length === 0);
-  serve.call.setServing('elsewhere');
-  check('an unknown serving side is ignored',
-    serve.peek().store.match.serving === 'away');
+  // The trail is capped, or a long match grows localStorage without limit.
+  const long = boot();
+  const cap = long.consts.RALLY_LIMIT;
+  for (let i = 0; i < cap + 25; i++) long.call.scorePoint(i % 2 ? 'home' : 'away');
+  check('the rally trail is capped', long.peek().store.match.rallies.length === cap,
+    'got ' + long.peek().store.match.rallies.length);
+}
 
-  // The scoreboard reads the same rotation description as the status line, so
-  // the two screens cannot disagree about who is setting.
-  const linked = boot();
-  linked.call.openScoreboard();
-  const sbLine = linked.document.getElementById('sbRotation').textContent;
-  check('the scoreboard shows the rotation', /Rotation 1 of 6/.test(sbLine), sbLine);
-  check('and it matches describeRotation()',
-    sbLine === linked.call.describeRotation(), sbLine);
-  linked.call.closeScoreboard();
+console.log('\n44. Scoreboard — the match record');
+{
+  const app = boot();
+  const match = () => app.peek().store.match;
+
+  app.call.renameTeam('home', 'Riptide');
+  app.call.renameTeam('away', 'Sharks');
+  for (let i = 0; i < 25; i++) app.call.scorePoint('home');
+  for (let i = 0; i < 19; i++) app.call.scorePoint('away');
+  app.call.newGame('home');
+
+  check('the finished game is recorded', match().games.length === 1);
+  check('with its final score', match().games[0].home === 25 && match().games[0].away === 19);
+  check('and its winner', match().games[0].winner === 'home');
+  check('the game number advances', match().game === 2);
+  check('the score resets', match().homeScore === 0 && match().awayScore === 0);
+  check('the rally trail clears', match().rallies.length === 0);
+  check('team names survive', match().home === 'Riptide' && match().away === 'Sharks');
+  check('games won reads 1-0', JSON.stringify(app.call.gamesWon()) === '[1,0]',
+    JSON.stringify(app.call.gamesWon()));
+
+  app.call.scorePoint('away');
+  app.call.newGame('away');
+  check('games won reads 1-1', JSON.stringify(app.call.gamesWon()) === '[1,1]',
+    JSON.stringify(app.call.gamesWon()));
+  check('and the header says so',
+    /Games 1–1/.test(app.document.getElementById('sbGame').textContent),
+    app.document.getElementById('sbGame').textContent);
+
+  // A game nobody played shouldn't enter the record as a 0-0 win.
+  const skipped = boot();
+  skipped.call.newGame(null);
+  check('a game with no result records nothing',
+    skipped.peek().store.match.games.length === 0);
+  check('but still advances the game number', skipped.peek().store.match.game === 2);
+  skipped.call.newGame('sideways');
+  check('an unknown winner records nothing',
+    skipped.peek().store.match.games.length === 0);
+
+  // The end-game panel offers a winner only when there was one.
+  const panel = boot();
+  panel.call.openScoreboard();
+  panel.call.openNewGame();
+  check('with no points, the winner buttons are hidden',
+    panel.document.getElementById('sbNewGame').classList.contains('nothing-played'));
+  panel.call.scorePoint('home');
+  panel.call.openNewGame();
+  check('once a point is scored, they are offered',
+    !panel.document.getElementById('sbNewGame').classList.contains('nothing-played'));
+  check('and the winner buttons carry the team names',
+    panel.document.getElementById('sbHomeWon').textContent === 'Home won',
+    panel.document.getElementById('sbHomeWon').textContent);
+  panel.call.newGame('home');
+  check('choosing a winner closes the panel',
+    panel.document.getElementById('sbNewGame').hidden === true);
+
+  // The record is capped like everything else that grows.
+  const many = boot();
+  const gameCap = many.consts.GAME_LIMIT;
+  for (let i = 0; i < gameCap + 10; i++) {
+    many.call.scorePoint('home');
+    many.call.newGame('home');
+  }
+  check('the game record is capped',
+    many.peek().store.match.games.length === gameCap,
+    'got ' + many.peek().store.match.games.length);
+}
+
+console.log('\n45. Scoreboard — storage and bad data');
+{
+  // A phone will background the tab mid-set, so the score has to survive.
+  const live = boot();
+  live.call.renameTeam('away', 'Sharks');
+  live.call.scorePoint('home');
+  live.call.scorePoint('home');
+  live.call.newGame('home');
+  live.call.scorePoint('away');
+  const reloaded = boot(live.memory['volleyball-rotations-v1']);
+  check('the score survives a reload', reloaded.peek().store.match.awayScore === 1);
+  check('so does the match record', reloaded.peek().store.match.games.length === 1);
+  check('and the names', reloaded.peek().store.match.away === 'Sharks');
+
+  // But it must never ride in a share link -- that carries a lineup, and a
+  // score is not a fact about a team.
+  const hash = '#' + (String(live.call.shareUrl()).split('#')[1] || '');
+  const shared = boot(undefined, hash);
+  check('a share link carries no score', shared.peek().store.match.awayScore === 0);
+  check('and no match record', shared.peek().store.match.games.length === 0);
+  check('and no team names', shared.peek().store.match.away === 'Away');
+
+  const legacy = boot(JSON.stringify({ roster: [], layouts: {}, entrySlot: 1 }));
+  check('a pre-v0.22 save gets a fresh match',
+    legacy.peek().store.match.homeScore === 0 && legacy.peek().store.match.game === 1);
+
+  const lineups = { a: { name: 'X', roster: [], layouts: {} } };
+  const junk = boot(JSON.stringify({ version: 2, activeId: 'a', lineups,
+    match: { home: 42, away: '   ', homeScore: -5, awayScore: 3.7, game: 0,
+      games: 'not an array', rallies: 'not an array' } }));
+  const m = junk.peek().store.match;
+  check('a non-string team name falls back', m.home === 'Home', String(m.home));
+  check('a blank team name falls back', m.away === 'Away', String(m.away));
+  check('a negative score becomes zero', m.homeScore === 0, String(m.homeScore));
+  check('a fractional score is floored', m.awayScore === 3, String(m.awayScore));
+  check('game zero becomes game one', m.game === 1, String(m.game));
+  check('a non-array record becomes empty',
+    Array.isArray(m.games) && m.games.length === 0);
+  check('a non-array rally trail becomes empty',
+    Array.isArray(m.rallies) && m.rallies.length === 0);
+
+  const badRecords = boot(JSON.stringify({ version: 2, activeId: 'a', lineups,
+    match: { game: 2, games: [null, { home: 25, away: 20, winner: 'home' },
+      { home: 1, away: 2, winner: 'neither' }, 'nope'] } }));
+  check('malformed game records are dropped, good ones kept',
+    badRecords.peek().store.match.games.length === 1,
+    JSON.stringify(badRecords.peek().store.match.games));
+
+  // A stored game number that contradicts the record is not believed.
+  const behind = boot(JSON.stringify({ version: 2, activeId: 'a', lineups,
+    match: { game: 1, games: [{ home: 25, away: 1, winner: 'home' },
+      { home: 25, away: 2, winner: 'away' }] } }));
+  check('the game number is at least one past the record',
+    behind.peek().store.match.game === 3, String(behind.peek().store.match.game));
+
+  const badRallies = boot(JSON.stringify({ version: 2, activeId: 'a', lineups,
+    match: { rallies: [null, { side: 'home' }, { side: 'sideways' }, 7] } }));
+  check('malformed rallies are dropped, good ones kept',
+    badRallies.peek().store.match.rallies.length === 1);
+
+  const longName = boot();
+  longName.call.renameTeam('home', 'x'.repeat(200));
+  check('team names are capped',
+    longName.peek().store.match.home.length === longName.consts.MAX_TEAM_NAME);
+
+  // An emptied name field must not leave a blank half of the screen.
+  const blank = boot();
+  blank.call.renameTeam('home', '');
+  blank.call.openScoreboard();
+  check('an empty name still shows something',
+    blank.document.getElementById('sbHomeWon').textContent === 'Home won',
+    blank.document.getElementById('sbHomeWon').textContent);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

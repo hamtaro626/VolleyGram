@@ -170,5 +170,52 @@ for (const { name, hex } of surfaces) {
   }
 }
 
+// --- Scoreboard team colours ------------------------------------------
+//
+// A second palette, on a screen the roles never appear on, so it answers to
+// different questions: can you read the numerals on it, does it stand off the
+// page behind it, and are the two teams tellable apart at a glance from the
+// far side of a court.
+const teams = [...CSS.matchAll(/\.side-(home|away)\s*\{[^}]*--team:\s*(#[0-9a-fA-F]{6})/g)]
+  .map(([, side, hex]) => ({ side, hex: hex.toLowerCase() }));
+
+const numeralMatch = CSS.match(/\.sb-point\s*\{[^}]*color:\s*(#[0-9a-fA-F]{3,6})/);
+const numeral = numeralMatch ? numeralMatch[1].toLowerCase() : null;
+const PAGE = '#16181d';
+
+console.log(`\nScoreboard teams (${teams.length}), numerals ${numeral || 'NOT FOUND'}:`);
+if (teams.length !== 2) fail(`expected 2 team colours, found ${teams.length}`);
+if (!numeral) fail('could not find a numeral colour on .sb-point');
+
+for (const { side, hex } of teams) {
+  const onNumeral = numeral ? contrast(hex, numeral) : 0;
+  const onPage = contrast(hex, PAGE);
+  console.log(`  ${side.padEnd(5)} ${hex}  hue ${String(hsl(hex).hue).padStart(3)}` +
+    `  numerals ${onNumeral.toFixed(2)}:1  page ${onPage.toFixed(2)}:1`);
+  if (numeral && onNumeral < MIN_CONTRAST) {
+    fail(`.side-${side} is ${onNumeral.toFixed(2)}:1 against the numerals, needs ${MIN_CONTRAST}`);
+  }
+  // The panel is its own edge -- there is no border drawn around it.
+  if (onPage < MIN_LINE_CONTRAST) {
+    fail(`.side-${side} is ${onPage.toFixed(2)}:1 against the page, needs ${MIN_LINE_CONTRAST}`);
+  }
+}
+
+if (teams.length === 2) {
+  const [a, b] = teams.map((team) => hsl(team.hex));
+  const raw = Math.abs(a.hue - b.hue);
+  const gap = Math.min(raw, 360 - raw);
+  console.log(`  separation: ${gap} deg apart`);
+  if (gap < MIN_HUE_GAP) {
+    fail(`the two team colours are only ${gap} degrees apart`);
+  }
+  // Neither half should look brighter, and so more important, than the other.
+  const evenness = contrast(teams[0].hex, teams[1].hex);
+  console.log(`  evenness:   ${evenness.toFixed(2)}:1 between them (1.00 is identical lightness)`);
+  if (evenness > 1.6) {
+    fail(`one team colour is much lighter than the other (${evenness.toFixed(2)}:1)`);
+  }
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

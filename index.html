@@ -169,41 +169,46 @@
   <section class="scoreboard" id="scoreboard" hidden>
     <div class="sb-head">
       <span class="sb-game" id="sbGame">Game 1</span>
-      <span class="sb-rotation" id="sbRotation"></span>
       <button id="closeScoreboard" class="sb-close">Done</button>
     </div>
 
+    <!-- Red and blue rather than labels: which half is which has to be readable
+         from further away than any word on this screen. -->
     <div class="sb-teams">
-      <!-- Home is the team this app diagrams, and the only one whose side-out
-           moves the rotation. Said out loud, because nothing else on this
-           screen would tell you which half is yours. -->
-      <div class="sb-team">
+      <div class="sb-team side-home">
         <input class="sb-name" id="sbHomeName" maxlength="20"
                aria-label="Home team name" autocomplete="off" spellcheck="false">
         <button class="sb-point" id="sbHomePoint" aria-label="Point to the home team">
           <span class="sb-score" id="sbHomeScore">0</span>
         </button>
-        <div class="sb-under">
-          <span class="sb-yours">your rotation</span>
-          <button class="sb-serve" id="sbHomeServe" aria-pressed="true">Serving</button>
-        </div>
       </div>
 
-      <div class="sb-team">
+      <div class="sb-team side-away">
         <input class="sb-name" id="sbAwayName" maxlength="20"
                aria-label="Away team name" autocomplete="off" spellcheck="false">
         <button class="sb-point" id="sbAwayPoint" aria-label="Point to the away team">
           <span class="sb-score" id="sbAwayScore">0</span>
         </button>
-        <div class="sb-under">
-          <button class="sb-serve" id="sbAwayServe" aria-pressed="false">Serve</button>
-        </div>
       </div>
     </div>
 
     <div class="sb-actions">
       <button id="sbUndo" disabled>Undo point</button>
-      <button id="sbNewGame">New game</button>
+      <button id="sbEndGame">End game</button>
+    </div>
+
+    <!-- Ending a game asks who took it. That answer is the match record, and
+         it's the one thing nobody remembers by game four. -->
+    <div class="sb-newgame" id="sbNewGame" hidden>
+      <p class="sb-final" id="sbFinal"></p>
+      <div class="sb-winners">
+        <button class="sb-won side-home" id="sbHomeWon">Home won</button>
+        <button class="sb-won side-away" id="sbAwayWon">Away won</button>
+      </div>
+      <div class="sb-newgame-actions">
+        <button id="sbNoResult">Next game, no result</button>
+        <button id="sbCancelGame">Cancel</button>
+      </div>
     </div>
   </section>
 

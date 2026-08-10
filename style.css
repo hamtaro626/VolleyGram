@@ -511,26 +511,42 @@ body.scoring > .version {
 }
 
 .sb-game {
+  flex: 1 1 auto;
+  min-width: 0;
   font-size: clamp(0.9rem, 3vmin, 1.6rem);
   font-weight: 700;
   white-space: nowrap;
-}
-
-/* The link back to the diagram, and the reason this screen exists. Allowed to
-   shrink and ellipsis: it's the one thing here you read up close. */
-.sb-rotation {
-  flex: 1 1 auto;
-  min-width: 0;
-  font-size: clamp(0.7rem, 2.2vmin, 1.2rem);
-  color: #a9b2c6;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .sb-close {
   flex: 0 0 auto;
   padding: 0.6rem 1.2rem;
+}
+
+/* --- Team colours ----------------------------------------------------- */
+
+/* Red and blue, because which half is which has to be readable from further
+   away than any word on this screen. The pair is chosen on three counts: both
+   carry white numerals (5.35:1 and 5.02:1), both stand clear of the page behind
+   them (3.02:1 and 3.21:1, since the filled panel is its own edge and no border
+   is drawn), and they are within 6% of each other in lightness -- so neither
+   team's half looks brighter, and so more important, than the other's. All the
+   separation is hue, 137 degrees of it.
+
+   The blue started at #2a5fb8 and was lightened: it looked right but sat at
+   2.90:1 against the page, just under the 3:1 the courts are held to.
+
+   Kept away from the app's existing reds on purpose: #ff9f9f is what an
+   overlap violation and a danger button look like, and a team is not an error.
+   Re-check with: node test/contrast.js */
+.side-home {
+  --team: #b8323f;
+}
+
+.side-away {
+  --team: #2e66c2;
 }
 
 .sb-teams {
@@ -556,7 +572,7 @@ body.scoring > .version {
   text-align: center;
   width: 100%;
   padding: 0.4rem;
-  border: 1px solid #3a4152;
+  border: 2px solid var(--team);
   border-radius: 8px;
   background: #232833;
   color: #f2f4f8;
@@ -564,7 +580,8 @@ body.scoring > .version {
   appearance: none;
 }
 
-/* The whole half is the tap target. Courtside you are not aiming. */
+/* The whole half is the tap target, filled with the team's colour. Courtside
+   you are not aiming. */
 .sb-point {
   flex: 1 1 auto;
   min-height: 0;
@@ -572,15 +589,18 @@ body.scoring > .version {
   align-items: center;
   justify-content: center;
   padding: 0;
-  border: 2px solid #3a4152;
+  border: none;
   border-radius: 14px;
-  background: #1d2129;
+  background: var(--team);
+  color: #f2f4f8;
   /* Stops iOS treating a fast second tap as a zoom rather than a second point. */
   touch-action: manipulation;
 }
 
+/* Darkening rather than lightening: the fills already carry white text, and
+   going the other way would cost contrast at the moment of the tap. */
 .sb-point:active {
-  background: #2b313d;
+  filter: brightness(0.8);
 }
 
 .sb-score {
@@ -591,40 +611,69 @@ body.scoring > .version {
   font-variant-numeric: tabular-nums;
 }
 
-.sb-under {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.6rem;
-  flex: 0 0 auto;
-  min-height: 2.2rem;
-}
-
-.sb-yours {
-  font-size: clamp(0.6rem, 1.8vmin, 0.95rem);
-  color: #6f7891;
-  white-space: nowrap;
-}
-
-.sb-serve {
-  padding: 0.5rem 1rem;
-  font-size: clamp(0.7rem, 2vmin, 1.1rem);
-  background: #232833;
-  color: #a9b2c6;
-}
-
-/* Gold, because that is already what this app means by "the ball is here" --
-   the setter's ring and the server's pill both use it. */
-.sb-serve.is-serving {
-  background: #d8a029;
-  color: #16181d;
-}
-
 .sb-actions {
   flex: 0 0 auto;
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 1rem;
+}
+
+/* --- Ending a game ---------------------------------------------------- */
+
+/* Covers the scoreboard rather than sitting under it: it asks one question and
+   the score behind it is what you're answering about. */
+.sb-newgame {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2vmin;
+  padding: 4vmin;
+  background: rgba(22, 24, 29, 0.96);
+}
+
+.sb-newgame[hidden] {
+  display: none;
+}
+
+.sb-final {
+  margin: 0;
+  text-align: center;
+  font-size: clamp(1rem, 3.2vmin, 1.8rem);
+  font-weight: 600;
+}
+
+.sb-winners {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2vmin;
+  width: min(100%, 40rem);
+}
+
+.sb-won {
+  padding: clamp(1rem, 5vmin, 3rem) 1rem;
+  font-size: clamp(0.9rem, 2.6vmin, 1.4rem);
+  border: none;
+  background: var(--team);
+  color: #f2f4f8;
+}
+
+/* Nothing was played, so there is no winner to offer. */
+.sb-newgame.nothing-played .sb-winners {
+  display: none;
+}
+
+.sb-newgame-actions {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+.sb-newgame-actions button {
+  padding: 0.7rem 1.4rem;
 }
 
 /* --- Version marker --------------------------------------------------- */

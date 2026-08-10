@@ -845,73 +845,69 @@ unrecognised value becomes indoor rather than leaving the court unpainted.
 
 ## v0.22 — the scoreboard
 
-A full-screen scoreboard: two named teams, two big numbers, a game number, and
-who's serving. Reached from the panel row beside Quiz Mode.
+A full-screen scoreboard: two named teams in red and blue, two big numbers, a
+game number, and a match record of who won each game. Reached from the panel row
+beside Quiz Mode.
 
-### Why this isn't the app doing too much
+### It does not touch the rotation, and that was a decision
 
-A generic scoreboard would be. Anyone can install one of those, and it would
-have nothing to do with a rotation diagram.
+The first build of this wired the score into the diagram. Winning a rally the
+other team served is a side-out, and a side-out is *why* you rotate — so the
+score could advance the rotation automatically, and the scoreboard would have
+been the input the rotation model never had. It worked. Every case in the table
+below was tested and passing.
 
-What earns its place is the link. **Winning a rally the other team served is a
-side-out, and a side-out is why you rotate.** Tracking the score therefore tells
-the diagram which rotation you're actually in — the one input the rotation model
-never had. Until now the rotation was something you tapped.
+| Rally | Rotation, under the removed design |
+|-------|-----------------------------------|
+| You win your own serve | unchanged |
+| You lose your serve | unchanged |
+| You win their serve | **advances** |
+| They win your serve | unchanged |
 
-The test it had to pass is the one beach doubles failed. Beach was rejected
-because it *removes* almost everything this app models and leaves a bare court.
-The scoreboard is the opposite: it adds the missing input and makes two existing
-features live. `describeRotation()` is rendered straight onto the scoreboard, so
-the setter it names and the rotation it reports are the same ones the diagram
-draws — including v0.20's `no server, zone 1 is empty`, which stops being trivia
-and becomes a warning at the moment it costs you.
+It came out anyway, and this is the record of why — the gap v0.13 left when redo
+was dropped without one.
 
-### Four lines of mechanism
+It made two features depend on each other for no gain you could feel courtside.
+It required a `serving` flag the app had never had (v0.19 notes explicitly that
+the app doesn't model which team is serving). It required knowing who served
+first in each game, which nothing on the court tells you once play is under way.
+And getting that single bit wrong silently corrupted every rotation after it —
+a failure with no symptom until the diagram quietly disagreed with the court.
 
-```
-sideOut = which !== match.serving
-score[which] += 1
-match.serving = which
-if (sideOut && which === 'home') step(1)
-```
+**A scorekeeper you have to set up correctly before it can be trusted is not a
+safeguard. It is a second thing to get wrong.** Rotation stays on the buttons,
+where it cannot drift. Scorekeeping is a safeguard and an extra, not a driver.
 
-Everything else on that screen is display. The condition is the whole feature:
+What that removed: `serving` entirely, the per-team Serving/Serve badges, the
+side-out rule, and the rotation line the scoreboard used to show. What it left
+is smaller and independent — the rally trail no longer records a rotation to
+restore, so undo is just a score again.
 
-| Rally | Score | Serve | Your rotation |
-|-------|-------|-------|---------------|
-| You win your own serve | you | you keep | **unchanged** |
-| You lose your serve | them | to them | **unchanged** |
-| You win their serve | you | to you | **advances** |
-| They win your serve | them | to them | **unchanged** |
+`test/migration.js` §43 asserts that scoring moves neither the rotation nor the
+whiteboard's undo stack, and that `serving` is absent from the match. That is
+the guard against the link creeping back in.
 
-Only the home side is diagrammed, so only the home side's side-out moves
-anything. The away team rotates too, in real life. This app has never modelled
-them and doesn't start here — the same restraint as v0.19, which doesn't model
-which team is serving for overlap purposes either.
+### The match record
 
-### `serving` is the first non-diagram state
+Ending a game asks who won, and that answer is kept: `games` is a list of
+`{ home, away, winner }`, and the header carries a games-won tally. It's the
+thing you actually want at the end of a night and the thing nobody remembers by
+game four.
 
-v0.19 noted explicitly that the app doesn't know which team is serving. It does
-now. That's one boolean, and it's the only genuinely new state this feature
-introduces.
+A game with no points scored offers no winner — only "next game, no result" —
+so a 0–0 game can't enter the record. On load, the stored game number is raised
+to at least `games.length + 1`, because a match that has played three games is
+on game four whatever the number claims.
 
 ### Two undo stacks, deliberately
 
-The scoreboard keeps its own trail — one entry per point, recording the score,
-the server and the rotation *before* it — rather than pushing to the app's
-40-step history.
+The scoreboard keeps its own trail, one entry per point, rather than pushing to
+the app's 40-step history. Sharing one stack would be wrong in both directions:
+tapping points would bury the drag you wanted back, and undoing a drag would
+rewind the score. They are different kinds of "back". Courtside the mis-tap is
+not the rare case, it is the normal one.
 
-Sharing one stack would have been wrong in both directions: tapping points would
-bury the drag you wanted back, and undoing a drag would rewind the score. They
-are different kinds of "back".
-
-Undo restores the **rotation** as well as the score. A point undone that left the
-diagram rotated would be worse than no undo at all, and courtside the mis-tap
-isn't the rare case — it's the normal one.
-
-The trail caps at 120, which holds a long set whole. Stored rotations are
-checked on the way back out, not trusted: a roster can shrink between a point
-and its undo, taking rotations with it.
+The trail caps at 120, which holds a long set whole; the game record caps at 50.
 
 ### Storage
 
@@ -922,26 +918,50 @@ send someone, and it would be strange for it to arrive 14–11.
 
 It does persist, because a phone will background the tab mid-set and a
 scoreboard that forgets isn't one. Added with no version bump, same as
-`roleOverrides`, `checkOverlap` and `surface`.
+`roleOverrides`, `checkOverlap` and `surface`. Names are capped at 20 characters
+— an essay is unreadable from across a gym, which is the point of the screen.
 
-`normaliseMatch()` gets the same treatment as coordinates in v0.16, and for a
-sharper reason: this blob now *drives the rotation*, so a bad value moves the
-diagram rather than merely looking wrong. Names are capped at 20 characters —
-an essay is unreadable from across a gym, which is the whole point of the
-screen.
+### Red and blue
+
+| Side | Colour | Numerals | Page behind |
+|------|--------|----------|-------------|
+| Home | `#b8323f` | 5.35:1 | 3.02:1 |
+| Away | `#2e66c2` | 5.02:1 | 3.21:1 |
+
+The whole half of the screen carries the colour, because which half is which has
+to be readable from further away than any word on this screen.
+
+Three things are being held at once. Both carry white numerals. Both stand clear
+of the page behind them at 3:1 — the filled panel is its own edge, and no border
+is drawn around it. And they are within 6% of each other in **lightness**, so
+neither team's half looks brighter, and so more important, than the other's;
+all 137° of the separation is hue.
+
+The blue started at `#2a5fb8`, which looked right and sat at 2.90:1 against the
+page — just under the figure the courts are held to. Lightening it was cheaper
+than arguing with the threshold.
+
+Both are kept away from `#ff9f9f`, which is what an overlap violation and a
+danger button look like in this app. A team is not an error.
+
+`contrast.js` checks this palette too, on the same principle as the courts: a
+second palette that ships unverified is the drift these suites exist to stop. It
+asks the questions this screen actually raises — numerals, page, hue separation,
+and an evenness check that fails if one team is much lighter than the other.
 
 ### Sized off vmin, not the phone
 
 This is the one screen in the app that isn't phone-first. It's meant to be
 propped on a bench and read from the far side of a court, so every size is a
 `clamp()` on **vmin** — the short edge, which is what actually limits how big a
-digit can be — rather than the viewport width. That's what makes it grow
-properly on an iPad and work with a phone lying sideways.
+digit can be — rather than the viewport width. That's what makes it grow on an
+iPad and work with a phone lying sideways.
 
 The score uses `tabular-nums` so the number stops jittering as it climbs, and
 the tap target is the entire half of the screen, because courtside you are not
 aiming. `touch-action: manipulation` stops iOS reading a fast second tap as a
-zoom instead of a second point.
+zoom instead of a second point. `:active` darkens rather than lightens, since
+the fills already carry white text.
 
 `.scoreboard[hidden]` needs its own `display: none`, for exactly the reason the
 roster panel did: an author `display: flex` beats the browser's built-in rule
@@ -959,10 +979,6 @@ the scoreboard behaves identically without it.
 How many points win a set, win-by-two, a shorter fifth, when to switch ends, or
 how many substitutions are left. Leagues disagree on all of it. Same position
 v0.20 took on the missing server: state the fact, stop before the consequence.
-
-Setting who serves first in a new game is left to a tap for the same reason —
-coin toss, alternation or league rule, depending on where you are. That tap is a
-correction rather than a rally, so it takes no undo step and records nothing.
 
 ## Tests
 
