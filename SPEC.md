@@ -1923,6 +1923,51 @@ filesystem, deploy by push, and still run untouched in five years.
 `package.json`, so the day that stops being true it will be a decision rather
 than a drift.
 
+## v0.39 goes to testers
+
+The build handed to real users. Recorded here because what comes back will need
+reading against what was already known, and six months from now "which version
+did people actually try" is a question with no other answer.
+
+### What the suites already guarantee
+
+654 checks and a colour suite. Rotation order, storage and migration across
+every historical shape, corrupt and hand-edited input, share links, formations,
+the quiz, scoring, undo scoping, roster reordering, contrast and hue across
+three surfaces. **A tester will not find a bug in any of that**, and if they
+report one it is more interesting than it looks.
+
+### What no test here can reach
+
+This is the list worth pointing testers at, because it is the list the
+machinery is blind to — a stubbed DOM never draws, and the device shelf shows
+layout but not touch:
+
+- **Touch.** Double-tap zoom, scrolling the page with a finger that starts on
+  the court, dragging a player, the 1.5s hold on reset. All hardware.
+- **Fit at 320px.** The three-across share row inside *Show options* runs to
+  about 80px a column and is the tightest thing in the app.
+- **The scoreboard on a tablet.** Digits size off their panel rather than the
+  screen; the number was chosen by arithmetic, never measured.
+- **Sand.** The only surface that flips the court lines to dark. Zone numbers
+  sit at 0.45 opacity there and were never seen before shipping.
+- **The Overlap badge** above a player who is also serving — two labels, one
+  above and one below, never checked together on a real screen.
+- **Whether any of it makes sense to someone who did not build it.** The
+  largest gap, and the only one a test could never have.
+
+### What to expect from the reports
+
+Every bug found from a phone this cycle arrived as a description of a symptom,
+not a cause: "players outside the bounds", "the roster order resets", "it pans
+when I double-tap". Two of those had causes several steps removed from the
+symptom — a bench offset that assumed a fixed ring position, and a pointer
+capture dropped by moving a node mid-drag. Screenshots were what made the
+second solvable.
+
+So: symptoms are the useful thing to collect. Diagnosis is cheap afterwards;
+guessing at what someone meant is not.
+
 ## Tests
 
 ```
