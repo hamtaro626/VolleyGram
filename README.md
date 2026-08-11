@@ -33,7 +33,7 @@ Built to use on mobile devices courtside
 
 ## Stack
 
-Three static files and nothing else.
+Three static files.
 
 ```
 index.html      structure and controls
@@ -41,7 +41,7 @@ style.css       ~17 KB
 script.js       ~82 KB, all application logic
 SPEC.md         the design log — read this first
 test/
-  migration.js  525 checks: storage, migration, roles, formations, quiz,
+  migration.js  561 checks: storage, migration, roles, formations, quiz,
                 sharing, dragging, short-handed rosters, playing surface,
                 scoreboard
   contrast.js   contrast, hue separation, every role against all three court
@@ -67,13 +67,12 @@ of a number. That's expected — see *Bumping the version* below.
 ## Tests
 
 ```sh
-node test/migration.js    # 525 checks across 47 groups
+node test/migration.js    # 561 checks across 48 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
-Plain Node scripts, no runner, no install, no config. Any recent Node works.
-Both print `ALL PASS` and exit 0. Run both before opening a PR; there's no CI to
-catch it for you.
+Plain Node scripts
+Both print `ALL PASS` and exit 0. Run both before opening a PR.
 
 **Neither suite contains a copy of what it tests.**
 
@@ -114,9 +113,8 @@ Players rotate clockwise: 2→1, 1→6, 6→5, 5→4, 4→3, 3→2.
 
 ## Things to know before changing something
 
-**Formations are generated, not tabulated.** Serve receive and defense are
-computed from who is on court and what they play. A lookup table would be more
-authoritative right up until someone has seven players, reorders the lineup, or
+**Formations are generated, not tabulated.** Serve receive and defense are computed from who is on court and what they play, so computations allow for more than 6 players. 
+A lookup table would be more authoritative right up until someone has seven players, reorders the lineup, or
 overrides a role for one rotation. Don't replace the computation with a table.
 
 **Storage is versioned and must migrate.** `STORAGE_VERSION` is 2. Real users
@@ -153,7 +151,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.26. Working title, actively developed, no issues or PRs open yet.
+v0.27. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

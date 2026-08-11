@@ -546,7 +546,15 @@ function overrideCount() {
 // right end -- which is where they always did, the ring just reaches the bench
 // from the other side now.
 function benchPosition(rosterIndex, rotation) {
-  const benchIndex = cycleIndex(rosterIndex, rotation) - 1;
+  // Where the bench block starts depends on the entry zone, so it has to be
+  // read off the ring rather than assumed. v0.23 could hardcode 1 because the
+  // bench always sat directly after zone 1; v0.24 made that one case of six,
+  // and this went on subtracting 1 -- putting the seat at x = 300% with subs
+  // entering at zone 1, which is three court widths off the right edge.
+  const ring = courtRing();
+  const benchStart = ring.indexOf(null);
+  if (benchStart === -1) return { x: 50, y: BENCH_Y }; // no bench to sit on
+  const benchIndex = cycleIndex(rosterIndex, rotation) - benchStart;
   const benchCount = Math.max(rosterSize() - COURT_SPOTS, 1);
   return { x: (100 / (benchCount + 1)) * (benchIndex + 1), y: BENCH_Y };
 }

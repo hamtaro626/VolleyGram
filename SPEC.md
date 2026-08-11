@@ -1248,13 +1248,72 @@ match nothing and report nothing wrong:
 Selectors are now escaped and anchored to the start of a line. The check was
 confirmed to fail by putting `none` back on the court.
 
+## v0.27 — bench seats were drawn off the edge
+
+### The bug
+
+With seven or more players, whoever was off court was drawn about three court
+widths to the right of the diagram. Reported as "newly added players after 6 are
+placed way outside of bounds", which is how it looks: a bench appears the moment
+you add a seventh, and its occupant is nowhere on screen.
+
+`benchPosition()` did this:
+
+```js
+const benchIndex = cycleIndex(rosterIndex, rotation) - 1;
+```
+
+The `- 1` assumed the bench block starts at ring position 1. That was true in
+v0.23, where the bench always sat directly after zone 1 and there was nothing to
+configure. **v0.24 made that one case of six and this line was not updated.**
+
+| Entry zone | Ring | Bench x |
+|------------|------|---------|
+| Zone 1 | `[1,6,5,4,3,2,B]` | 300% |
+| Zone 3 | `[1,6,5,4,B,3,2]` | 200% |
+| Zone 6 | `[1,B,6,5,4,3,2]` | 50% |
+
+Only middle back was correct, because it is the one ring where the bench happens
+to start at index 1. v0.24 shipped with it as the default, so the bug was
+invisible; v0.25 changed the default to zone 1 and exposed it in every new
+lineup.
+
+### The fix
+
+Read where the bench starts rather than assuming it:
+
+```js
+const benchStart = courtRing().indexOf(null);
+const benchIndex = cycleIndex(rosterIndex, rotation) - benchStart;
+```
+
+Same shape as `slotFor()`, which already asks the ring instead of carrying its
+own idea of the layout. Anything that needs to know where the bench is should go
+through `courtRing()`; that is the only place the answer exists.
+
+### What the tests were not asking
+
+`§46` was written for the v0.23 rotation bug and checks, thoroughly, **who** is
+benched in every rotation at every entry zone. It never checks **where** anyone
+is drawn. A player at x = 300% is benched perfectly correctly.
+
+`§47` now walks every entry zone against 7, 8 and 12 players and asserts each
+bench seat lands inside the strip and that seats are distinct. Put the `- 1`
+back and 15 checks fail.
+
+The general shape is worth keeping in mind: this suite is strong on *state* and
+blind to *geometry*, because the DOM is stubbed and nothing measures a pixel.
+Coordinates are the one thing it can still assert about drawing, since they are
+computed rather than rendered — so where a coordinate is computed, it should be
+checked.
+
 ## Tests
 
 ```
-node test/migration.js    # 525 checks — storage, migration, roles, formations,
+node test/migration.js    # 561 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
-                          #   touch handling
+                          #   touch handling, bench geometry
 node test/contrast.js     # colour contrast, hue separation, and every role
                           #   against every court surface
 ```

@@ -117,6 +117,7 @@ function boot(seedJson, seedHash) {
       startQuiz, endQuiz, nextQuizQuestion, answerQuiz, undo, pushHistory,
       settersThisRotation, shareUrl, encodeLineup, decodeLineup, importFromUrl,
       startDrag, onDrag, endDrag, versionFrom, overlapViolations, applySurface,
+      benchPosition,
       cycleIndexFor: cycleIndex, courtRing,
       scorePoint, undoRally, newGame, renameTeam, normaliseMatch, gamesWon,
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
@@ -1905,7 +1906,45 @@ console.log('\n46. The roster is the serving order');
   check('and nobody is ever benched short-handed', !everOnBench);
 }
 
-console.log('\n47. Touch handling');
+console.log('\n47. Bench seats stay on the bench');
+{
+  // The bench block moves with the entry zone, so its coordinates have to be
+  // read off the ring rather than assumed. v0.23 could assume, because the
+  // bench always sat directly after zone 1; v0.24 made that one case of six and
+  // benchPosition went on subtracting 1, which put the seat at x = 300% -- three
+  // court widths off the right edge -- for every entry zone but middle back.
+  //
+  // Nothing here checked a bench coordinate. §46 checked *who* was benched and
+  // never *where* they were drawn.
+  const rosterOfN = (n) => Array.from({ length: n }, (_, i) =>
+    ({ id: 'P' + i, role: 'NONE', name: 'P' + i, fallback: 'P' + i }));
+
+  [1, 2, 3, 4, 5, 6].forEach((zone) => {
+    [7, 8, 12].forEach((size) => {
+      const app = boot(JSON.stringify({ version: 2, activeId: 'a', lineups: { a: {
+        name: 'T', system: 'simple', entrySlot: zone, layouts: {},
+        roster: rosterOfN(size) } } }));
+
+      const seats = new Set();
+      let worst = null;
+      for (let r = 1; r <= app.call.rotationCount(); r++) {
+        for (let i = 0; i < size; i++) {
+          if (app.call.slotFor(i, r) !== null) continue;
+          const { x } = app.call.benchPosition(i, r);
+          seats.add(Math.round(x * 100) / 100);
+          if (!(x > 0 && x < 100)) worst = x;
+        }
+      }
+      check(`entry ${zone}, ${size} players: every bench seat is on screen`,
+        worst === null, `x = ${worst}`);
+      // One seat per bench slot, and no two players sharing one.
+      check(`entry ${zone}, ${size} players: ${size - 6} distinct seats`,
+        seats.size === size - 6, [...seats].join(','));
+    });
+  });
+}
+
+console.log('\n48. Touch handling');
 {
   // Read out of the real stylesheet, same rule as contrast.js: a copy here
   // would drift and go on passing while the app misbehaved.
