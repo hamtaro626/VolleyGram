@@ -1923,11 +1923,16 @@ filesystem, deploy by push, and still run untouched in five years.
 `package.json`, so the day that stops being true it will be a decision rather
 than a drift.
 
-## v0.39 goes to testers
+## v0.41 goes to testers
 
 The build handed to real users. Recorded here because what comes back will need
 reading against what was already known, and six months from now "which version
 did people actually try" is a question with no other answer.
+
+v0.39 was marked for this first and never went out — v0.40 regrouped the
+controls and v0.41 resized the diagram before anyone saw it. Corrected rather
+than left standing, because a stale claim in this document is the specific
+failure v0.17 had to go back and fix.
 
 ### What the suites already guarantee
 
@@ -1945,10 +1950,13 @@ layout but not touch:
 
 - **Touch.** Double-tap zoom, scrolling the page with a finger that starts on
   the court, dragging a player, the 1.5s hold on reset. All hardware.
-- **Fit at 320px.** The three-across share row inside *Show options* runs to
-  about 80px a column and is the tightest thing in the app.
+- **Fit at 320px.** The three-across share row runs to about 87px a column and
+  is the tightest thing in the app. Checked on the device shelf at v0.41 and it
+  holds — but the shelf is a desktop browser pretending, not a phone.
 - **The scoreboard on a tablet.** Digits size off their panel rather than the
-  screen; the number was chosen by arithmetic, never measured.
+  screen; the number was chosen by arithmetic, never measured. The one thing on
+  this list the shelf still cannot answer, since the scoreboard needs opening
+  inside a frame to judge.
 - **Sand.** The only surface that flips the court lines to dark. Zone numbers
   sit at 0.45 opacity there and were never seen before shipping.
 - **The Overlap badge** above a player who is also serving — two labels, one
@@ -1968,10 +1976,141 @@ second solvable.
 So: symptoms are the useful thing to collect. Diagnosis is cheap afterwards;
 guessing at what someone meant is not.
 
+## v0.40 — regrouped by job
+
+`Show options` is gone, and so is the second level of nesting.
+
+| Row | Buttons |
+|-----|---------|
+| 1 | Scoreboard · Quiz Mode |
+| 2 | Labels · **Share…** |
+| 3 | *(Share)* Share team · Save image · Save all · Transparent background |
+| 4 | Show roster |
+| 5 | Hold to reset all |
+
+### The name was the symptom
+
+The question was whether to call the drawer *Court options*. It isn't one: of
+the four things inside, only Labels was a court option — Quiz Mode is a whole
+mode, and the rest are exports.
+
+No word fitted because the drawer had no theme. It was "occasional stuff",
+which is what *More* had honestly called it until v0.35 renamed it for
+consistency with *Show roster*. A grab bag can be named honestly or grouped
+properly, and it had quietly stopped being either.
+
+### Grouping by job
+
+**Quiz Mode moves up beside Scoreboard.** Those two share something real —
+each replaces the app while you are in it — so the row needs no label to be
+read. It also stops a whole feature being two taps deep.
+
+What is left holds one job, so it can be called **Share** and mean it. The
+inner menu becomes the only menu.
+
+Every label now describes its own contents, which is the test *Show options*
+failed.
+
+### What it cost and bought
+
+One extra row in the main column, against a whole level of nesting removed and
+three honest names. Two things fell out for free:
+
+- The share row gained **7px a column** at 320px — 80px to 87px — because the
+  `.nested` inset it used to sit inside is gone. `Save all` keeps its shortened
+  name anyway; the headroom is welcome rather than needed.
+- Labels stops being the awkward exception in the close-on-use rule. Everything
+  in the drawer now hands you off somewhere else, so all of it closes the
+  drawer, with nothing to carve out.
+
+`.nested` and `.share-menu` went with the level that needed them, and `§49`
+asserts they are gone — dead CSS survives three refactors and then confuses
+someone.
+
+### A test that kept testing prose
+
+The dead-class check first failed against **the comment explaining the change**,
+matching `.nested` in its own rationale. That is the third check in this suite
+written that way, all three failing open: matching the words, reporting nothing
+wrong.
+
+It now strips `/* … */` before testing, and requires a selector character after
+the class name. Confirmed by renaming a live rule back to `.nested`, which fails
+it. The general rule, since it keeps recurring: **if a check is about code, give
+it code** — a source file read as prose will match the prose.
+
+## v0.41 — the diagram sizes to the screen
+
+Two findings from the device shelf on its first outing, neither of which any
+test here could have produced.
+
+### Player names were a fixed size on a scaling circle
+
+The circle is `--player-size: 23%` of the court. Its text was `0.72rem` — a
+fixed size, whatever the court was doing. So a 320px phone truncated `Outside 1`
+to `Outsi…` while an iPad left the same name rattling around inside a circle
+twice the size.
+
+Both scale together now: `clamp(0.6rem, 3.5cqw, 1.4rem)` on the name and
+`clamp(0.45rem, 2.5cqw, 1rem)` on the role label, with `.court` made a
+`container-type: inline-size` container so `cqw` means *the court's width*.
+
+Inline-size specifically. The court takes its height from `aspect-ratio`, and
+nothing here should be clipped — the net sits above its box and the bench below
+it, both deliberately.
+
+**The export has always done this.** `drawRotation()` draws names at
+`0.038 × EDGE` against a `0.23 × EDGE` disc. The screen was the odd one out.
+`3.5cqw` sits a shade under the export's ratio because the canvas can pass a
+`maxWidth` and squeeze a long name at draw time, and CSS has no equivalent — it
+can only ellipsis, so it leaves the margin the export takes.
+
+| Court | Disc | Name | 9 bold chars | Usable |
+|-------|------|------|--------------|--------|
+| 288px (320 phone) | 66px | 10.1px | ~53px | 56px |
+| 358px (390 phone) | 82px | 12.5px | ~65px | 72px |
+| 704px (iPad) | 162px | 22.4px | ~117px | 152px |
+
+### `main` was capped at 30rem on every screen
+
+An iPad had ~130px of dead margin each side. But the court is square and fills
+`main`, so **`main`'s width is the court's height** — widening it pushes the
+formation tabs and rotation arrows down. The cap has to be two-sided.
+
+```css
+max-width: 30rem;                                    /* no-dvh fallback */
+max-width: clamp(30rem, calc(100dvh - 22rem), 44rem);
+```
+
+`22rem` is the chrome above and below the court — heading, two pickers, status
+line, tabs, arrows, body padding — measured off the stylesheet rather than
+guessed.
+
+| Screen | Court | Change |
+|--------|-------|--------|
+| iPad portrait 744×1133 | 704px | up from 480 |
+| iPad landscape 1133×744 | 480px | unchanged — floor holds |
+| iPhone 15 390×844 | 358px | unchanged — width binds |
+| iPhone SE 320×568 | 288px | unchanged — width binds |
+
+**The floor is the interesting part.** On a short screen the height term drops
+below 30rem, and the clamp ignores it. That means iPad landscape and a small
+phone still scroll to reach the controls, exactly as they did before — because
+the alternative was shrinking the court to save a scroll, and a smaller diagram
+is the worse trade. `§55` asserts both halves: where there is room, court plus
+controls fit without scrolling; where there isn't, the result is byte-identical
+to the old fixed width.
+
+### The shelf earned itself
+
+Both of these were invisible to 652 checks and visible in about four seconds of
+looking at four frames side by side — which is the case that was made for
+building it rather than reaching for a browser driver.
+
 ## Tests
 
 ```
-node test/migration.js    # 654 checks — storage, migration, roles, formations,
+node test/migration.js    # 666 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

@@ -2739,48 +2739,34 @@ document.getElementById('clearRoleOverrides').addEventListener('click', () => {
   render();
 });
 
-// The occasional controls, folded behind More so the main column stays one row
-// shorter. Closed again whenever one of them fires: two of the three hand you
-// off somewhere else entirely, and the third takes over the screen.
-const moreMenu = document.getElementById('moreMenu');
-const moreButton = document.getElementById('toggleMore');
+// One drawer now, not two. It used to be More Options wrapping a nested Share,
+// which was two levels deep for four controls and gave the outer one a name no
+// word fit: it held a display toggle, a whole mode, and the exports. v0.40 sent
+// Quiz Mode up beside Scoreboard -- both replace the app while you are in them,
+// which is a category you can name -- leaving this holding one job.
 const shareMenu = document.getElementById('shareMenu');
 const shareButton = document.getElementById('toggleShare');
 
 function syncMenuButtons() {
-  // Reads Show/Hide like the roster button beside it, rather than naming the
-  // drawer and leaving you to guess which way it is about to go.
-  moreButton.textContent = moreMenu.hidden ? 'Show options' : 'Hide options';
-  moreButton.setAttribute('aria-expanded', String(!moreMenu.hidden));
+  // Reads Show/Hide like the roster button, rather than naming the drawer and
+  // leaving you to guess which way it is about to go.
+  shareButton.textContent = shareMenu.hidden ? 'Share\u2026' : 'Hide share';
   shareButton.setAttribute('aria-expanded', String(!shareMenu.hidden));
 }
 
-// Closing the outer menu closes the inner one with it, or Share would be found
-// already open the next time More Options is pressed.
 function closeMore() {
-  moreMenu.hidden = true;
   shareMenu.hidden = true;
   syncMenuButtons();
 }
-
-moreButton.addEventListener('click', () => {
-  if (moreMenu.hidden) {
-    moreMenu.hidden = false;
-    syncMenuButtons();
-  } else {
-    closeMore();
-  }
-});
 
 shareButton.addEventListener('click', () => {
   shareMenu.hidden = !shareMenu.hidden;
   syncMenuButtons();
 });
 
-// Everything that hands you off somewhere else closes the menu behind it.
-// Labels is deliberately not in this list: it's a toggle you might flip twice
-// while watching the court, which stays visible above the open menu.
-['exportImage', 'exportAll', 'shareLink', 'startQuiz'].forEach((id) => {
+// Everything in the drawer hands you off somewhere else, so all of it closes
+// the drawer behind it. Labels is no longer in here to be the exception.
+['exportImage', 'exportAll', 'shareLink'].forEach((id) => {
   document.getElementById(id).addEventListener('click', closeMore);
 });
 

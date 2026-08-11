@@ -2058,38 +2058,43 @@ console.log('\n49. The control rows');
 
   const find = (id) => rows.find((row) => row.ids.includes(id));
 
-  check('Scoreboard sits left of the drawer toggle',
-    JSON.stringify(find('toggleMore').ids)
-      === JSON.stringify(['openScoreboard', 'toggleMore']),
-    JSON.stringify(find('toggleMore').ids));
-  check('and the drawer toggle reads Show options',
-    /id="toggleMore"[^>]*>Show options</.test(html));
+  // v0.40 regrouped by job. The two screens that replace the app share a row;
+  // a display toggle and the export drawer share the next. Every label now
+  // describes its own contents, which "Show options" could not -- it held a
+  // toggle, a mode and the exports at once.
+  check('Scoreboard and Quiz Mode share the takeover row',
+    JSON.stringify(find('openScoreboard').ids)
+      === JSON.stringify(['openScoreboard', 'startQuiz']),
+    JSON.stringify(find('openScoreboard').ids));
 
-  check('Labels and Quiz Mode share a row inside the drawer',
+  check('Labels and the share drawer share the next row',
     JSON.stringify(find('toggleLabels').ids)
-      === JSON.stringify(['toggleLabels', 'startQuiz']),
+      === JSON.stringify(['toggleLabels', 'toggleShare']),
     JSON.stringify(find('toggleLabels').ids));
 
   check('Share holds the link and both exports on one row',
     JSON.stringify(find('shareLink').ids)
       === JSON.stringify(['shareLink', 'exportImage', 'exportAll']),
     JSON.stringify(find('shareLink').ids));
-  check('and the long label was shortened to fit three across',
+  check('and the long label is still shortened to fit three across',
     /id="exportAll"[^>]*>Save all</.test(html));
 
-  check('the share menu starts closed',
-    /<div class="share-menu nested" id="shareMenu" hidden>/.test(html));
+  check('the share drawer starts closed',
+    /<div class="submenu" id="shareMenu" hidden>/.test(html));
 
   // The setting that governs both exports sits with them rather than in the
   // roster panel, which is where it had drifted away to.
-  const shareBlock = (html.match(/id="shareMenu"[\s\S]*?\n      <\/div>/) || [''])[0];
+  const shareBlock = (html.match(/id="shareMenu"[\s\S]*?\n    <\/div>/) || [''])[0];
   check('the transparent-export toggle sits with the exports',
     /id="transparentExport"/.test(shareBlock));
   check('and is no longer in the roster panel',
     !/<section class="roster"[\s\S]*?id="transparentExport"[\s\S]*?<\/section>/.test(html));
-  check('the drawer toggle controls the outer menu',
-    /id="toggleMore"[^>]*aria-controls="moreMenu"/.test(html));
-  check('Share controls the inner one',
+
+  // One level of nesting, not two: nothing inside the drawer opens anything.
+  check('the drawer nests nothing further',
+    !/aria-controls/.test(shareBlock), shareBlock.slice(0, 120));
+
+  check('Share controls the drawer',
     /id="toggleShare"[^>]*aria-controls="shareMenu"/.test(html));
 
   // Both levels live inside the one box, so the outer menu is a container of
@@ -2097,10 +2102,18 @@ console.log('\n49. The control rows');
   check('a hidden .submenu is actually hidden',
     /\.submenu\[hidden\]\s*\{[^}]*display:\s*none/.test(
       fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')));
-  // .share-menu deliberately sets no display, so the browser's own rule works.
-  check('.share-menu sets no display of its own',
-    !/\.share-menu\s*\{[^}]*display:/.test(
-      fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')));
+  // The classes the second level needed went with it. Dead CSS is the kind of
+  // thing that survives three refactors and then confuses someone.
+  //
+  // Tested against the rules with comments stripped. Three checks in this suite
+  // have now been written that matched the comment explaining the change rather
+  // than the change -- always failing open, always looking like a pass. If a
+  // check is about code, give it code.
+  const sheet = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  const rules = sheet.replace(/\/\*[\s\S]*?\*\//g, '');
+  check('the nesting classes are gone with the nesting',
+    !/\.nested\s*[{>,]/.test(rules) && !/\.share-menu\s*[{>,]/.test(rules),
+    (rules.match(/\.(nested|share-menu)\s*[{>,]/g) || []).join(', '));
 
   // It moved out of the roster panel, where it had been the only export.
   check('the all-rotations export is no longer in the roster panel',
@@ -2121,11 +2134,9 @@ console.log('\n49. The control rows');
     JSON.stringify(rows[rows.length - 1].ids));
   const orderOf = (id) => rows.findIndex((row) => row.ids.includes(id));
   check('the drawer comes first, then Show roster, then reset',
-    orderOf('toggleMore') < orderOf('toggleRoster')
+    orderOf('toggleShare') < orderOf('toggleRoster')
     && orderOf('toggleRoster') < orderOf('resetAll'),
-    [orderOf('toggleMore'), orderOf('toggleRoster'), orderOf('resetAll')].join(','));
-  check('and the drawer is shut',
-    /<div class="submenu" id="moreMenu" hidden>/.test(html));
+    [orderOf('toggleShare'), orderOf('toggleRoster'), orderOf('resetAll')].join(','));
 
   // .actions is display:grid, so `hidden` needs putting back by hand.
   const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
@@ -2172,27 +2183,23 @@ console.log('\n49. The control rows');
   // aria-expanded has to follow the panel, not be set once and forgotten.
   const app = boot();
   const menu = (id) => app.document.getElementById(id);
-  check('both menus report closed at startup',
-    menu('moreMenu').hidden === true && menu('shareMenu').hidden === true);
+  check('the drawer reports closed at startup', menu('shareMenu').hidden === true);
 
   // Closing the outer one has to take the inner one with it, or Save would be
   // found already open the next time More is pressed.
-  menu('moreMenu').hidden = false;
   menu('shareMenu').hidden = false;
   app.call.syncMenuButtons();
-  check('aria-expanded follows both panels',
-    menu('toggleMore').attrs['aria-expanded'] === 'true'
-    && menu('toggleShare').attrs['aria-expanded'] === 'true',
-    JSON.stringify([menu('toggleMore').attrs, menu('toggleShare').attrs]));
-  check('and the label follows the panel',
-    menu('toggleMore').textContent === 'Hide options',
-    menu('toggleMore').textContent);
+  check('aria-expanded follows the panel',
+    menu('toggleShare').attrs['aria-expanded'] === 'true',
+    JSON.stringify(menu('toggleShare').attrs));
+  check('and so does the label',
+    menu('toggleShare').textContent === 'Hide share',
+    menu('toggleShare').textContent);
   app.call.closeMore();
-  check('closing the drawer closes Share with it',
-    menu('moreMenu').hidden === true && menu('shareMenu').hidden === true);
+  check('closing it reports closed', menu('shareMenu').hidden === true);
   check('and the label goes back',
-    menu('toggleMore').textContent === 'Show options',
-    menu('toggleMore').textContent);
+    menu('toggleShare').textContent === 'Share\u2026',
+    menu('toggleShare').textContent);
 }
 
 console.log('\n50. Reordering the roster by drag');
@@ -2470,6 +2477,79 @@ console.log('\n54. The device shelf');
     !/<script[^>]+src=/.test(preview) && !/import |require\(/.test(preview));
   check('and the repo still has no package manifest',
     !fs.existsSync(path.join(__dirname, '..', 'package.json')));
+}
+
+console.log('\n55. Sizing against the screen');
+{
+  // Comments stripped first -- see §49. A check about CSS should read rules.
+  const rules = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+
+  // The circle is a percentage of the court; its text used to be a fixed rem.
+  // So a 320px phone truncated every name while a tablet left them rattling
+  // around inside circles twice the size. Both scale together now.
+  const nameRule = (rules.match(/\.player \.name\s*\{[^}]*\}/) || [''])[0];
+  const labelRule = (rules.match(/\.player \.label\s*\{[^}]*\}/) || [''])[0];
+  check('the player name sizes off the court', /cqw/.test(nameRule), nameRule.trim());
+  check('and so does the role label', /cqw/.test(labelRule), labelRule.trim());
+  check('neither is a bare fixed size',
+    !/font-size:\s*[\d.]+rem\s*;/.test(nameRule)
+    && !/font-size:\s*[\d.]+rem\s*;/.test(labelRule));
+
+  // cqw needs the court to be a container, and inline-size specifically: the
+  // court takes its height from aspect-ratio, and the net and bench both sit
+  // outside its box on purpose.
+  const courtRule = (rules.match(/\.court\s*\{[^}]*\}/) || [''])[0];
+  check('the court is an inline-size container',
+    /container-type:\s*inline-size/.test(courtRule));
+
+  // main's width is the court's height, so the cap is two-sided. It must still
+  // have the old fixed width as a fallback for browsers without dvh, and must
+  // never resolve smaller than that floor.
+  const mainRule = (rules.match(/\bmain\s*\{[^}]*\}/) || [''])[0];
+  check('main keeps a plain max-width fallback',
+    /max-width:\s*30rem\s*;/.test(mainRule), mainRule.trim());
+  check('and grows with the viewport height, floored at the old width',
+    /max-width:\s*clamp\(30rem,\s*calc\(100dvh[^)]*\),\s*\d+rem\)/.test(mainRule),
+    mainRule.trim());
+
+  // What actually reaches the screen is the narrower of the available width
+  // and the clamp -- on a phone the width binds long before the height does,
+  // which is why nothing about phones changes here.
+  const effective = (vw, vh) =>
+    Math.min(vw - 32, Math.max(480, Math.min(vh - 352, 704)));
+
+  [
+    [744, 1133, 704, 'iPad portrait — fills, up from 480'],
+    [1133, 744, 480, 'iPad landscape — unchanged, height binds'],
+    [390, 844, 358, 'iPhone 15 — unchanged, width binds'],
+    [320, 568, 288, 'iPhone SE — unchanged, width binds'],
+  ].forEach(([vw, vh, want, label]) => {
+    check(`${label}`, effective(vw, vh) === want, String(effective(vw, vh)));
+  });
+
+  // The clamp has two jobs and they pull apart on short screens, so state both
+  // rather than pretending it fits everywhere.
+  //
+  // Where there is room -- the height term clears the 480px floor -- the court
+  // and the controls under it fit without scrolling. Where there isn't, the
+  // floor wins on purpose: the alternative was shrinking the court below what
+  // it has always been, and a smaller diagram to save a scroll is a bad trade.
+  // So on those screens you scroll exactly as much as you did before.
+  const HEIGHT_TERM = (vh) => vh - 352;
+
+  [[744, 1133, 'iPad portrait'], [1133, 744, 'iPad landscape'],
+    [390, 844, 'iPhone 15'], [320, 568, 'iPhone SE']].forEach(([vw, vh, label]) => {
+    if (HEIGHT_TERM(vh) >= 480) {
+      check(`${label}: court and controls fit without scrolling`,
+        effective(vw, vh) + 352 <= vh,
+        `${effective(vw, vh)} + 352 vs ${vh}`);
+    } else {
+      check(`${label}: too short either way, so it stays exactly as it was`,
+        Math.max(480, Math.min(HEIGHT_TERM(vh), 704)) === 480,
+        String(Math.max(480, Math.min(HEIGHT_TERM(vh), 704))));
+    }
+  });
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

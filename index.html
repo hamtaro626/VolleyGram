@@ -12,7 +12,7 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.39">
+  <link rel="stylesheet" href="style.css?v=0.41">
 </head>
 <body>
   <main>
@@ -83,40 +83,34 @@
       <!-- The rotation buttons get created by script.js -->
     </div>
 
-    <!-- The scoreboard is a destination and keeps its place in the column.
-         Everything occasional sits behind the drawer beside it. -->
+    <!-- The two screens that replace the app while you are in them. That is a
+         real category, which is why this row can be read without a label. -->
     <div class="actions two">
       <button id="openScoreboard">Scoreboard</button>
-      <button id="toggleMore" aria-expanded="false" aria-controls="moreMenu">Show options</button>
+      <button id="startQuiz">Quiz Mode</button>
     </div>
 
-    <div class="submenu" id="moreMenu" hidden>
-      <div class="actions two compact">
-        <button id="toggleLabels" aria-pressed="true">Labels: on</button>
-        <button id="startQuiz">Quiz Mode</button>
-      </div>
+    <!-- A display toggle, and the drawer for handing the diagram to something
+         else. One job each, so both say what they are. -->
+    <div class="actions two">
+      <button id="toggleLabels" aria-pressed="true">Labels: on</button>
+      <button id="toggleShare" aria-expanded="false" aria-controls="shareMenu">Share&hellip;</button>
+    </div>
 
-      <!-- Three ways of handing the diagram to something else, behind one
-           word rather than competing for a column each. -->
-      <div class="actions one compact">
-        <button id="toggleShare" aria-expanded="false" aria-controls="shareMenu">Share</button>
+    <div class="submenu" id="shareMenu" hidden>
+      <!-- All three across. "Save all" rather than "Save all rotations": at
+           320px this row gets about 90px a column and the longer label needs
+           123px, so it was the label or the row. -->
+      <div class="actions compact">
+        <button id="shareLink">Share team</button>
+        <button id="exportImage">Save image</button>
+        <button id="exportAll">Save all</button>
       </div>
-
-      <div class="share-menu nested" id="shareMenu" hidden>
-        <!-- All three across. "Save all" rather than "Save all rotations":
-             at 320px this row gets about 80px a column and the longer label
-             needs 123px, so it was the label or the row. -->
-        <div class="actions compact">
-          <button id="shareLink">Share team</button>
-          <button id="exportImage">Save image</button>
-          <button id="exportAll">Save all</button>
-        </div>
-        <!-- The setting that governs both exports, next to them. -->
-        <label class="setting toggle">
-          <input type="checkbox" id="transparentExport">
-          <span>Transparent background</span>
-        </label>
-      </div>
+      <!-- The setting that governs both exports, next to them. -->
+      <label class="setting toggle">
+        <input type="checkbox" id="transparentExport">
+        <span>Transparent background</span>
+      </label>
     </div>
 
     <!-- Alone: it opens the longest panel in the app, and it is the one you
@@ -244,6 +238,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.39"></script>
+  <script src="script.js?v=0.41"></script>
 </body>
 </html>

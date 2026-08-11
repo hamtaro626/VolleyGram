@@ -19,8 +19,18 @@ body {
   -webkit-text-size-adjust: 100%;
 }
 
+/* The court is square and fills this, so main's width *is* the court's height.
+   That makes the cap two-sided: too narrow wastes a tablet, too wide pushes the
+   formation tabs and rotation arrows off the bottom of a short screen.
+
+   So it grows with the viewport but never past what still leaves room for them.
+   22rem is the chrome above and below the court -- heading, two pickers, status
+   line, tabs, arrows, body padding -- measured rather than guessed. The clamp's
+   floor is the old fixed width, so no layout that worked before gets smaller:
+   an iPad in portrait goes from 480px to 704px, in landscape it stays at 480. */
 main {
-  max-width: 30rem;
+  max-width: 30rem; /* fallback where dvh is unsupported */
+  max-width: clamp(30rem, calc(100dvh - 22rem), 44rem);
   margin: 0 auto;
 }
 
@@ -94,6 +104,12 @@ h1 {
   --bench-top: 104%;
   --bench-height: 16%;
   --player-size: 23%;
+  /* Lets the players size their text off the court instead of off the root
+     font, which is what kept a 320px phone's names truncating while an iPad's
+     rattled around inside circles twice the size. Inline-size only: the court
+     gets its height from aspect-ratio, and nothing here should be clipped --
+     the net and the bench both sit outside the box on purpose. */
+  container-type: inline-size;
   border: 3px solid var(--line);
   border-radius: 2px;
   /* pan-y, not none. `none` meant a touch starting anywhere on the court --
@@ -324,8 +340,16 @@ body.quiz-hide-players .player.serving {
   transition: none;
 }
 
+/* 3.5cqw of the court, so the name keeps its proportion to the circle at every
+   width -- the circle is 23cqw, and both now scale together.
+
+   The canvas export has always done this: it draws names at 0.038 x EDGE
+   against a 0.23 x EDGE disc. This is a shade under that ratio because the
+   export can pass a maxWidth and let the canvas squeeze a long name, and CSS
+   has no equivalent -- it can only ellipsis. So the screen leaves the margin
+   the export takes at draw time. */
 .player .name {
-  font-size: 0.72rem;
+  font-size: clamp(0.6rem, 3.5cqw, 1.4rem);
   font-weight: 700;
   line-height: 1.1;
   max-width: 100%;
@@ -335,7 +359,7 @@ body.quiz-hide-players .player.serving {
 }
 
 .player .label {
-  font-size: 0.55rem;
+  font-size: clamp(0.45rem, 2.5cqw, 1rem);
   font-weight: 500;
   line-height: 1.2;
   opacity: 0.75;
@@ -586,15 +610,9 @@ body.hide-labels .player .label {
   margin-bottom: 0;
 }
 
-/* Second level. Inset so the nesting is visible rather than implied. */
-.nested {
-  margin-left: 0.6rem;
-  margin-right: 0.6rem;
-}
-
-/* Deliberately sets no `display`, so the browser's own rule for `hidden` still
-   works and this cannot join the list of things that ignored it. */
-.share-menu > .setting {
+/* v0.40 removed the second level of nesting, and .nested and .share-menu with
+   it -- there is one drawer now, so there is nothing to inset from anything. */
+.submenu > .setting {
   margin-bottom: 0.2rem;
 }
 
