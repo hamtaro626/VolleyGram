@@ -1351,10 +1351,24 @@ submenu starts closed, that Show roster is alone, and that Hold to reset all is
 still last. Same principle as `contrast.js` reading `style.css`: the arrangement
 is a decision, and the next button added should have to notice it.
 
+## v0.29 — a long press is not a text selection
+
+Holding **Hold to reset all** started an iOS text selection partway through and
+raised the callout bar over the button being held. The press lasts 1.5 seconds
+by design, so it hit the selection delay every single time.
+
+`user-select: none`, `-webkit-user-select: none` and `-webkit-touch-callout:
+none`, on `button` rather than on the one control. Every button in this app is
+something you press; no label in it is worth selecting, and any of them can be
+held by accident.
+
+Not applied more widely than that. Player names in the roster are inputs and
+have to stay selectable.
+
 ## Tests
 
 ```
-node test/migration.js    # 570 checks — storage, migration, roles, formations,
+node test/migration.js    # 572 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout

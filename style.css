@@ -762,6 +762,13 @@ button {
   color: #f2f4f8;
   cursor: pointer;
   touch-action: manipulation;
+  /* A long press on a button is a gesture, not an attempt to select its label.
+     iOS otherwise starts a text selection and raises the callout bar partway
+     through -- most visibly on Hold to reset all, where the long press is the
+     whole interaction and takes 1.5s. No button label is worth selecting. */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-touch-callout: none;
 }
 
 button:active {

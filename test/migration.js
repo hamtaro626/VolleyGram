@@ -2020,6 +2020,13 @@ console.log('\n49. The control rows');
 
   // .actions is display:grid, so `hidden` needs putting back by hand.
   const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  // A long press on a button is a gesture, not a text selection. Most visible
+  // on Hold to reset all, where the press lasts 1.5s by design.
+  check('buttons do not select their own label on a long press',
+    /(?:^|\n)button\s*\{[^}]*-webkit-user-select:\s*none/.test(css));
+  check('and raise no iOS callout',
+    /(?:^|\n)button\s*\{[^}]*-webkit-touch-callout:\s*none/.test(css));
+
   check('a hidden .actions row is actually hidden',
     /\.actions\[hidden\]\s*\{[^}]*display:\s*none/.test(css));
 
