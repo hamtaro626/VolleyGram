@@ -1365,10 +1365,31 @@ held by accident.
 Not applied more widely than that. Player names in the roster are inputs and
 have to stay selectable.
 
+## v0.30 — the status line stops shoving the controls
+
+Under the court, the status line runs to one line or two depending on what it
+has to say: a 5-1 naming two setters, or an overlap count appearing, tips it
+over. It reserved `1.2em`, so every one of those flips pushed the formation tabs
+and everything below them down a line — while changing rotation, which is the
+thing you do most.
+
+It now reserves two lines: `--status-lines: 2` with
+`min-height: calc(var(--status-lines) * 1.35em)`, and an explicit `line-height`
+so the arithmetic is exact rather than inherited.
+
+A `min-height` rather than a fixed height. Two lines covers the wording the app
+generates, but names are up to 14 characters each and a long enough pair can
+still reach three — and clipping the status would be worse than moving the
+buttons. So the common case is stable and the rare one still grows.
+
+The reserve is a custom property so it is one number to change, and so the test
+suite can read it: `§49` asserts it is at least two and that the `min-height` is
+actually built from it.
+
 ## Tests
 
 ```
-node test/migration.js    # 572 checks — storage, migration, roles, formations,
+node test/migration.js    # 574 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout

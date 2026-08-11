@@ -41,7 +41,7 @@ style.css       ~17 KB
 script.js       ~82 KB, all application logic
 SPEC.md         the design log — read this first
 test/
-  migration.js  572 checks: storage, migration, roles, formations, quiz,
+  migration.js  574 checks: storage, migration, roles, formations, quiz,
                 sharing, dragging, short-handed rosters, playing surface,
                 scoreboard
   contrast.js   contrast, hue separation, every role against all three court
@@ -67,7 +67,7 @@ of a number. That's expected — see *Bumping the version* below.
 ## Tests
 
 ```sh
-node test/migration.js    # 572 checks across 49 groups
+node test/migration.js    # 574 checks across 49 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
@@ -151,7 +151,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.29. Working title, actively developed, no issues or PRs open yet.
+v0.30. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

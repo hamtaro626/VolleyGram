@@ -403,12 +403,24 @@ body.hide-labels .player .label {
 
 /* --- Controls --------------------------------------------------------- */
 
+/* Reserves its full height whatever it says, so the controls under it stop
+   moving. The text runs to one line or two depending on the rotation -- a 5-1
+   naming two setters, or an overlap count appearing, tips it over -- and at
+   1.2em of reserved space every one of those flips shoved the formation tabs
+   and everything below them down a line.
+
+   The reserve is a custom property so it is one number to change and something
+   the test suite can read. Two lines covers the wording the app generates; a
+   long enough pair of names can still reach three, and min-height lets it,
+   because clipping the status would be worse than moving the buttons. */
 .status {
+  --status-lines: 2;
   text-align: center;
   margin: 0.9rem 0;
   font-size: 0.9rem;
+  line-height: 1.35;
   color: #a9b2c6;
-  min-height: 1.2em;
+  min-height: calc(var(--status-lines) * 1.35em);
 }
 
 .formations {

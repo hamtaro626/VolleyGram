@@ -2020,6 +2020,14 @@ console.log('\n49. The control rows');
 
   // .actions is display:grid, so `hidden` needs putting back by hand.
   const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  // The status line above these rows flips between one and two lines as the
+  // rotation changes, and used to shove every control below it down a line.
+  const reserved = css.match(/--status-lines:\s*(\d+)/);
+  check('the status line reserves at least two lines',
+    reserved && Number(reserved[1]) >= 2, reserved ? reserved[1] : 'not set');
+  check('and its min-height is built from that reserve',
+    /\.status\s*\{[^}]*min-height:\s*calc\(var\(--status-lines\)/.test(css));
+
   // A long press on a button is a gesture, not a text selection. Most visible
   // on Hold to reset all, where the press lasts 1.5s by design.
   check('buttons do not select their own label on a long press',
