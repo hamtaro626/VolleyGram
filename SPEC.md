@@ -1154,10 +1154,54 @@ any aspect, and nothing forces landscape.
 - **"Share" became "Share team."** Same length as "Save image" beside it, so the
   three-across row that v0.17 shortened it for still fits at 320px.
 
+## v0.25 — zone 1 is the default again
+
+`DEFAULT_ENTRY` is 1. That was the default from v0.4 to v0.22, it's what most
+people picture by "where subs come on", and v0.24's choice of middle back was
+made for a reason that turns out to be the tail wagging the dog.
+
+The roster-panel note now keys off a separate constant, `ROSTER_ALIGNED_ENTRY`
+(zone 6), rather than off the default. It describes a fact about zone 6, not a
+fact about what happens to be usual — tying it to the default meant changing
+the default silently inverted what it said. It also stays hidden below seven
+players, where there is no bench to warn about.
+
+### Added players do not start off court, and can't
+
+Asked for directly, and it is not available with zone 1 entry. Not an
+implementation gap — the two requests are the same request pointing opposite
+ways.
+
+Entering at zone 1 means the bench feeds straight into the serve. So whoever is
+off court is, by definition, **the next server**. With roster row 1 serving at
+rotation 1, the player sitting is row 2. A newly added player is appended to the
+roster and serves last, so at rotation 1 they are on court and an existing
+player is sitting.
+
+| Entry zone | Off court at rotation 1 | Added players start |
+|------------|-------------------------|---------------------|
+| Zone 6 (middle back) | last roster row | **off court** |
+| Zone 1 (serve) | row 2, the next server | on court |
+| Zones 2–5 | somewhere mid-lineup | on court |
+
+Only zone 6 gives it, because only zone 6 puts the bench at the end of the
+serving queue rather than in the middle of it.
+
+Renumbering the rotations so the extras are benched at "rotation 1" was
+considered and rejected: with zone 1 entry the offset that benches row 7 is the
+one where **row 6 serves first**, so the fix would trade a confusing bench for a
+confusing server. Worse, and harder to explain.
+
+So this is a genuine either/or, recorded rather than papered over:
+
+- **Added players start off court** → subs enter at zone 6.
+- **Subs walk on to serve** → the player resting at rotation 1 is the next
+  server, not the newest name on the list.
+
 ## Tests
 
 ```
-node test/migration.js    # 518 checks — storage, migration, roles, formations,
+node test/migration.js    # 521 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones
 node test/contrast.js     # colour contrast, hue separation, and every role

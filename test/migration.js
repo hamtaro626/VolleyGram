@@ -159,7 +159,7 @@ console.log('\n1. Fresh install, nothing in storage');
   check('named "My team"', saved.name === 'My team', saved.name);
   check('defaults to 4-2', saved.system === '4-2', saved.system);
   check('six players', saved.roster.length === 6, String(saved.roster.length));
-  check('subs enter at middle back by default', saved.entrySlot === 6,
+  check('subs enter at zone 1 by default', saved.entrySlot === 1,
     String(saved.entrySlot));
   check('version stamped', store.version === 2, String(store.version));
 }
@@ -1794,9 +1794,12 @@ console.log('\n46. The roster is the serving order');
     return order;
   };
 
+  // Seeded at zone 6, the one entry zone that also lines the roster up with the
+  // zones at rotation 1. Serving order is checked at every zone further down.
   [6, 7, 8, 12].forEach((size) => {
-    const app = boot(JSON.stringify({ version: 2, activeId: 'a',
-      lineups: { a: { name: 'T', system: 'simple', roster: rosterOf(size), layouts: {} } } }));
+    const app = boot(JSON.stringify({ version: 2, activeId: 'a', lineups: { a: {
+      name: 'T', system: 'simple', entrySlot: 6, roster: rosterOf(size),
+      layouts: {} } } }));
 
     check(`${size} players: everyone serves exactly once per cycle`,
       servingOrder(app).join(',') === namesFor(size).join(','),
@@ -1875,6 +1878,18 @@ console.log('\n46. The roster is the serving order');
       roster: rosterOf(7) } } }));
     return [1, 2, 3, 4, 5, 6].every((z) => app.call.slotFor(z - 1, 1) === z);
   };
+  // The roster-panel note fires on the fact, not on the default -- otherwise
+  // changing the default silently inverts what it says.
+  const noteHidden = (zone, size) => {
+    const app = boot(JSON.stringify({ version: 2, activeId: 'a', lineups: { a: {
+      name: 'T', system: 'simple', entrySlot: zone, layouts: {},
+      roster: rosterOf(size) } } }));
+    return app.document.getElementById('entryNote').hidden;
+  };
+  check('the note is shown for zone 1 with a bench', noteHidden(1, 7) === false);
+  check('and hidden for zone 6', noteHidden(6, 7) === true);
+  check('and hidden with no bench at all', noteHidden(1, 6) === true);
+
   check('middle back keeps rows 1-6 on court at rotation 1', together(6));
   check('and no other entry zone does',
     [1, 2, 3, 4, 5].every((zone) => !together(zone)));

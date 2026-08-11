@@ -12,7 +12,7 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.24">
+  <link rel="stylesheet" href="style.css?v=0.25">
 </head>
 <body>
   <main>
@@ -135,8 +135,9 @@
 
       <!-- Shown only when the choice has a visible consequence. -->
       <p class="setting-note" id="entryNote" hidden>
-        Subs walk on mid-lineup, so rows 1&ndash;6 aren't all on court at
-        rotation 1. Serving order still follows the roster.
+        Whoever is off court at rotation 1 is the next server, not the last
+        player on your roster &mdash; that's what entering here means. Serving
+        order still follows the roster top to bottom.
       </p>
 
       <label class="setting">
@@ -222,6 +223,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.24"></script>
+  <script src="script.js?v=0.25"></script>
 </body>
 </html>

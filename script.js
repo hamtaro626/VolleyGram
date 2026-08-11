@@ -297,10 +297,16 @@ const SURFACES = {
 
 const DEFAULT_SURFACE = 'indoor';
 
-// Middle back, which is where subs entered before v0.4 and where they entered
-// again in v0.23. It's the one entry zone that also keeps roster rows 1-6 on
-// court together at rotation 1, so it stays the default.
-const DEFAULT_ENTRY = 6;
+// Zone 1 -- subs walk on to serve. This was the default from v0.4 to v0.22 and
+// is what most people picture, so it's the default again.
+//
+// ROSTER_ALIGNED_ENTRY is the one zone that also keeps roster rows 1-6 on court
+// together at rotation 1. Every other zone puts the bench somewhere in the
+// middle of the lineup instead, which is correct and still surprising, so the
+// roster panel says so. That note keys off this constant rather than off the
+// default -- it describes a fact about zone 6, not a fact about what's usual.
+const DEFAULT_ENTRY = 1;
+const ROSTER_ALIGNED_ENTRY = 6;
 
 // Build a starting roster for a system. `fallback` is the name shown until you
 // type a real one; it's fixed at creation so it doesn't change when you reorder
@@ -1291,7 +1297,10 @@ function syncEntrySelect() {
   // Only middle back keeps roster rows 1-6 on court together at rotation 1.
   // Any other choice interleaves the bench, which looks like a bug unless it
   // says so -- and it looking like a bug is exactly how v0.23 got reported.
-  document.getElementById('entryNote').hidden = saved.entrySlot === DEFAULT_ENTRY;
+  // There is no bench at all below seven players, so there is nothing to warn
+  // about either.
+  document.getElementById('entryNote').hidden =
+    saved.entrySlot === ROSTER_ALIGNED_ENTRY || rosterSize() <= COURT_SPOTS;
 }
 
 function syncSurfaceSelect() {
