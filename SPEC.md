@@ -1626,10 +1626,58 @@ destructive one is still last.
 and the three rows run in that order. The last-row check is the one that would
 have caught the arrangement this version tried first.
 
+## v0.35 — Scoreboard back on the column, share on one row
+
+### Scoreboard leaves the drawer
+
+`Scoreboard · Show options` share the top row of the group. The scoreboard is a
+destination rather than an occasional setting, and a destination should not be
+two taps deep. v0.34 put it in the drawer; this takes it back out.
+
+The drawer toggle is **Show options**, matching `Show roster` below it in both
+wording and case, and it flips to **Hide options** when open — the same
+Show/Hide pair the roster button has used since v0.8. Naming the drawer without
+saying which way it is about to go was the part that read wrong once it stopped
+being called "More".
+
+Opening the scoreboard no longer closes the drawer. The rule is that things
+*inside* the drawer close it on their way out, and the scoreboard is not inside
+it any more.
+
+### All three share options on one row
+
+Asked as a question — whether it fits, or takes too much space. It fits, but
+only just, and only after shortening a label:
+
+```
+320px viewport
+  288  main            (body padding 1rem each side)
+  273  .submenu        (border 1px + padding 0.4rem)
+  254  .nested         (margin 0.6rem each side)
+   80  per column      (three columns, two 0.4rem gaps)
+```
+
+At `.actions.compact`'s 0.8rem, `Share team` and `Save image` need about 72px
+each and fit. **`Save all rotations` needs about 123px** and would have wrapped
+to two lines, taking the other two with it — grid items stretch to a common
+height.
+
+So it became **Save all**. Next to `Save image`, inside a menu called Share,
+"all" has only one thing it can mean. The alternative was keeping the full name
+and a two-line row, which costs more vertical space than the row it was meant to
+save.
+
+Nothing else could give: `.nested`'s margins are worth 19px and the shortfall
+was 43px, and dropping below 0.8rem is the thing v0.17 introduced that size to
+avoid.
+
+Labels and Quiz Mode take a two-across row now that the scoreboard has left,
+rather than sitting in a three-column grid with an empty third.
+
 ## Tests
 
 ```
-node test/migration.js    # 602 checks — storage, migration, roles, formations,
+node test/migration.js    # 606 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

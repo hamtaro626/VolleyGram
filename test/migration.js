@@ -2022,20 +2022,24 @@ console.log('\n49. The control rows');
 
   const find = (id) => rows.find((row) => row.ids.includes(id));
 
-  check('More Options is alone on its row and labelled in full',
-    JSON.stringify(find('toggleMore').ids) === JSON.stringify(['toggleMore'])
-    && /id="toggleMore"[^>]*>More Options</.test(html),
+  check('Scoreboard sits left of the drawer toggle',
+    JSON.stringify(find('toggleMore').ids)
+      === JSON.stringify(['openScoreboard', 'toggleMore']),
     JSON.stringify(find('toggleMore').ids));
+  check('and the drawer toggle reads Show options',
+    /id="toggleMore"[^>]*>Show options</.test(html));
 
-  check('Labels, Scoreboard and Quiz Mode share a row inside it',
+  check('Labels and Quiz Mode share a row inside the drawer',
     JSON.stringify(find('toggleLabels').ids)
-      === JSON.stringify(['toggleLabels', 'openScoreboard', 'startQuiz']),
+      === JSON.stringify(['toggleLabels', 'startQuiz']),
     JSON.stringify(find('toggleLabels').ids));
-  check('Share holds the link and both exports',
-    JSON.stringify(find('shareLink').ids) === JSON.stringify(['shareLink'])
-    && JSON.stringify(find('exportImage').ids)
-      === JSON.stringify(['exportImage', 'exportAll']),
-    JSON.stringify(find('exportImage').ids));
+
+  check('Share holds the link and both exports on one row',
+    JSON.stringify(find('shareLink').ids)
+      === JSON.stringify(['shareLink', 'exportImage', 'exportAll']),
+    JSON.stringify(find('shareLink').ids));
+  check('and the long label was shortened to fit three across',
+    /id="exportAll"[^>]*>Save all</.test(html));
 
   check('the share menu starts closed',
     /<div class="share-menu nested" id="shareMenu" hidden>/.test(html));
@@ -2047,7 +2051,7 @@ console.log('\n49. The control rows');
     /id="transparentExport"/.test(shareBlock));
   check('and is no longer in the roster panel',
     !/<section class="roster"[\s\S]*?id="transparentExport"[\s\S]*?<\/section>/.test(html));
-  check('More Options controls the outer menu',
+  check('the drawer toggle controls the outer menu',
     /id="toggleMore"[^>]*aria-controls="moreMenu"/.test(html));
   check('Share controls the inner one',
     /id="toggleShare"[^>]*aria-controls="shareMenu"/.test(html));
@@ -2063,7 +2067,7 @@ console.log('\n49. The control rows');
       fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')));
 
   // It moved out of the roster panel, where it had been the only export.
-  check('Save all rotations is no longer in the roster panel',
+  check('the all-rotations export is no longer in the roster panel',
     !/<section class="roster"[\s\S]*?id="exportAll"[\s\S]*?<\/section>/.test(html));
 
   check('Show roster is alone on its row',
@@ -2144,9 +2148,15 @@ console.log('\n49. The control rows');
     menu('toggleMore').attrs['aria-expanded'] === 'true'
     && menu('toggleShare').attrs['aria-expanded'] === 'true',
     JSON.stringify([menu('toggleMore').attrs, menu('toggleShare').attrs]));
+  check('and the label follows the panel',
+    menu('toggleMore').textContent === 'Hide options',
+    menu('toggleMore').textContent);
   app.call.closeMore();
-  check('closing More Options closes Share with it',
+  check('closing the drawer closes Share with it',
     menu('moreMenu').hidden === true && menu('shareMenu').hidden === true);
+  check('and the label goes back',
+    menu('toggleMore').textContent === 'Show options',
+    menu('toggleMore').textContent);
 }
 
 console.log('\n50. Reordering the roster by drag');

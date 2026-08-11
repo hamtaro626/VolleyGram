@@ -2652,6 +2652,9 @@ const shareMenu = document.getElementById('shareMenu');
 const shareButton = document.getElementById('toggleShare');
 
 function syncMenuButtons() {
+  // Reads Show/Hide like the roster button beside it, rather than naming the
+  // drawer and leaving you to guess which way it is about to go.
+  moreButton.textContent = moreMenu.hidden ? 'Show options' : 'Hide options';
   moreButton.setAttribute('aria-expanded', String(!moreMenu.hidden));
   shareButton.setAttribute('aria-expanded', String(!shareMenu.hidden));
 }
@@ -2681,7 +2684,7 @@ shareButton.addEventListener('click', () => {
 // Everything that hands you off somewhere else closes the menu behind it.
 // Labels is deliberately not in this list: it's a toggle you might flip twice
 // while watching the court, which stays visible above the open menu.
-['exportImage', 'exportAll', 'shareLink', 'startQuiz', 'openScoreboard'].forEach((id) => {
+['exportImage', 'exportAll', 'shareLink', 'startQuiz'].forEach((id) => {
   document.getElementById(id).addEventListener('click', closeMore);
 });
 
