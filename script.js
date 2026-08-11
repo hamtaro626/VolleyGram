@@ -749,12 +749,19 @@ function draggedLayout(formation, rotation) {
 // --- Undo -------------------------------------------------------------
 
 // Called *before* anything changes, so the stack holds "how things were".
-// Snapshots are whole copies of `saved` -- wasteful in theory, but the data is
-// a few hundred numbers, and it means undo can never half-restore something.
-// Snapshots the whole store, not just the active lineup, so undo also covers
-// creating, renaming, switching and deleting a lineup.
+// Snapshots are whole copies of the lineups -- wasteful in theory, but the
+// data is a few hundred numbers, and it means undo can never half-restore
+// something. All the lineups rather than just the active one, so undo also
+// covers creating, renaming, switching and deleting a lineup.
+//
+// Only the lineups. It used to be the whole store, which quietly made undo a
+// time machine for everything living beside them: one undo of a player nudge
+// rewound the scoreboard's match to whatever the score was when the nudge was
+// made, rally trail included. The match has its own undo (undoRally) on its
+// own screen; the display flags are current preferences, not edits. Undo means
+// "take back what I did to the diagram", so the snapshot is the diagram.
 function pushHistory() {
-  history.push(structuredClone(store));
+  history.push(structuredClone({ activeId: store.activeId, lineups: store.lineups }));
   if (history.length > HISTORY_LIMIT) history.shift();
   syncUndoButton();
 }
@@ -763,7 +770,9 @@ function undo() {
   if (history.length === 0) return;
 
   const before = saved;
-  store = history.pop();
+  const snapshot = history.pop();
+  store.activeId = snapshot.activeId;
+  store.lineups = snapshot.lineups;
   saved = store.lineups[store.activeId];
   if (currentRotation > rotationCount()) currentRotation = 1;
   save();

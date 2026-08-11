@@ -2249,5 +2249,68 @@ console.log('\n50. Reordering the roster by drag');
     quiet.warnings.join(' | '));
 }
 
+console.log('\n51. Undo is scoped to the diagram');
+{
+  // The bug this section exists for: pushHistory() snapshotted the whole
+  // store, and the match lives in the store -- so one undo of a player nudge
+  // rewound a live scoreboard to whatever the score was when the nudge was
+  // made, rally trail included. Fifteen call sites armed it.
+  const app = boot();
+  const match = () => app.peek().store.match;
+
+  // A diagram edit, then a game happens on top of it.
+  app.call.pushHistory();
+  for (let i = 0; i < 8; i++) app.call.scorePoint(i % 3 ? 'home' : 'away');
+  check('set up: 8 rallies on the board',
+    match().homeScore + match().awayScore === 8,
+    `${match().homeScore}-${match().awayScore}`);
+
+  app.call.undo();
+  check('undoing a diagram edit leaves the score alone',
+    match().homeScore + match().awayScore === 8,
+    `${match().homeScore}-${match().awayScore}`);
+  check('and the rally trail with it', match().rallies.length === 8,
+    String(match().rallies.length));
+
+  // Display preferences are current settings, not edits -- undo skips them too.
+  const flags = boot();
+  flags.call.pushHistory();
+  flags.peek().store.showLabels = false;
+  flags.peek().store.checkOverlap = true;
+  flags.call.undo();
+  check('display flags survive an undo',
+    flags.peek().store.showLabels === false
+    && flags.peek().store.checkOverlap === true);
+
+  // What undo is *for* still works: lineups, including deletion.
+  const team = boot();
+  team.call.pushHistory();
+  team.peek().saved.roster[0].name = 'Changed';
+  team.call.undo();
+  check('a roster edit still undoes', team.peek().saved.roster[0].name === '');
+
+  const del = boot();
+  del.call.addLineup();
+  const beforeIds = Object.keys(del.peek().store.lineups);
+  del.call.deleteLineup();
+  del.call.undo();
+  check('deleting a lineup still undoes, activeId included',
+    Object.keys(del.peek().store.lineups).join(',') === beforeIds.join(',')
+    && del.peek().store.lineups[del.peek().store.activeId] !== undefined,
+    Object.keys(del.peek().store.lineups).join(','));
+
+  // The snapshot must not leak the match by reference either: scoring after a
+  // pushHistory and undoing must not hand back a *shared* object that later
+  // scoring mutates. (structuredClone of {activeId, lineups} can't contain the
+  // match at all, which this asserts from the outside.)
+  const leak = boot();
+  leak.call.pushHistory();
+  leak.call.scorePoint('home');
+  leak.call.undo();
+  leak.call.scorePoint('home');
+  check('scoring still works after an undo', leak.peek().store.match.homeScore === 2,
+    String(leak.peek().store.match.homeScore));
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

@@ -1738,10 +1738,54 @@ The overlap badge stays `#ff9f9f` — a pink pill with near-black text reads on
 off-white without help. And the roles themselves are untouched: this version
 changes what they stand on, not what they are.
 
+## v0.37 — undo stops rewinding the scoreboard
+
+### The bug
+
+Score a few rallies, nudge a player, press Undo: the nudge comes back — and so
+does whatever the score was when you nudged. One undo of a diagram edit rewound
+a live match, rally trail included.
+
+`pushHistory()` snapshotted **the whole store**, and since v0.22 the match
+lives in the store. v0.22 was careful in one direction — scoring never pushes
+to the diagram's history, and §44 asserts it — but never closed the other:
+history *carried* the match, so restoring a snapshot restored an old score.
+Fifteen call sites push history (drags, renames, roster edits, surface
+changes), and any of them followed by Undo during a game armed it.
+
+The same mechanism silently reverted `showLabels`, `roleScope`,
+`transparentExport` and `checkOverlap` — harmless by comparison, but the same
+category error: the snapshot said "the whole store" where it meant "the
+diagram".
+
+### The fix
+
+The snapshot is `{activeId, lineups}` and undo restores exactly those two
+fields, mutating `store` in place rather than replacing it. Everything else in
+the store — the match, the display flags — is current state, not an edit, and
+undo does not touch it. The match has its own undo, on its own screen, per
+rally (v0.22's two-stacks decision, which this completes).
+
+`activeId` stays in the snapshot because undo covers creating, switching and
+deleting lineups, and a restored lineup set with today's `activeId` could point
+at a lineup that does not exist in it.
+
+### §51
+
+Drives the original repro end to end: a diagram edit, eight rallies on top,
+one undo — the score and trail must survive. Also asserts display flags
+survive, roster edits and lineup deletion still undo, and scoring keeps
+working after an undo. Run against the whole-store snapshot it fails 4 checks.
+
+Found in a review pass rather than courtside, which is worth noting: every
+prior scoreboard bug was reported from a phone. This one required scoring and
+undoing in the same session and would have been diagnosed as "the scoreboard
+forgot my points", with nothing pointing at Undo.
+
 ## Tests
 
 ```
-node test/migration.js    # 613 checks — storage, migration, roles, formations,
+node test/migration.js    # 620 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,
