@@ -8,6 +8,11 @@
 body {
   margin: 0;
   padding: 1rem;
+  /* Kills iOS double-tap-to-zoom, which on a page of big buttons fires by
+     accident constantly and leaves you zoomed and panned somewhere you didn't
+     ask to be. `manipulation` keeps scrolling and pinch-zoom, so nothing about
+     reading the page gets harder -- it only drops the double-tap gesture. */
+  touch-action: manipulation;
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
   background: #16181d;
   color: #f2f4f8;
@@ -71,7 +76,17 @@ h1 {
   background: #c87a45;
   border: 3px solid #f2f4f8;
   border-radius: 2px;
-  touch-action: none; /* stop the browser scrolling the page mid-drag */
+  /* pan-y, not none. `none` meant a touch starting anywhere on the court --
+     which is most of the screen -- could not scroll the page, so you had to
+     find a margin to get past it. pan-y hands vertical scrolling back to the
+     browser and keeps horizontal movement for the swipe that changes rotation.
+
+     Players override this with `none` of their own, and a descendant's
+     touch-action intersects with its ancestors' rather than being overruled by
+     them, so dragging a player still works in every direction. A vertical drag
+     that the browser claims fires pointercancel, which the swipe handler
+     already listens for. */
+  touch-action: pan-y;
 }
 
 /* Grass. Deliberately dark: it has to carry the white court lines above it and

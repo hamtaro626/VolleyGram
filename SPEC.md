@@ -1198,12 +1198,63 @@ So this is a genuine either/or, recorded rather than papered over:
 - **Subs walk on to serve** → the player resting at rotation 1 is the next
   server, not the newest name on the list.
 
+## v0.26 — touch
+
+Two phone bugs, one property.
+
+### Double-tap zoomed and panned off somewhere
+
+Tapping empty space twice triggered iOS's double-tap-to-zoom, which zooms *and*
+pans toward the tap. On a page that is mostly large buttons this fires by
+accident constantly.
+
+`body { touch-action: manipulation }`. That drops the double-tap gesture and
+keeps scrolling and pinch-zoom, so nothing about reading the page gets harder.
+Deliberately not `user-scalable=no` in the viewport meta, which would have
+worked by taking zoom away from people who need it.
+
+### The court ate every vertical scroll
+
+`.court { touch-action: none }` was there so a drag wouldn't scroll the page
+mid-drag. It also meant a touch starting anywhere on the court — most of the
+screen — could not scroll the page at all. You had to find a margin to get
+past it.
+
+Now `pan-y`. The browser gets vertical scrolling back, horizontal movement
+still reaches the swipe handler that changes rotation.
+
+Players keep `touch-action: none` of their own and are unaffected, because a
+descendant's touch-action **intersects** with its ancestors' rather than being
+overruled by them: `none` inside `pan-y` is still `none`. So dragging a player
+works in every direction, while empty court scrolls.
+
+The swipe handler needed no change. A vertical drag the browser claims fires
+`pointercancel`, which it already listened for — added in v0.9 for a different
+reason and correct for this one.
+
+### The guard
+
+`§47` reads the three values out of `style.css`, the same way `contrast.js`
+reads the palette. They are exactly the kind of value that gets tidied back:
+`none` on the court looks more careful than `pan-y` unless you know why.
+
+Two bugs in the check itself, worth recording because both fail *open* — they
+match nothing and report nothing wrong:
+
+- `body` in a regex begins with `\b`, a word boundary. It never matched.
+- Unanchored `.player` matched `body.quiz-hide-players .player` first, a rule
+  with no `touch-action` in it at all.
+
+Selectors are now escaped and anchored to the start of a line. The check was
+confirmed to fail by putting `none` back on the court.
+
 ## Tests
 
 ```
-node test/migration.js    # 521 checks — storage, migration, roles, formations,
+node test/migration.js    # 525 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
-                          #   playing surface, scoreboard, rotation order, entry zones
+                          #   playing surface, scoreboard, rotation order, entry zones,
+                          #   touch handling
 node test/contrast.js     # colour contrast, hue separation, and every role
                           #   against every court surface
 ```

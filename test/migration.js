@@ -1905,5 +1905,41 @@ console.log('\n46. The roster is the serving order');
   check('and nobody is ever benched short-handed', !everOnBench);
 }
 
+console.log('\n47. Touch handling');
+{
+  // Read out of the real stylesheet, same rule as contrast.js: a copy here
+  // would drift and go on passing while the app misbehaved.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  // Anchored to the start of a line, and the selector escaped. Neither is
+  // optional: an unescaped "body" begins with \b, a word boundary, and an
+  // unanchored ".player" matches "body.quiz-hide-players .player" first.
+  const ruleFor = (selector) => {
+    const escaped = selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const match = css.match(new RegExp(`(?:^|\n)${escaped}\\s*\\{([^}]*)\\}`));
+    const touch = (match ? match[1] : '').match(/touch-action:\s*([a-z- ]+);/);
+    return touch ? touch[1].trim() : null;
+  };
+
+  // The court is most of the screen. `none` here meant a touch starting on it
+  // could not scroll the page at all, so you had to find a margin to get past.
+  check('the court allows vertical scrolling', ruleFor('.court') === 'pan-y',
+    String(ruleFor('.court')));
+
+  // ...but players must stay draggable in every direction. A descendant's
+  // touch-action intersects with its ancestors', so this has to stay `none`
+  // for a vertical drag not to be stolen by the page scroll.
+  check('players are still fully draggable', ruleFor('.player') === 'none',
+    String(ruleFor('.player')));
+
+  // Double-tap-to-zoom on a page of large buttons fires by accident and leaves
+  // you zoomed somewhere you did not ask to be.
+  check('double-tap zoom is off page-wide', ruleFor('body') === 'manipulation',
+    String(ruleFor('body')));
+
+  // The roster drag handle has the same requirement as a player.
+  check('the roster drag handle keeps its own touch-action',
+    /\.roster button\.icon\.handle\s*\{[^}]*touch-action:\s*none/.test(css));
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
