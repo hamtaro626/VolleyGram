@@ -86,6 +86,14 @@ h1 {
      rather than staying a white badge on a white surface. */
   --pill-bg: #f2f4f8;
   --pill-fg: #16181d;
+  /* Geometry the canvas export has to agree with, held here for the same
+     reason as the ink above: the export redescribes the court, and a number
+     that lives twice drifts. The CSS below and drawRotation() both read these.
+     --player-size is the disc's diameter as a fraction of the court edge. */
+  --attack-line: 33.33%;
+  --bench-top: 104%;
+  --bench-height: 16%;
+  --player-size: 23%;
   border: 3px solid var(--line);
   border-radius: 2px;
   /* pan-y, not none. `none` meant a touch starting anywhere on the court --
@@ -159,7 +167,7 @@ h1 {
 /* The 3m attack line: one third of the way back from the net. */
 .attack-line {
   position: absolute;
-  top: 33.33%;
+  top: var(--attack-line);
   left: 0;
   right: 0;
   height: 2px;
@@ -235,10 +243,10 @@ body.quiz-hide-players .player.serving {
 .bench {
   display: none;
   position: absolute;
-  top: 104%;
+  top: var(--bench-top);
   left: 0;
   right: 0;
-  height: 16%;
+  height: var(--bench-height);
   border: 1px dashed var(--line-bench);
   border-radius: 8px;
   align-items: center;
@@ -272,7 +280,7 @@ body.quiz-hide-players .player.serving {
 .player {
   position: absolute;
   transform: translate(-50%, -50%);
-  width: 23%;
+  width: var(--player-size);
   min-width: 52px;
   aspect-ratio: 1 / 1;
   border-radius: 50%;
@@ -415,6 +423,14 @@ body.hide-labels .player .label {
 
 .player.illegal .overlap-tag {
   display: block;
+}
+
+/* Keyboard focus on a player. An outline, which deliberately displaces the
+   illegal-overlap outline while focused -- the focused player is the one being
+   fixed, and its tooltip and aria-label still name the rule. */
+.player:focus-visible {
+  outline: 3px solid var(--line);
+  outline-offset: 2px;
 }
 
 /* --- Colour by role --------------------------------------------------- */

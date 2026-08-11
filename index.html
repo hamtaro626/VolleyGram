@@ -12,7 +12,7 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.37">
+  <link rel="stylesheet" href="style.css?v=0.38">
 </head>
 <body>
   <main>
@@ -37,7 +37,8 @@
       <div class="zone-targets" id="zoneTargets"></div>
     </div>
 
-    <p class="status" id="status"></p>
+    <!-- polite: announce the new rotation after the tap, not over it -->
+    <p class="status" id="status" aria-live="polite"></p>
 
     <!-- Formation tabs sit high, right under the court: switching between base,
          serve receive and defense is the thing this app is for. -->
@@ -243,6 +244,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.37"></script>
+  <script src="script.js?v=0.38"></script>
 </body>
 </html>

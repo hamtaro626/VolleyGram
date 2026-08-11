@@ -41,7 +41,7 @@ style.css       ~17 KB
 script.js       ~82 KB, all application logic
 SPEC.md         the design log — read this first
 test/
-  migration.js  620 checks: storage, migration, roles, formations, quiz,
+  migration.js  647 checks: storage, migration, roles, formations, quiz,
                 sharing, dragging, short-handed rosters, playing surface,
                 scoreboard
   contrast.js   contrast, hue separation, every role against all three court
@@ -67,12 +67,14 @@ of a number. That's expected — see *Bumping the version* below.
 ## Tests
 
 ```sh
-node test/migration.js    # 620 checks across 51 groups
+node test/migration.js    # 647 checks across 53 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
 Plain Node scripts
-Both print `ALL PASS` and exit 0. Run both before opening a PR.
+Both print `ALL PASS` and exit 0. Run both before opening a PR — CI runs them
+too on every push, and also fails if `script.js` or `style.css` changed without
+the `?v=` cache buster moving.
 
 **Neither suite contains a copy of what it tests.**
 
@@ -151,7 +153,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.37. Working title, actively developed, no issues or PRs open yet.
+v0.38. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

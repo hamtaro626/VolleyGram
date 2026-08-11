@@ -1612,6 +1612,21 @@ console.log('\n42. Playing surface');
     !/#f2f4f8|rgba\(255, 255, 255/.test(drawBody),
     (drawBody.match(/#f2f4f8|rgba\(255, 255, 255[^)]*\)/g) || []).join(', '));
 
+  // Geometry gets the same treatment as ink: the attack line, bench strip and
+  // player size live once, in the stylesheet, and the canvas reads them back.
+  // Before this the export carried its own copies (EDGE / 3, 1.04, 0.16,
+  // 0.115) and a CSS tweak would silently misalign every exported image.
+  ['--attack-line', '--bench-top', '--bench-height', '--player-size'].forEach((prop) => {
+    check(`the export reads ${prop} from the stylesheet`,
+      drawBody.includes(`courtGeom('${prop}')`));
+    check(`and the stylesheet defines and uses ${prop}`,
+      new RegExp(`${prop}:\\s*[\\d.]+%`).test(css)
+      && new RegExp(`var\\(${prop}\\)`).test(css));
+  });
+  check('the export carries no geometry copies of its own',
+    !/EDGE \/ 3|EDGE \* 1\.04|EDGE \* 0\.16\b|EDGE \* 0\.115/.test(drawBody),
+    (drawBody.match(/EDGE \/ 3|EDGE \* [01]\.[0-9]+/g) || []).join(', '));
+
   // A surface that flips to dark ink has to define the whole set, or it gets a
   // mix of its own and the base one.
   const beachBlock = css.slice(css.indexOf('.court.surface-beach {'),
@@ -2310,6 +2325,122 @@ console.log('\n51. Undo is scoped to the diagram');
   leak.call.scorePoint('home');
   check('scoring still works after an undo', leak.peek().store.match.homeScore === 2,
     String(leak.peek().store.match.homeScore));
+}
+
+console.log('\n52. Wake lock, stray arrows, and saving out loud');
+{
+  // The browser releases a wake lock whenever the tab is hidden, and the
+  // release listener nulls it -- so a phone pocketed mid-set came back to an
+  // open scoreboard with no screen-sleep protection and nothing asking again.
+  const app = boot();
+  let requests = 0;
+  app.navigator.wakeLock = {
+    request() { requests += 1; return Promise.resolve({ addEventListener() {} }); },
+  };
+
+  app.call.openScoreboard();
+  check('opening the scoreboard requests a wake lock', requests === 1, String(requests));
+  // The tab comes back to the foreground with the scoreboard still open.
+  app.document.dispatch('visibilitychange', {});
+  check('returning to a visible tab re-requests it', requests === 2, String(requests));
+  app.call.closeScoreboard();
+  app.document.dispatch('visibilitychange', {});
+  check('but not when the scoreboard is closed', requests === 2, String(requests));
+
+  // Arrow keys with the scoreboard up (an iPad with a keyboard) used to change
+  // the rotation invisibly, and the scoreboard's rotation line went stale --
+  // step() does not redraw the scoreboard.
+  const keys = boot();
+  const press = (key) => keys.document.dispatch('keydown',
+    { key, target: { tagName: 'DIV' }, preventDefault() {} });
+  press('ArrowRight');
+  check('arrows step the rotation normally', keys.peek().currentRotation === 2,
+    String(keys.peek().currentRotation));
+  keys.call.openScoreboard();
+  press('ArrowRight');
+  check('but not while the scoreboard is open', keys.peek().currentRotation === 2,
+    String(keys.peek().currentRotation));
+  keys.call.closeScoreboard();
+  press('ArrowRight');
+  check('and step again once it closes', keys.peek().currentRotation === 3,
+    String(keys.peek().currentRotation));
+
+  // save() used to swallow every failure into console.warn. Safari private
+  // browsing throws on the first write, and a live match depends on saving now
+  // -- so the first failure says so, once, and repeats stay quiet.
+  const full = boot();
+  let alerts = 0;
+  // full.alert would only patch the spread copy boot() returns; full.window is
+  // the vm context itself, so this reaches the alert the script actually calls.
+  full.window.alert = () => { alerts += 1; };
+  full.localStorage.setItem = () => { throw new Error('QuotaExceededError'); };
+  full.call.scorePoint('home');
+  full.call.scorePoint('home');
+  full.call.scorePoint('away');
+  check('a failing save alerts once', alerts === 1, String(alerts));
+  check('and the app keeps working through it',
+    full.peek().store.match.homeScore === 2 && full.peek().store.match.awayScore === 1);
+}
+
+console.log('\n53. Players from the keyboard');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const { saved } = app.peek();
+  const id = saved.roster[0].id;
+  const el = app.players()[id];
+
+  check('players are focusable', el.tabIndex === 0);
+  check('and announce themselves', el.attrs.role === 'button'
+    && typeof el.attrs['aria-label'] === 'string' && el.attrs['aria-label'].length > 0,
+    JSON.stringify(el.attrs['aria-label']));
+  check('the status line is a live region',
+    /id="status" aria-live="polite"/.test(
+      fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8')));
+
+  const before = app.call.positionsFor('base', 1)[id];
+  let stopped = 0;
+  const press = (key) => el.dispatch('keydown',
+    { key, preventDefault() {}, stopPropagation() { stopped += 1; } });
+
+  press('ArrowRight');
+  press('ArrowRight');
+  press('ArrowDown');
+  const after = app.call.positionsFor('base', 1)[id];
+  check('arrows nudge the focused player',
+    after.x === before.x + 4 && after.y === before.y + 2,
+    JSON.stringify({ before, after }));
+  check('the nudge is a dragged position like any other',
+    app.peek().saved.layouts.base['1'][id] !== undefined);
+  check('and does not also change the rotation',
+    app.peek().currentRotation === 1 && stopped === 3,
+    `rotation ${app.peek().currentRotation}, stopped ${stopped}`);
+
+  // Three presses, one undo step -- same economy as a pointer drag.
+  check('a nudge burst costs one undo step', app.stacks().undos === 1,
+    String(app.stacks().undos));
+  el.dispatch('blur', {});
+  press('ArrowLeft');
+  check('a fresh focus visit is its own edit', app.stacks().undos === 2,
+    String(app.stacks().undos));
+
+  // Undoing puts the player back where the formation had them.
+  app.call.undo();
+  app.call.undo();
+  const restored = app.call.positionsFor('base', 1)[id];
+  check('undo restores the generated position',
+    restored.x === before.x && restored.y === before.y,
+    JSON.stringify(restored));
+
+  // Nudging must clamp at the same fences a pointer drag is held to.
+  const edge = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const eid = edge.peek().saved.roster[0].id;
+  const eel = edge.players()[eid];
+  for (let i = 0; i < 60; i++) {
+    eel.dispatch('keydown', { key: 'ArrowRight', preventDefault() {}, stopPropagation() {} });
+  }
+  check('nudges clamp at the court edge',
+    edge.call.positionsFor('base', 1)[eid].x === 100,
+    String(edge.call.positionsFor('base', 1)[eid].x));
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

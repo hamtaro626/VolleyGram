@@ -1782,10 +1782,90 @@ prior scoreboard bug was reported from a phone. This one required scoring and
 undoing in the same session and would have been diagnosed as "the scoreboard
 forgot my points", with nothing pointing at Undo.
 
+## v0.38 — the review round
+
+Six fixes out of the same review pass that produced v0.37, none of them
+reported from a phone. What they share: each one is a promise the app already
+made, kept slightly better.
+
+### The wake lock comes back
+
+The browser releases a wake lock whenever the tab is hidden — a phone locked
+between sets, an app switch — and the release listener nulled it, with nothing
+ever asking again. So the realistic flow, scoreboard open, phone pocketed,
+brought back out, silently lost screen-sleep protection for the rest of the
+match. A `visibilitychange` listener now re-requests whenever the page comes
+back while the scoreboard is open. The scoreboard's core promise, kept across
+the one interruption it was always going to meet.
+
+### Arrows stop leaking through the scoreboard
+
+The rotation arrows guard against typing fields and quizzes but not against
+`scoring` — so with a keyboard attached (the iPad case), arrows changed the
+rotation invisibly behind the scoreboard, and its rotation line went stale,
+since `step()` doesn't redraw it. Same one-line guard the quiz already had.
+
+### `save()` says so, once
+
+It swallowed every failure into `console.warn`. Defensible when the only
+casualty was a diagram you could redraw; not now a live match depends on it —
+Safari private browsing throws on the *first* write, and the app would keep
+score for a whole set with nothing reaching disk. The first failure alerts,
+repeats stay quiet (`save()` runs per mutation; an alert per drag would be
+worse than the loss), and a later success re-arms the notice.
+
+### CI
+
+`.github/workflows/test.yml` runs both suites on every push. Nothing is built
+and nothing is installed — the app is still three static files; the robot just
+runs what the README already asked people to run by hand.
+
+It also checks the one thing no test could: that `?v=` **moved** when
+`script.js` or `style.css` did. The suites verify the two busters match each
+other, but a push that changes an asset without bumping them ships a fix that
+cached phones never see — which looks exactly like the fix not working
+(v0.16's lesson, now enforced).
+
+### Geometry joins the ink
+
+v0.36 gave the court ink properties so the canvas export could stop hard-coding
+colours. The same split still existed for shape: the attack line, bench strip
+and player size each lived twice — `33.33%` in CSS against `EDGE / 3` in the
+export, `104%`/`16%` against `1.04`/`0.16`, `23%` against `0.115`. A CSS tweak
+would have silently misaligned every exported image.
+
+`--attack-line`, `--bench-top`, `--bench-height` and `--player-size` now live
+on `.court`; the stylesheet uses them and `courtGeom()` reads them back for the
+canvas, fractions of the court edge. The export's tile height derives from the
+bench numbers instead of carrying `1.2`. §42 asserts the export holds no copies.
+
+### Players from the keyboard
+
+The circles were plain divs with pointer handlers — no focus, no name, no
+keyboard path. That stood out because v0.10 already articulated the rule ("a
+drag-only control is unusable from a keyboard") for the roster's drag handle,
+and the players were the one place it hadn't reached.
+
+Tab reaches every player now (`tabindex`, `role="button"`, an `aria-label`
+mirroring the tooltip, a `:focus-visible` ring in court ink). Arrows nudge the
+focused player 2% a press, writing the same dragged layout a pointer drag
+writes — clamped to the same fences, `stopPropagation` so the rotation doesn't
+flip underneath, and **one history snapshot per focus visit** rather than per
+press, or holding an arrow would eat the 40-step undo stack in two seconds.
+Blur closes the visit, so returning is a new edit.
+
+The status line is `aria-live="polite"`, so changing rotation announces the
+new formation instead of nothing.
+
+§52 and §53 drive all of it through the stub: the wake-lock re-request on
+`visibilitychange`, the arrow guard both sides of the scoreboard, the
+alert-once path with a throwing `localStorage`, and the whole nudge lifecycle
+including clamping and undo economy.
+
 ## Tests
 
 ```
-node test/migration.js    # 620 checks — storage, migration, roles, formations,
+node test/migration.js    # 647 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

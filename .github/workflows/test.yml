@@ -1,0 +1,44 @@
+# Runs the two suites the README asks you to run by hand. Nothing is built and
+# nothing is installed -- the app stays three static files -- this just stops a
+# broken push sitting on main until someone happens to run them locally.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # One commit of history, so the cache-buster step can diff the push.
+          fetch-depth: 2
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - run: node test/migration.js
+      - run: node test/contrast.js
+
+      # The suites check the two ?v= values match each other, but nothing ever
+      # checked that they *moved*. A push that edits script.js or style.css
+      # without bumping the buster ships a fix that cached phones never see --
+      # which looks exactly like the fix not working (see v0.16 in SPEC.md).
+      - name: cache buster moved with the assets
+        run: |
+          if ! git rev-parse HEAD^ >/dev/null 2>&1; then
+            echo "no parent commit to diff against; skipping"; exit 0
+          fi
+          if git diff --name-only HEAD^ HEAD | grep -qE '^(script\.js|style\.css)$'; then
+            if git diff HEAD^ HEAD -- index.html | grep -q '?v='; then
+              echo "assets changed and the buster moved"
+            else
+              echo "script.js or style.css changed but ?v= in index.html did not"
+              exit 1
+            fi
+          else
+            echo "no asset changes; buster free to stay"
+          fi

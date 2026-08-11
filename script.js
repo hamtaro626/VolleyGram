@@ -803,10 +803,24 @@ function syncUndoButton() {
 // localStorage is the browser keeping a note to itself on this device. No
 // server involved. It can throw -- private browsing, full disk -- and a
 // rotation diagram is not worth crashing over, so both sides swallow errors.
+let saveFailed = false;
+
 function save() {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(store));
+    saveFailed = false;
   } catch (error) {
+    // A console.warn was enough when the only casualty was a diagram you could
+    // redraw. A live match depends on this now, and Safari private browsing
+    // throws on the *first* write -- so without saying something, the app will
+    // happily keep score for a whole set with nothing reaching disk. Once, not
+    // per write: save() runs on every mutation, and an alert per drag would be
+    // worse than the data loss.
+    if (!saveFailed) {
+      saveFailed = true;
+      alert('Saving is not working (private browsing, or storage is full). '
+        + 'Everything still works, but changes will be lost when this tab closes.');
+    }
     console.warn('Could not save:', error);
   }
 }
@@ -976,6 +990,36 @@ function load() {
   }
 }
 
+// One history snapshot per focus visit, not one per keypress -- holding an
+// arrow would otherwise eat the whole 40-step undo stack in two seconds.
+// Cleared when the player loses focus, so the next visit is its own edit.
+let nudgedId = null;
+
+const NUDGE_KEYS = {
+  ArrowLeft: [-2, 0], ArrowRight: [2, 0], ArrowUp: [0, -2], ArrowDown: [0, 2],
+};
+
+function nudgePlayer(event, playerId) {
+  const delta = NUDGE_KEYS[event.key];
+  if (!delta || quiz) return;
+  event.preventDefault();
+  // The document-level arrow handler changes rotation; without this a nudge
+  // would also flip the court underneath the player being nudged.
+  event.stopPropagation();
+
+  if (nudgedId !== playerId) {
+    pushHistory();
+    nudgedId = playerId;
+  }
+  const position = positionsFor(currentFormation, currentRotation)[playerId];
+  draggedLayout(currentFormation, currentRotation)[playerId] = {
+    x: clamp(position.x + delta[0], 0, 100),
+    y: clamp(position.y + delta[1], 0, MAX_DRAG_Y),
+  };
+  save();
+  render();
+}
+
 // --- Building the page ------------------------------------------------
 
 // Rebuilt from scratch whenever the lineup changes, since the number of
@@ -994,6 +1038,14 @@ function buildPlayers() {
     el.addEventListener('pointerdown', startDrag);
     el.addEventListener('pointermove', onDrag);
     el.addEventListener('pointerup', endDrag);
+    // A drag-only control is unusable from a keyboard -- the roster's drag
+    // handle learned this in v0.10, and these circles are the last place that
+    // reasoning hadn't reached. Tab to a player, arrows nudge it 2% a press,
+    // writing the same dragged layout a pointer drag writes.
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.addEventListener('keydown', (event) => nudgePlayer(event, player.id));
+    el.addEventListener('blur', () => { if (nudgedId === player.id) nudgedId = null; });
     el.addEventListener('pointercancel', endDrag);
     court.appendChild(el);
     playerElements[player.id] = el;
@@ -1523,6 +1575,8 @@ function render() {
     // Which rule, on the player it applies to -- a red ring alone doesn't say
     // what's wrong or which way to drag.
     if (problems[player.id]) el.title += ` — ${problems[player.id].join('; ')}`;
+    // The same words for a screen reader -- title alone is hover-only on most.
+    el.setAttribute('aria-label', el.title);
   });
 
   // No point drawing an empty bench strip when everyone's on court.
@@ -2067,6 +2121,16 @@ async function keepAwake(want) {
   }
 }
 
+// The browser releases the lock whenever the tab is hidden -- phone locked,
+// app switched -- which is precisely what happens to a phone mid-set. Without
+// this, coming back to an open scoreboard silently loses screen-sleep
+// protection for the rest of the match: the release listener has nulled
+// `wakeLock`, and nothing asked again. So ask again, every time the page comes
+// back while the scoreboard is up.
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && scorePanel && !scorePanel.hidden) keepAwake(true);
+});
+
 function openScoreboard() {
   // Both take over the screen.
   if (quiz) endQuiz();
@@ -2128,6 +2192,13 @@ function courtInk(name) {
   return getComputedStyle(court).getPropertyValue(name).trim();
 }
 
+// A geometry property, as a fraction of the court edge: '33.33%' -> 0.3333.
+// Same single-definition rule as the ink -- the four numbers the screen and
+// the export must agree on live once, in the stylesheet.
+function courtGeom(name) {
+  return parseFloat(courtInk(name)) / 100;
+}
+
 function drawRotation(ctx, rotation, EDGE, hasBench) {
   // The court fill is the thing you want gone when overlaying real footage --
   // the lines still help you line the diagram up with the court underneath.
@@ -2139,10 +2210,11 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
   ctx.lineWidth = EDGE * 0.005;
   ctx.strokeRect(0, 0, EDGE, EDGE);
 
-  // Attack line, one third back from the net.
+  // Attack line, at the same fraction the stylesheet draws it.
+  const attackY = EDGE * courtGeom('--attack-line');
   ctx.beginPath();
-  ctx.moveTo(0, EDGE / 3);
-  ctx.lineTo(EDGE, EDGE / 3);
+  ctx.moveTo(0, attackY);
+  ctx.lineTo(EDGE, attackY);
   ctx.strokeStyle = courtInk('--line-soft');
   ctx.lineWidth = EDGE * 0.003;
   ctx.stroke();
@@ -2170,7 +2242,7 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
     ctx.strokeStyle = courtInk('--line-bench');
     ctx.lineWidth = EDGE * 0.003;
     ctx.setLineDash([EDGE * 0.012, EDGE * 0.012]);
-    ctx.strokeRect(0, EDGE * 1.04, EDGE, EDGE * 0.16);
+    ctx.strokeRect(0, EDGE * courtGeom('--bench-top'), EDGE, EDGE * courtGeom('--bench-height'));
     ctx.setLineDash([]);
   }
 
@@ -2179,7 +2251,7 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
   // which is exactly what the old layoutFor() did, and why it's gone.
   const layout = positionsFor(currentFormation, rotation);
   const setterIds = new Set(settersThisRotation(rotation).map((e) => e.player.id));
-  const radius = EDGE * 0.115;
+  const radius = (EDGE * courtGeom('--player-size')) / 2;
 
   saved.roster.forEach((player, index) => {
     const position = layout[player.id];
@@ -2240,7 +2312,10 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
     ctx.globalAlpha = 1;
   });
 
-  return hasBench ? EDGE * 1.2 : EDGE;
+  // The court plus its bench strip, both read from the stylesheet.
+  return hasBench
+    ? EDGE * (courtGeom('--bench-top') + courtGeom('--bench-height'))
+    : EDGE;
 }
 
 // Captions let the image explain itself once it's out of the app and sitting in
@@ -2635,6 +2710,10 @@ document.addEventListener('keydown', (event) => {
   const tag = event.target && event.target.tagName;
   if (tag === 'INPUT' || tag === 'SELECT' || tag === 'TEXTAREA') return;
   if (quiz) return; // arrows would give away the answer by moving the court
+  // With the scoreboard up (think iPad with a keyboard), the court is hidden --
+  // arrows would change the rotation invisibly, and the scoreboard's own
+  // rotation line would go stale, since step() doesn't redraw the scoreboard.
+  if (!scorePanel.hidden) return;
   if (event.key === 'ArrowLeft') {
     step(-1);
     event.preventDefault();
