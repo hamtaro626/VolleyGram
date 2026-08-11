@@ -74,7 +74,19 @@ h1 {
   width: 100%;
   aspect-ratio: 1 / 1;
   background: #c87a45;
-  border: 3px solid #f2f4f8;
+  /* Every mark drawn on the court reads its colour from here, and so does the
+     canvas export -- one definition, two renderers. That is what lets a light
+     surface swap the whole set to dark ink without touching either. */
+  --line: #f2f4f8;
+  --line-soft: rgba(255, 255, 255, 0.75);
+  --line-faint: rgba(255, 255, 255, 0.4);
+  --line-bench: rgba(255, 255, 255, 0.25);
+  --ring: rgba(0, 0, 0, 0.3);
+  /* The Server pill is ink on the court too, so it flips with everything else
+     rather than staying a white badge on a white surface. */
+  --pill-bg: #f2f4f8;
+  --pill-fg: #16181d;
+  border: 3px solid var(--line);
   border-radius: 2px;
   /* pan-y, not none. `none` meant a touch starting anywhere on the court --
      which is most of the screen -- could not scroll the page, so you had to
@@ -102,17 +114,29 @@ h1 {
   background: #2f5e2c;
 }
 
-/* Sand, and darker than sand actually is. Every sandy hue lands within a few
-   degrees of the setter's gold -- 36 here against the gold's 41 -- so hue can't
-   do the separating and lightness has to. A real pale sand was tried and
-   dropped: at #d9c08a every role sits under 2:1 against it, because the whole
-   palette is bright fills by design, so it isn't the setter that washes out but
-   all six. Dark court lines would have rescued the lines and not the players.
+/* Sand, as an off-white -- and the only surface that flips the ink.
 
-   At this darkness the gold clears the court by contrast (3.22:1) rather than
-   by hue, which is the second route test/contrast.js allows. */
+   v0.21 tried a pale sand and rejected it, correctly for what the app was then:
+   white lines fell to 1.6:1 and the setter's gold vanished into a court sharing
+   its hue. Both of those are now fixable rather than fatal. The lines are dark
+   here, which is what a real beach court has anyway, and the ring around each
+   player is stronger so a bright fill on a pale ground still reads as a disc.
+
+   Every sandy hue is the setter's hue -- 40 against gold's 41 -- so this clears
+   the palette on neither hue nor contrast. It clears on *chroma*: at 0.16
+   saturation the court is under a quarter as colourful as any role standing on
+   it, and a saturated disc on a near-neutral ground is not a collision. That is
+   the third route test/contrast.js allows, and this is the surface it exists
+   for. Re-check with: node test/contrast.js */
 .court.surface-beach {
-  background: #665132;
+  background: #e8e5df;
+  --line: #3a3f4a;
+  --line-soft: rgba(22, 24, 29, 0.55);
+  --line-faint: rgba(22, 24, 29, 0.45);
+  --line-bench: rgba(22, 24, 29, 0.3);
+  --ring: rgba(0, 0, 0, 0.55);
+  --pill-bg: #3a3f4a;
+  --pill-fg: #f2f4f8;
 }
 
 /* The net sits along the top edge. */
@@ -122,10 +146,12 @@ h1 {
   left: -3px;
   right: -3px;
   height: 10px;
+  /* Transparent gaps rather than a second colour: over the page it shows the
+     page, over a court it shows the court, and it needs no per-surface value. */
   background: repeating-linear-gradient(
     90deg,
-    #f2f4f8 0 3px,
-    #16181d 3px 6px
+    var(--line) 0 3px,
+    transparent 3px 6px
   );
   border-radius: 2px;
 }
@@ -137,7 +163,7 @@ h1 {
   left: 0;
   right: 0;
   height: 2px;
-  background: rgba(255, 255, 255, 0.75);
+  background: var(--line-soft);
 }
 
 /* Faint zone numbers, one per cell. pointer-events: none so they never
@@ -147,7 +173,7 @@ h1 {
   font-size: 0.7rem;
   font-weight: 700;
   line-height: 1;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--line-faint);
   pointer-events: none;
   user-select: none;
   -webkit-user-select: none;
@@ -213,7 +239,7 @@ body.quiz-hide-players .player.serving {
   left: 0;
   right: 0;
   height: 16%;
-  border: 1px dashed rgba(255, 255, 255, 0.25);
+  border: 1px dashed var(--line-bench);
   border-radius: 8px;
   align-items: center;
   justify-content: center;
@@ -250,8 +276,9 @@ body.quiz-hide-players .player.serving {
   min-width: 52px;
   aspect-ratio: 1 / 1;
   border-radius: 50%;
-  /* Dark ring, since the fills are light -- a white border vanishes on them. */
-  border: 2px solid rgba(0, 0, 0, 0.3);
+  /* Dark ring, since the fills are light -- a white border vanishes on them.
+     Per-surface, because a pale court needs a stronger one to hold the disc. */
+  border: 2px solid var(--ring);
   color: #16181d; /* every role, no exceptions -- see the palette below */
   display: flex;
   flex-direction: column;
@@ -351,8 +378,8 @@ body.hide-labels .player .label {
   transform: translateX(-50%);
   padding: 0.14rem 0.32rem;
   border-radius: 999px;
-  background: #f2f4f8;
-  color: #16181d;
+  background: var(--pill-bg);
+  color: var(--pill-fg);
   font-size: 0.48rem;
   font-weight: 700;
   letter-spacing: 0.07em;

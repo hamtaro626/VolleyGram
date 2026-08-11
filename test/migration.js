@@ -1599,6 +1599,27 @@ console.log('\n42. Playing surface');
   const { SURFACES, DEFAULT_SURFACE } = app.consts;
   check('the default surface is one of the offered ones',
     Object.keys(SURFACES).includes(DEFAULT_SURFACE), DEFAULT_SURFACE);
+  // The export redescribes the court on a canvas, and used to hard-code white
+  // for every line it drew -- which silently assumed a dark court and would
+  // have drawn invisible lines on a light one. It reads them from the
+  // stylesheet now, so there is one definition per colour for both renderers.
+  const script = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  const drawStart = script.indexOf('function drawRotation(');
+  const drawBody = script.slice(drawStart, script.indexOf('\n}\n', drawStart));
+  check('the export reads court ink from the stylesheet',
+    /courtInk\('--line'\)/.test(drawBody) && /courtInk\('--ring'\)/.test(drawBody));
+  check('and hard-codes no line colour of its own',
+    !/#f2f4f8|rgba\(255, 255, 255/.test(drawBody),
+    (drawBody.match(/#f2f4f8|rgba\(255, 255, 255[^)]*\)/g) || []).join(', '));
+
+  // A surface that flips to dark ink has to define the whole set, or it gets a
+  // mix of its own and the base one.
+  const beachBlock = css.slice(css.indexOf('.court.surface-beach {'),
+    css.indexOf('}', css.indexOf('.court.surface-beach {')));
+  ['--line', '--line-soft', '--line-faint', '--line-bench', '--ring'].forEach((prop) => {
+    check(`beach defines ${prop}`, new RegExp(`${prop}:`).test(beachBlock));
+  });
+
   Object.keys(SURFACES).forEach((key) => {
     // The default is painted by the bare `.court` rule; the rest need their own.
     const painted = key === DEFAULT_SURFACE

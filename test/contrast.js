@@ -26,10 +26,17 @@ const MIN_COURT_HUE_GAP = 15;
 // of the setter's gold, so no shade of sand can clear the hue gap -- sand is
 // gold. It clears on contrast instead, at 3:1, WCAG's non-text figure.
 const MIN_ROLE_COURT_CONTRAST = 3;
-// Same figure, for the court against the white boundary lines, attack line and
-// zone numbers it has to hold.
+// The third route. Two colours sharing a hue at similar lightness are still
+// unmistakable if one of them is barely coloured at all: a saturated disc on a
+// near-neutral ground is not a collision, whatever the ratio says. Beach is the
+// surface that needs this -- every sandy hue is the setter's hue -- and the bar
+// is that the court carries at most this fraction of the role's saturation.
+const MAX_COURT_CHROMA_RATIO = 0.4;
+// Same figure as the roles, for the court against the lines drawn on it. Each
+// surface is measured against *its own* ink, not against white: a light court
+// flips the whole set to dark, so a fixed colour here would test a court that
+// does not exist.
 const MIN_LINE_CONTRAST = 3;
-const LINE_COLOUR = '#f2f4f8';
 
 const linear = (channel) => {
   const c = channel / 255;
@@ -129,23 +136,40 @@ for (let i = 0; i < saturated.length; i++) {
 // and this suite never looked at it -- which is exactly the drift the SPEC
 // warned about: a second palette shipping unverified while the suite still says
 // ALL PASS. Both courts are pulled out of the stylesheet, same as the roles.
+// Each surface's rule block, so its background and its --line come from the
+// same place. A surface that does not redefine --line inherits the base one.
+const blockFor = (selector) => {
+  const at = CSS.indexOf(selector + ' {');
+  if (at === -1) return '';
+  return CSS.slice(at, CSS.indexOf('}', at));
+};
+const baseBlock = blockFor('.court');
+const baseLine = (baseBlock.match(/--line:\s*(#[0-9a-fA-F]{6})/) || [])[1];
+
+const readSurface = (name, selector) => {
+  const block = blockFor(selector);
+  const hex = (block.match(/background:\s*(#[0-9a-fA-F]{6})/) || [])[1];
+  if (!hex) return null;
+  const line = (block.match(/--line:\s*(#[0-9a-fA-F]{6})/) || [])[1] || baseLine;
+  return { name, hex: hex.toLowerCase(), line: (line || '').toLowerCase() };
+};
+
 const surfaces = [
-  ...(CSS.match(/\.court\s*\{[^}]*background:\s*(#[0-9a-fA-F]{6})/)
-    ? [{ name: 'indoor', hex: CSS.match(/\.court\s*\{[^}]*background:\s*(#[0-9a-fA-F]{6})/)[1].toLowerCase() }]
-    : []),
-  ...[...CSS.matchAll(/\.court\.surface-([a-z]+)\s*\{[^}]*background:\s*(#[0-9a-fA-F]{6})/g)]
-    .map(([, name, hex]) => ({ name, hex: hex.toLowerCase() })),
-];
+  readSurface('indoor', '.court'),
+  ...[...CSS.matchAll(/\.court\.surface-([a-z]+)\s*\{/g)]
+    .map(([, name]) => readSurface(name, `.court.surface-${name}`)),
+].filter(Boolean);
 
 console.log(`\nCourt surfaces (${surfaces.length}):`);
 if (surfaces.length === 0) fail('found no court background colours');
 
-for (const { name, hex } of surfaces) {
-  const lines = contrast(hex, LINE_COLOUR);
-  const courtHue = hsl(hex).hue;
-  console.log(`\n  ${name} ${hex}  hue ${courtHue}  vs lines ${lines.toFixed(2)}:1`);
+for (const { name, hex, line } of surfaces) {
+  const lines = contrast(hex, line);
+  const { hue: courtHue, saturation: courtSat } = hsl(hex);
+  console.log(`\n  ${name} ${hex}  hue ${courtHue}  sat ${courtSat.toFixed(2)}`
+    + `  ink ${line} ${lines.toFixed(2)}:1`);
   if (lines < MIN_LINE_CONTRAST) {
-    fail(`the ${name} court is ${lines.toFixed(2)}:1 against the court lines, needs ${MIN_LINE_CONTRAST}`);
+    fail(`the ${name} court is ${lines.toFixed(2)}:1 against its own lines (${line}), needs ${MIN_LINE_CONTRAST}`);
   }
 
   // Every role has to stay tellable from the surface it stands on, by hue or by
@@ -159,13 +183,19 @@ for (const { name, hex } of surfaces) {
 
     const byHue = gap !== null && gap >= MIN_COURT_HUE_GAP;
     const byContrast = ratio >= MIN_ROLE_COURT_CONTRAST;
-    const how = byHue ? `hue ${gap} deg` : byContrast ? `contrast ${ratio.toFixed(2)}:1` : 'NEITHER';
+    const byChroma = saturation > 0.15
+      && courtSat <= saturation * MAX_COURT_CHROMA_RATIO;
+    const how = byHue ? `hue ${gap} deg`
+      : byContrast ? `contrast ${ratio.toFixed(2)}:1`
+        : byChroma ? `chroma ${courtSat.toFixed(2)} vs ${saturation.toFixed(2)}`
+          : 'NEITHER';
     console.log(`    ${role.role.padEnd(5)} ${gap === null ? 'grey  ' : String(gap).padStart(3) + ' deg'}` +
-      `  ${ratio.toFixed(2).padStart(5)}:1  ${byHue || byContrast ? 'ok  via ' + how : 'FAIL'}`);
+      `  ${ratio.toFixed(2).padStart(5)}:1  ${byHue || byContrast || byChroma ? 'ok  via ' + how : 'FAIL'}`);
 
-    if (!byHue && !byContrast) {
-      fail(`.role-${role.role} clears the ${name} court on neither hue ` +
-        `(${gap === null ? 'grey' : gap + ' deg'}) nor contrast (${ratio.toFixed(2)}:1)`);
+    if (!byHue && !byContrast && !byChroma) {
+      fail(`.role-${role.role} clears the ${name} court on none of hue ` +
+        `(${gap === null ? 'grey' : gap + ' deg'}), contrast (${ratio.toFixed(2)}:1) ` +
+        `or chroma (court ${courtSat.toFixed(2)} vs role ${saturation.toFixed(2)})`);
     }
   }
 }

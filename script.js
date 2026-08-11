@@ -2111,6 +2111,14 @@ function pill(ctx, x, y, width, height) {
 
 // Draws one rotation at the canvas origin, EDGE pixels wide. Returns how tall
 // the drawing came out, so the caller knows where a caption can go.
+// The court's ink, read back out of the stylesheet. Same reasoning as
+// roleColours(): the export redescribes the court, so every colour it uses
+// should have exactly one definition, and that definition lives in CSS. Before
+// this, seven of them were hard-coded here and silently assumed a dark court.
+function courtInk(name) {
+  return getComputedStyle(court).getPropertyValue(name).trim();
+}
+
 function drawRotation(ctx, rotation, EDGE, hasBench) {
   // The court fill is the thing you want gone when overlaying real footage --
   // the lines still help you line the diagram up with the court underneath.
@@ -2118,7 +2126,7 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
     ctx.fillStyle = getComputedStyle(court).backgroundColor;
     ctx.fillRect(0, 0, EDGE, EDGE);
   }
-  ctx.strokeStyle = '#f2f4f8';
+  ctx.strokeStyle = courtInk('--line');
   ctx.lineWidth = EDGE * 0.005;
   ctx.strokeRect(0, 0, EDGE, EDGE);
 
@@ -2126,12 +2134,12 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
   ctx.beginPath();
   ctx.moveTo(0, EDGE / 3);
   ctx.lineTo(EDGE, EDGE / 3);
-  ctx.strokeStyle = 'rgba(255, 255, 255, 0.75)';
+  ctx.strokeStyle = courtInk('--line-soft');
   ctx.lineWidth = EDGE * 0.003;
   ctx.stroke();
 
   // Zone numbers, from the same table the on-screen ones use.
-  ctx.fillStyle = 'rgba(255, 255, 255, 0.4)';
+  ctx.fillStyle = courtInk('--line-faint');
   ctx.textAlign = 'left';
   ctx.textBaseline = 'top';
   ctx.font = `700 ${Math.round(EDGE * 0.032)}px -apple-system, system-ui, sans-serif`;
@@ -2140,7 +2148,7 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
   });
 
   // Net along the top.
-  ctx.strokeStyle = '#f2f4f8';
+  ctx.strokeStyle = courtInk('--line');
   ctx.lineWidth = EDGE * 0.012;
   ctx.setLineDash([EDGE * 0.007, EDGE * 0.007]);
   ctx.beginPath();
@@ -2150,7 +2158,7 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
   ctx.setLineDash([]);
 
   if (hasBench) {
-    ctx.strokeStyle = 'rgba(255, 255, 255, 0.25)';
+    ctx.strokeStyle = courtInk('--line-bench');
     ctx.lineWidth = EDGE * 0.003;
     ctx.setLineDash([EDGE * 0.012, EDGE * 0.012]);
     ctx.strokeRect(0, EDGE * 1.04, EDGE, EDGE * 0.16);
@@ -2178,7 +2186,7 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
     ctx.arc(cx, cy, radius, 0, Math.PI * 2);
     ctx.fillStyle = fill;
     ctx.fill();
-    ctx.strokeStyle = 'rgba(0, 0, 0, 0.3)';
+    ctx.strokeStyle = courtInk('--ring');
     ctx.lineWidth = EDGE * 0.005;
     ctx.stroke();
 
@@ -2186,7 +2194,7 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
     if (setterIds.has(player.id)) {
       ctx.beginPath();
       ctx.arc(cx, cy, radius + EDGE * 0.008, 0, Math.PI * 2);
-      ctx.strokeStyle = '#f2f4f8';
+      ctx.strokeStyle = courtInk('--line');
       ctx.lineWidth = EDGE * 0.006;
       ctx.stroke();
     }
@@ -2210,11 +2218,11 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
       const boxHeight = EDGE * 0.036;
       const boxTop = cy + radius - boxHeight / 2;
 
-      ctx.fillStyle = '#f2f4f8';
+      ctx.fillStyle = courtInk('--pill-bg');
       pill(ctx, cx - boxWidth / 2, boxTop, boxWidth, boxHeight);
       ctx.fill();
 
-      ctx.fillStyle = '#16181d';
+      ctx.fillStyle = courtInk('--pill-fg');
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillText(label, cx, boxTop + boxHeight / 2);

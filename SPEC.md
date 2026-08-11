@@ -1674,10 +1674,74 @@ avoid.
 Labels and Quiz Mode take a two-across row now that the scoreboard has left,
 rather than sitting in a three-column grid with an empty third.
 
+## v0.36 — sand becomes an off-white, and the court grows ink
+
+Beach is `#e8e5df`. v0.21 tried a pale sand and rejected it; this is that
+decision revisited, and it needed two things that did not exist then.
+
+### Why pale sand failed before
+
+Two separate failures, both real:
+
+| | Pale sand, v0.21 |
+|---|---|
+| White court lines | 1.6:1 — invisible |
+| Setter's gold on it | 1.3:1, and 0° of hue away |
+
+The second is not a quirk of one shade. **Every sandy hue is the setter's hue** —
+off-whites land at 38–41°, gold is 41° — so no sand clears the palette on hue,
+and none is dark enough to clear it on contrast. v0.21 concluded light sand was
+incompatible with the palette. On the rules as they stood, it was.
+
+### What changed
+
+**The court has ink now.** `--line`, `--line-soft`, `--line-faint`,
+`--line-bench`, `--ring`, `--pill-bg` and `--pill-fg` are custom properties on
+`.court`, used by the border, net, attack line, zone numbers, bench box, player
+outline and Server pill. Beach overrides all seven to dark. Its lines run at
+**8.4:1** — better than clay manages with white at 3.0:1.
+
+That also fixes an existing hazard rather than adding one. `drawRotation()` had
+**seven hard-coded white values**, so the canvas silently assumed a dark court
+and would have drawn invisible lines on a light one. It reads the properties
+through `courtInk()` instead: one definition per colour, two renderers. Same
+principle that already applied to the role fills, extended to everything else
+drawn on the court. `§42` asserts the export hard-codes no line colour of its
+own, and that any surface flipping the ink defines the whole set.
+
+**The player ring is per-surface.** `rgba(0,0,0,0.3)` on dark courts as before,
+`0.55` on beach — a bright fill on a pale ground needs a firmer edge to read as
+a disc.
+
+### A third route through the colour check
+
+The setter still clears beach on neither hue (1°) nor contrast (1.86:1), and it
+should not have to. Both of those measure the wrong thing here: a **saturated
+disc on a near-neutral ground** is not a collision, whatever the ratio says.
+
+So `contrast.js` gains a chroma route — the court may carry at most 0.4× the
+role's saturation. Beach is 0.16 against the setter's 0.69 and passes with room;
+the pale sand v0.21 rejected is 0.51 and still fails, which is the check working
+rather than being loosened. Clay and grass are unaffected: they clear on hue as
+they always did.
+
+Line contrast is also now measured per surface, against **its own** `--line`
+rather than against white. Testing a light court against white ink was testing a
+court that does not exist.
+
+Both new checks were confirmed to fail on purpose: a saturated pale sand fails
+the chroma rule, and white ink on the light court fails the line rule.
+
+### Left alone
+
+The overlap badge stays `#ff9f9f` — a pink pill with near-black text reads on
+off-white without help. And the roles themselves are untouched: this version
+changes what they stand on, not what they are.
+
 ## Tests
 
 ```
-node test/migration.js    # 606 checks — storage, migration, roles, formations,
+node test/migration.js    # 613 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,
