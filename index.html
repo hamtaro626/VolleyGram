@@ -12,7 +12,7 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.31">
+  <link rel="stylesheet" href="style.css?v=0.32">
 </head>
 <body>
   <main>
@@ -82,19 +82,38 @@
       <!-- The rotation buttons get created by script.js -->
     </div>
 
-    <!-- The three you reach for without thinking. Everything occasional is
-         folded behind More, which keeps this to one row instead of two. -->
-    <div class="actions compact">
-      <button id="toggleLabels" aria-pressed="true">Labels: on</button>
+    <!-- Everything occasional is folded behind More, leaving the two things
+         that take over the screen. -->
+    <div class="actions two">
       <button id="toggleMore" aria-expanded="false" aria-controls="moreMenu">More</button>
       <button id="openScoreboard">Scoreboard</button>
     </div>
 
-    <!-- Opened by More. Getting the diagram out of the app, plus the quiz. -->
-    <div class="actions compact submenu" id="moreMenu" hidden>
-      <button id="exportImage">Save image</button>
-      <button id="shareLink">Share team</button>
-      <button id="startQuiz">Quiz Mode</button>
+    <!-- Opened by More. -->
+    <div class="submenu" id="moreMenu" hidden>
+      <div class="actions compact">
+        <button id="toggleLabels" aria-pressed="true">Labels: on</button>
+        <button id="startQuiz">Quiz Mode</button>
+        <button id="shareLink">Share team</button>
+      </div>
+
+      <!-- The two exports differ only in how much they draw, so they sit
+           behind one word rather than competing for a column each. -->
+      <div class="actions one compact">
+        <button id="toggleSave" aria-expanded="false" aria-controls="saveMenu">Save&hellip;</button>
+      </div>
+
+      <div class="save-menu nested" id="saveMenu" hidden>
+        <div class="actions two compact">
+          <button id="exportImage">Save image</button>
+          <button id="exportAll">Save all rotations</button>
+        </div>
+        <!-- The setting that governs both buttons, next to the buttons. -->
+        <label class="setting toggle">
+          <input type="checkbox" id="transparentExport">
+          <span>Transparent background</span>
+        </label>
+      </div>
     </div>
 
     <!-- Alone: it opens the longest panel in the app, and it is the one you
@@ -154,12 +173,6 @@
       </label>
 
       <button id="clearRoleOverrides">Clear per-rotation roles</button>
-      <button id="exportAll">Save all rotations as one image</button>
-
-      <label class="setting toggle">
-        <input type="checkbox" id="transparentExport">
-        <span>Transparent background in exports</span>
-      </label>
 
       <label class="setting toggle">
         <input type="checkbox" id="checkOverlap">
@@ -228,6 +241,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.31"></script>
+  <script src="script.js?v=0.32"></script>
 </body>
 </html>

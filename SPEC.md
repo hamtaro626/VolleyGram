@@ -1453,10 +1453,71 @@ and blind to geometry. This one adds: it was blind to *wiring* — which handler
 is attached to which element — for the same reason, that the stub only faked
 what someone had thought to fake.
 
+## v0.32 — two levels behind More
+
+v0.28 folded three controls behind **More**. This moves two more in and gives
+the pair of exports a level of their own.
+
+| Row | Buttons |
+|-----|---------|
+| 1 | **More** · Scoreboard |
+| 2 | *(More)* Labels · Quiz Mode · Share team |
+| 3 | *(More)* **Save…** |
+| 4 | *(Save…)* Save image · Save all rotations |
+| 5 | Show roster |
+| 6 | Hold to reset all |
+
+Labels leaves the top row, which now holds only the two screens that take over
+the app. The two exports differ solely in **how much** they draw, so they sit
+behind one word rather than each taking a column and being told apart by
+reading.
+
+**Save all rotations as one image** came out of the roster panel, where it had
+been the only export and the only thing in there that wasn't a lineup setting.
+Its name lost "as one image", which the second level now implies.
+
+Nesting a menu is worth being wary of, and two things keep it honest: the court
+stays visible above the open menu, so nothing here is modal; and closing More
+closes Save with it, or Save would be found already open the next time More was
+pressed.
+
+Labels is deliberately **not** on the close-on-use list. Save, Share and Quiz
+all hand you off somewhere else; Labels is a toggle you might flip twice while
+watching the court change behind the menu.
+
+### `.submenu` is a box, not a row
+
+It used to be an `.actions` row that happened to be boxed. It holds rows now, so
+the box and the grid are separate: `.submenu` is the border and padding,
+`.actions` inside it are the rows, and `.submenu .actions:last-child` drops the
+trailing margin the border would otherwise have to hold open.
+
+Which means `.submenu[hidden]` needs its own `display: none` as well as
+`.actions[hidden]` — the fourth time this stylesheet has hit that, after the
+roster panel, the scoreboard and the actions rows. Both are asserted.
+
+### The setting moved with the buttons it governs
+
+`Transparent background in exports` was in the roster panel and would have ended
+up governing two buttons two levels deep in a different part of the screen. It
+now sits inside `Save…` with them, and its label drops "in exports" — the menu
+it lives in already says that.
+
+This breaks the rule that preferences live in the roster panel, and it should:
+that panel is for facts about a *lineup*, and this is a fact about a **file you
+are about to produce**. Being next to the two buttons that produce it beats
+being filed with the roster.
+
+`.save-menu` deliberately sets no `display`, so the browser's own rule for
+`hidden` still applies and it cannot become the fifth thing in this stylesheet
+to ignore the attribute.
+
+`Flag overlap violations` stays in the roster panel. It is about the diagram
+rather than an export, and it belongs with the lineup it flags.
 ## Tests
 
 ```
-node test/migration.js    # 586 checks — storage, migration, roles, formations,
+node test/migration.js    # 594 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

@@ -2648,22 +2648,40 @@ document.getElementById('clearRoleOverrides').addEventListener('click', () => {
 // off somewhere else entirely, and the third takes over the screen.
 const moreMenu = document.getElementById('moreMenu');
 const moreButton = document.getElementById('toggleMore');
+const saveMenu = document.getElementById('saveMenu');
+const saveButton = document.getElementById('toggleSave');
 
-function syncMoreButton() {
+function syncMenuButtons() {
   moreButton.setAttribute('aria-expanded', String(!moreMenu.hidden));
+  saveButton.setAttribute('aria-expanded', String(!saveMenu.hidden));
 }
 
+// Closing the outer menu closes the inner one with it, or Save... would be
+// found already open the next time More is pressed.
 function closeMore() {
   moreMenu.hidden = true;
-  syncMoreButton();
+  saveMenu.hidden = true;
+  syncMenuButtons();
 }
 
 moreButton.addEventListener('click', () => {
-  moreMenu.hidden = !moreMenu.hidden;
-  syncMoreButton();
+  if (moreMenu.hidden) {
+    moreMenu.hidden = false;
+    syncMenuButtons();
+  } else {
+    closeMore();
+  }
 });
 
-['exportImage', 'shareLink', 'startQuiz'].forEach((id) => {
+saveButton.addEventListener('click', () => {
+  saveMenu.hidden = !saveMenu.hidden;
+  syncMenuButtons();
+});
+
+// Everything that hands you off somewhere else closes the menu behind it.
+// Labels is deliberately not in this list: it's a toggle you might flip twice
+// while watching the court, which stays visible above the open menu.
+['exportImage', 'exportAll', 'shareLink', 'startQuiz'].forEach((id) => {
   document.getElementById(id).addEventListener('click', closeMore);
 });
 
@@ -2720,7 +2738,7 @@ load();
 importFromUrl();
 syncLabelsButton();
 syncRosterButton();
-syncMoreButton();
+syncMenuButtons();
 syncUndoButton();
 roleScopeSelect.value = store.roleScope;
 buildZoneLabels();

@@ -53,7 +53,8 @@ function stubElement(tag = 'div') {
       return node;
     },
     remove() {},
-    setAttribute() {},
+    attrs: {},
+    setAttribute(name, value) { this.attrs[name] = String(value); },
     setPointerCapture() {},
     getBoundingClientRect() { return { left: 0, top: 0, width: 300, height: 300 }; },
     querySelector() { return stubElement('span'); },
@@ -133,7 +134,7 @@ function boot(seedJson, seedHash) {
       cycleIndexFor: cycleIndex, courtRing,
       scorePoint, undoRally, newGame, renameTeam, normaliseMatch, gamesWon,
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
-      closeNewGame, closeMore, syncMoreButton };
+      closeNewGame, closeMore, syncMenuButtons };
     globalThis.__players = () => playerElements;
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
@@ -2008,19 +2009,47 @@ console.log('\n49. The control rows');
 
   const find = (id) => rows.find((row) => row.ids.includes(id));
 
-  check('Labels, More and Scoreboard share a row',
+  check('More and Scoreboard share the top row',
     JSON.stringify(find('toggleMore').ids)
-      === JSON.stringify(['toggleLabels', 'toggleMore', 'openScoreboard']),
+      === JSON.stringify(['toggleMore', 'openScoreboard']),
     JSON.stringify(find('toggleMore').ids));
 
-  check('Save image, Share team and Quiz Mode are in the submenu',
+  check('Labels, Quiz Mode and Share team share a row inside More',
+    JSON.stringify(find('toggleLabels').ids)
+      === JSON.stringify(['toggleLabels', 'startQuiz', 'shareLink']),
+    JSON.stringify(find('toggleLabels').ids));
+
+  check('the two exports sit behind Save',
     JSON.stringify(find('exportImage').ids)
-      === JSON.stringify(['exportImage', 'shareLink', 'startQuiz']),
+      === JSON.stringify(['exportImage', 'exportAll']),
     JSON.stringify(find('exportImage').ids));
 
-  check('the submenu starts closed', find('exportImage').hidden === true);
-  check('and is the row More controls',
+  check('the save menu starts closed',
+    /<div class="save-menu nested" id="saveMenu" hidden>/.test(html));
+
+  // The setting that governs both exports now sits with them rather than in the
+  // roster panel, which is where it had drifted away to.
+  const saveBlock = (html.match(/id="saveMenu"[\s\S]*?\n      <\/div>/) || [''])[0];
+  check('the transparent-export toggle sits with the exports',
+    /id="transparentExport"/.test(saveBlock));
+  check('and is no longer in the roster panel',
+    !/<section class="roster"[\s\S]*?id="transparentExport"[\s\S]*?<\/section>/.test(html));
+  check('More controls the outer menu',
     /id="toggleMore"[^>]*aria-controls="moreMenu"/.test(html));
+  check('Save controls the inner one',
+    /id="toggleSave"[^>]*aria-controls="saveMenu"/.test(html));
+
+  // Both levels live inside the one box, so the outer menu is a container of
+  // rows rather than a row itself.
+  check('the More menu is a submenu box that starts closed',
+    /<div class="submenu" id="moreMenu" hidden>/.test(html));
+  check('a hidden .submenu is actually hidden',
+    /\.submenu\[hidden\]\s*\{[^}]*display:\s*none/.test(
+      fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')));
+
+  // It moved out of the roster panel, where it had been the only export.
+  check('Save all rotations is no longer in the roster panel',
+    !/<section class="roster"[\s\S]*?id="exportAll"[\s\S]*?<\/section>/.test(html));
 
   check('Show roster is alone on its row',
     JSON.stringify(find('toggleRoster').ids) === JSON.stringify(['toggleRoster']),
@@ -2060,13 +2089,22 @@ console.log('\n49. The control rows');
 
   // aria-expanded has to follow the panel, not be set once and forgotten.
   const app = boot();
-  check('More reports closed at startup',
-    app.document.getElementById('moreMenu').hidden === true);
-  app.document.getElementById('moreMenu').hidden = false;
-  app.call.syncMoreButton();
+  const menu = (id) => app.document.getElementById(id);
+  check('both menus report closed at startup',
+    menu('moreMenu').hidden === true && menu('saveMenu').hidden === true);
+
+  // Closing the outer one has to take the inner one with it, or Save would be
+  // found already open the next time More is pressed.
+  menu('moreMenu').hidden = false;
+  menu('saveMenu').hidden = false;
+  app.call.syncMenuButtons();
+  check('aria-expanded follows both panels',
+    menu('toggleMore').attrs['aria-expanded'] === 'true'
+    && menu('toggleSave').attrs['aria-expanded'] === 'true',
+    JSON.stringify([menu('toggleMore').attrs, menu('toggleSave').attrs]));
   app.call.closeMore();
-  check('closeMore hides the submenu',
-    app.document.getElementById('moreMenu').hidden === true);
+  check('closing More closes the save row with it',
+    menu('moreMenu').hidden === true && menu('saveMenu').hidden === true);
 }
 
 console.log('\n50. Reordering the roster by drag');

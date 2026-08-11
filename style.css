@@ -499,11 +499,35 @@ body.hide-labels .player .label {
 }
 
 /* Folded away behind More. Boxed so it reads as belonging to the button above
-   it rather than as another peer row of controls. */
-.actions.submenu {
+   it rather than as another peer row of controls. It holds rows now rather
+   than being one, since Save... opens a second level inside it. */
+.submenu {
   border: 1px solid #3a4152;
   border-radius: 10px;
   padding: 0.4rem;
+  margin-bottom: 0.6rem;
+}
+
+.submenu[hidden] {
+  display: none;
+}
+
+/* The rows already carry a bottom margin; the last one inside the box would
+   otherwise leave a gap the border has to hold open. */
+.submenu .actions:last-child {
+  margin-bottom: 0;
+}
+
+/* Second level. Inset so the nesting is visible rather than implied. */
+.nested {
+  margin-left: 0.6rem;
+  margin-right: 0.6rem;
+}
+
+/* Deliberately sets no `display`, so the browser's own rule for `hidden` still
+   works and this cannot join the list of things that ignored it. */
+.save-menu > .setting {
+  margin-bottom: 0.2rem;
 }
 
 /* `hidden` sets display:none, but .actions sets display:grid and an author rule
