@@ -980,7 +980,8 @@ function buildPlayers() {
     el.className = `player role-${player.role}`;
     el.dataset.playerId = player.id;
     el.innerHTML = '<span class="name"></span><span class="label"></span>'
-      + '<span class="serve-tag">Server</span>';
+      + '<span class="serve-tag">Server</span>'
+      + '<span class="overlap-tag">Overlap</span>';
     el.addEventListener('pointerdown', startDrag);
     el.addEventListener('pointermove', onDrag);
     el.addEventListener('pointerup', endDrag);
@@ -1519,15 +1520,14 @@ function render() {
   court.classList.toggle('has-bench', rosterSize() > COURT_SPOTS);
   applySurface();
 
-  // Saying "overlap legal" out loud matters as much as flagging a breach --
-  // otherwise a clean court is indistinguishable from the check being off.
-  const overlapNote = !checking ? ''
-    : violations.length === 0
-      ? ' · overlap legal'
-      : ` · ${violations.length} overlap issue${violations.length === 1 ? '' : 's'}`;
-
+  // v0.19 put the overlap result in this line, including "overlap legal" on a
+  // clean court so you could tell the check was on. It says neither now: the
+  // flag lives entirely on the players, as a badge beside the dashed outline.
+  // A sentence that changed length every rotation was moving every control
+  // under it, and the check being on is visible in the roster panel where you
+  // turned it on.
   statusLine.textContent =
-    `${FORMATION_LABELS[currentFormation]} · ${describeRotation()}${overlapNote}`;
+    `${FORMATION_LABELS[currentFormation]} · ${describeRotation()}`;
 
   [...rotationButtons.children].forEach((button, index) => {
     button.classList.toggle('active', index + 1 === currentRotation);
@@ -2648,19 +2648,19 @@ document.getElementById('clearRoleOverrides').addEventListener('click', () => {
 // off somewhere else entirely, and the third takes over the screen.
 const moreMenu = document.getElementById('moreMenu');
 const moreButton = document.getElementById('toggleMore');
-const saveMenu = document.getElementById('saveMenu');
-const saveButton = document.getElementById('toggleSave');
+const shareMenu = document.getElementById('shareMenu');
+const shareButton = document.getElementById('toggleShare');
 
 function syncMenuButtons() {
   moreButton.setAttribute('aria-expanded', String(!moreMenu.hidden));
-  saveButton.setAttribute('aria-expanded', String(!saveMenu.hidden));
+  shareButton.setAttribute('aria-expanded', String(!shareMenu.hidden));
 }
 
-// Closing the outer menu closes the inner one with it, or Save... would be
-// found already open the next time More is pressed.
+// Closing the outer menu closes the inner one with it, or Share would be found
+// already open the next time More Options is pressed.
 function closeMore() {
   moreMenu.hidden = true;
-  saveMenu.hidden = true;
+  shareMenu.hidden = true;
   syncMenuButtons();
 }
 
@@ -2673,15 +2673,15 @@ moreButton.addEventListener('click', () => {
   }
 });
 
-saveButton.addEventListener('click', () => {
-  saveMenu.hidden = !saveMenu.hidden;
+shareButton.addEventListener('click', () => {
+  shareMenu.hidden = !shareMenu.hidden;
   syncMenuButtons();
 });
 
 // Everything that hands you off somewhere else closes the menu behind it.
 // Labels is deliberately not in this list: it's a toggle you might flip twice
 // while watching the court, which stays visible above the open menu.
-['exportImage', 'exportAll', 'shareLink', 'startQuiz'].forEach((id) => {
+['exportImage', 'exportAll', 'shareLink', 'startQuiz', 'openScoreboard'].forEach((id) => {
   document.getElementById(id).addEventListener('click', closeMore);
 });
 

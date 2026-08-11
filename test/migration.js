@@ -22,7 +22,6 @@ function stubElement(tag = 'div') {
     maxLength: 0,
     placeholder: '',
     type: '',
-    className: '',
     classList: {
       s: new Set(),
       add(...c) { c.forEach((x) => this.s.add(x)); },
@@ -60,6 +59,13 @@ function stubElement(tag = 'div') {
     querySelector() { return stubElement('span'); },
     closest() { return null; },
   };
+  // className and classList are two views of one thing in a browser. Keeping
+  // them as separate fields let a stale class survive a render that no longer
+  // set it, which would make a class-based assertion pass for the wrong reason.
+  Object.defineProperty(el, 'className', {
+    get() { return [...el.classList.s].join(' '); },
+    set(value) { el.classList.s = new Set(String(value).split(/\s+/).filter(Boolean)); },
+  });
   return el;
 }
 
@@ -1395,7 +1401,12 @@ console.log('\n39. A drag updates the overlap marks straight away');
   const z4 = saved.roster[saved.roster.findIndex((_, i) => app.call.slotFor(i, 1) === 4)].id;
   const el = app.players()[z4];
 
-  check('a fresh base rotation reports legal', app.status().includes('overlap legal'), app.status());
+  // v0.19 asserted this through the status line. That line no longer mentions
+  // overlap at all -- the flag lives on the players -- so the same invariant is
+  // now read off the player element instead.
+  check('a fresh base rotation flags nobody', el.classList.contains('illegal') === false);
+  check('and the status line says nothing about overlap',
+    !/overlap/i.test(app.status()), app.status());
 
   // Grabbing at the centre of the stubbed 300x300 box makes both grab offsets
   // zero, so the drag maths is easy to follow: clientX 270 lands on x = 90.
@@ -1407,7 +1418,9 @@ console.log('\n39. A drag updates the overlap marks straight away');
   // already moved the circle -- but the overlap marks are worked out in
   // render(), so the breach stayed invisible until the next redraw.
   check('the breach shows without changing rotation first',
-    app.status().includes('1 overlap issue'), app.status());
+    el.classList.contains('illegal'), app.status());
+  check('and the rule is named on the player',
+    /zone/i.test(el.title) && /overlap|ahead|left of/i.test(el.title), el.title);
   check('and the dragged position was still saved',
     app.peek().saved.layouts.base['1'][z4].x === 90,
     JSON.stringify(app.peek().saved.layouts.base['1']));
@@ -2009,42 +2022,44 @@ console.log('\n49. The control rows');
 
   const find = (id) => rows.find((row) => row.ids.includes(id));
 
-  check('More and Scoreboard share the top row',
-    JSON.stringify(find('toggleMore').ids)
-      === JSON.stringify(['toggleMore', 'openScoreboard']),
+  check('More Options is alone on its row and labelled in full',
+    JSON.stringify(find('toggleMore').ids) === JSON.stringify(['toggleMore'])
+    && /id="toggleMore"[^>]*>More Options</.test(html),
     JSON.stringify(find('toggleMore').ids));
 
-  check('Labels, Quiz Mode and Share team share a row inside More',
+  check('Labels, Scoreboard and Quiz Mode share a row inside it',
     JSON.stringify(find('toggleLabels').ids)
-      === JSON.stringify(['toggleLabels', 'startQuiz', 'shareLink']),
+      === JSON.stringify(['toggleLabels', 'openScoreboard', 'startQuiz']),
     JSON.stringify(find('toggleLabels').ids));
-
-  check('the two exports sit behind Save',
-    JSON.stringify(find('exportImage').ids)
+  check('Share holds the link and both exports',
+    JSON.stringify(find('shareLink').ids) === JSON.stringify(['shareLink'])
+    && JSON.stringify(find('exportImage').ids)
       === JSON.stringify(['exportImage', 'exportAll']),
     JSON.stringify(find('exportImage').ids));
 
-  check('the save menu starts closed',
-    /<div class="save-menu nested" id="saveMenu" hidden>/.test(html));
+  check('the share menu starts closed',
+    /<div class="share-menu nested" id="shareMenu" hidden>/.test(html));
 
-  // The setting that governs both exports now sits with them rather than in the
+  // The setting that governs both exports sits with them rather than in the
   // roster panel, which is where it had drifted away to.
-  const saveBlock = (html.match(/id="saveMenu"[\s\S]*?\n      <\/div>/) || [''])[0];
+  const shareBlock = (html.match(/id="shareMenu"[\s\S]*?\n      <\/div>/) || [''])[0];
   check('the transparent-export toggle sits with the exports',
-    /id="transparentExport"/.test(saveBlock));
+    /id="transparentExport"/.test(shareBlock));
   check('and is no longer in the roster panel',
     !/<section class="roster"[\s\S]*?id="transparentExport"[\s\S]*?<\/section>/.test(html));
-  check('More controls the outer menu',
+  check('More Options controls the outer menu',
     /id="toggleMore"[^>]*aria-controls="moreMenu"/.test(html));
-  check('Save controls the inner one',
-    /id="toggleSave"[^>]*aria-controls="saveMenu"/.test(html));
+  check('Share controls the inner one',
+    /id="toggleShare"[^>]*aria-controls="shareMenu"/.test(html));
 
   // Both levels live inside the one box, so the outer menu is a container of
   // rows rather than a row itself.
-  check('the More menu is a submenu box that starts closed',
-    /<div class="submenu" id="moreMenu" hidden>/.test(html));
   check('a hidden .submenu is actually hidden',
     /\.submenu\[hidden\]\s*\{[^}]*display:\s*none/.test(
+      fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')));
+  // .share-menu deliberately sets no display, so the browser's own rule works.
+  check('.share-menu sets no display of its own',
+    !/\.share-menu\s*\{[^}]*display:/.test(
       fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')));
 
   // It moved out of the roster panel, where it had been the only export.
@@ -2055,9 +2070,22 @@ console.log('\n49. The control rows');
     JSON.stringify(find('toggleRoster').ids) === JSON.stringify(['toggleRoster']),
     JSON.stringify(find('toggleRoster').ids));
 
-  check('Hold to reset all is still alone and last',
+  // v0.17's rule, kept: Hold to reset all is last, alone, with nothing beside
+  // it and nothing after it. v0.34 briefly put the drawer below it; this is the
+  // assertion that says it is not there any more.
+  check('Hold to reset all is alone on its row',
+    JSON.stringify(find('resetAll').ids) === JSON.stringify(['resetAll']),
+    JSON.stringify(find('resetAll').ids));
+  check('and is still the last row of all',
     JSON.stringify(rows[rows.length - 1].ids) === JSON.stringify(['resetAll']),
     JSON.stringify(rows[rows.length - 1].ids));
+  const orderOf = (id) => rows.findIndex((row) => row.ids.includes(id));
+  check('the drawer comes first, then Show roster, then reset',
+    orderOf('toggleMore') < orderOf('toggleRoster')
+    && orderOf('toggleRoster') < orderOf('resetAll'),
+    [orderOf('toggleMore'), orderOf('toggleRoster'), orderOf('resetAll')].join(','));
+  check('and the drawer is shut',
+    /<div class="submenu" id="moreMenu" hidden>/.test(html));
 
   // .actions is display:grid, so `hidden` needs putting back by hand.
   const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
@@ -2065,8 +2093,8 @@ console.log('\n49. The control rows');
   // The status line above these rows flips between one and two lines as the
   // rotation changes, and used to shove every control below it down a line.
   const reserved = css.match(/--status-lines:\s*(\d+)/);
-  check('the status line reserves at least two lines',
-    reserved && Number(reserved[1]) >= 2, reserved ? reserved[1] : 'not set');
+  check('the status line reserves a line so it cannot collapse',
+    reserved && Number(reserved[1]) >= 1, reserved ? reserved[1] : 'not set');
   check('and its min-height is built from that reserve',
     /\.status\s*\{[^}]*min-height:\s*calc\(var\(--status-lines\)/.test(css));
 
@@ -2084,6 +2112,20 @@ console.log('\n49. The control rows');
   check('and endRowDrag is safe to call twice',
     /function endRowDrag\(\) \{\s*\n\s*if \(!rowDrag\) return;/.test(js));
 
+  // The overlap flag moved out of the status line and onto the players, so the
+  // badge markup and the rule that reveals it both have to exist.
+  const js49 = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  check('every player carries an overlap badge',
+    /<span class="overlap-tag">Overlap<\/span>/.test(js49));
+  check('shown only when the player is flagged',
+    /\.player\.illegal \.overlap-tag\s*\{[^}]*display:\s*block/.test(css));
+  // Checked against the code rather than the words, or the comment explaining
+  // the change fails the check describing it.
+  check('and render no longer writes overlap into the status line',
+    !/overlapNote/.test(js49)
+    && /statusLine\.textContent =\s*\n\s*`\$\{FORMATION_LABELS\[currentFormation\]\} · \$\{describeRotation\(\)\}`;/
+      .test(js49));
+
   check('a hidden .actions row is actually hidden',
     /\.actions\[hidden\]\s*\{[^}]*display:\s*none/.test(css));
 
@@ -2091,20 +2133,20 @@ console.log('\n49. The control rows');
   const app = boot();
   const menu = (id) => app.document.getElementById(id);
   check('both menus report closed at startup',
-    menu('moreMenu').hidden === true && menu('saveMenu').hidden === true);
+    menu('moreMenu').hidden === true && menu('shareMenu').hidden === true);
 
   // Closing the outer one has to take the inner one with it, or Save would be
   // found already open the next time More is pressed.
   menu('moreMenu').hidden = false;
-  menu('saveMenu').hidden = false;
+  menu('shareMenu').hidden = false;
   app.call.syncMenuButtons();
   check('aria-expanded follows both panels',
     menu('toggleMore').attrs['aria-expanded'] === 'true'
-    && menu('toggleSave').attrs['aria-expanded'] === 'true',
-    JSON.stringify([menu('toggleMore').attrs, menu('toggleSave').attrs]));
+    && menu('toggleShare').attrs['aria-expanded'] === 'true',
+    JSON.stringify([menu('toggleMore').attrs, menu('toggleShare').attrs]));
   app.call.closeMore();
-  check('closing More closes the save row with it',
-    menu('moreMenu').hidden === true && menu('saveMenu').hidden === true);
+  check('closing More Options closes Share with it',
+    menu('moreMenu').hidden === true && menu('shareMenu').hidden === true);
 }
 
 console.log('\n50. Reordering the roster by drag');

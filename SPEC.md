@@ -1514,10 +1514,122 @@ to ignore the attribute.
 
 `Flag overlap violations` stays in the roster panel. It is about the diagram
 rather than an export, and it belongs with the lineup it flags.
+## v0.33 — the overlap flag moves onto the players
+
+### Scoreboard first
+
+The top row is **Scoreboard · More Options**. Scoreboard is a destination; More
+Options is a drawer. The destination goes first, and "More" on its own was thin
+for a button that now hides five controls and a setting.
+
+### The status line stops reporting overlap
+
+v0.19 put the overlap result in the line under the court, including
+`overlap legal` on a clean court — the reasoning being that without it, a legal
+court is indistinguishable from the check being switched off.
+
+That reasoning was sound and the cost was too high. The note appears and
+disappears as you step through rotations, which is exactly the length change
+v0.30 reserved a second line for. Reserving two lines for a sentence that is
+usually one is its own kind of drift, and the controls under it still shifted
+whenever a long rotation description wrapped.
+
+So the flag now lives entirely **on the players**: an `Overlap` badge above the
+circle, beside the dashed red outline v0.19 already drew. A breach is marked
+where the breach is, rather than counted somewhere else.
+
+`--status-lines` goes back to **1**. The reserve stays, so an empty status can't
+collapse the layout, but there is no longer a two-line case to hold room for.
+
+**What this gives up**, recorded because v0.19 was right to raise it: a clean
+court and a switched-off check now look identical on the diagram. The answer is
+that the checkbox you turned it on with is still sitting in the roster panel,
+which is a better place to answer "is this on?" than a sentence that had to
+re-earn its space every rotation.
+
+The badge sits **above** the circle, opposite the Server pill below it, so a
+player who is both serving and overlapping doesn't stack two labels in one
+place. It is `#ff9f9f` — the same red as the dashed outline it accompanies and
+as `button.danger`.
+
+Exports are unchanged: they have never drawn the overlap marks, and this does
+not start. A shared image is a diagram of positions, not a rules verdict.
+
+### The v0.19 redraw guard moved with it
+
+`endDrag()` has to call `render()`, because the overlap marks are worked out
+there and a breach you just dragged into stays invisible otherwise. That
+invariant was guarded by asserting the *status line* updated after a drag with
+no manual redraw — and the status line no longer says anything about overlap.
+
+The guard now reads the `illegal` class off the player element instead. Comment
+out `if (moved) render();` and it still fails, which is the whole point of it.
+
+### The stub was letting classes go stale
+
+`className` and `classList` were separate fields on the fake element, so
+assigning `el.className = 'player role-S'` did not clear a class an earlier
+render had added. Every class-based assertion could have passed for the wrong
+reason.
+
+They are one thing now, via a defined property — writing `className` rebuilds
+the set, reading it joins it. Third stub gap in three versions, after event
+listeners in v0.31 and `setAttribute` in v0.32, and the same root cause each
+time: it only faked what someone had thought to fake.
+
+## v0.34 — the occasional controls get a drawer
+
+The main column is now: rotation numbers, **More Options**, **Show roster**,
+**Hold to reset all**. Inside More Options:
+
+| Row | Buttons |
+|-----|---------|
+| 1 | Labels · Scoreboard · Quiz Mode |
+| 2 | **Share** |
+| 3 | *(Share)* Share team |
+| 4 | *(Share)* Save image · Save all rotations · Transparent background |
+
+The scoreboard moves off the main column and into the drawer. It was briefly
+renamed *Mobile Scoreboard* and is plain **Scoreboard** again: the extra word
+described the device rather than the thing, and at seventeen characters it
+wrapped in a three-across row on a narrow phone.
+
+`Save…` becomes **Share** and takes `Share team` in with it. Three ways of
+handing the diagram to someone else, behind one word: a link, one rotation as an
+image, all of them as an image. The link sits on its own row above the two
+exports, being a link rather than a file.
+
+The ids followed the label — `saveMenu` and `toggleSave` are `shareMenu` and
+`toggleShare`, and `.save-menu` is `.share-menu`. An id called `saveMenu`
+holding a share link is the kind of small lie that costs an hour later.
+
+Opening the scoreboard now closes the drawer behind it, like the other four.
+Labels still does not, for the reason v0.32 gives: it is a toggle you might flip
+twice while watching the court.
+
+### v0.17's rule survived a challenge
+
+The drawer was first placed **below** Hold to reset all, which broke the rule
+v0.17 set: *"it's the control you least want a thumb to find on the way past, so
+nothing sits beside it and nothing follows it."*
+
+It was moved back above. The rule is worth more than the arrangement that
+briefly displaced it — a terminal destructive control with nothing after it is a
+property you can rely on without looking, and "it's only a shut drawer" is
+exactly the kind of reasoning that erodes one.
+
+So the order is drawer, roster, reset. Everything occasional is folded away
+before you reach either of the two controls that open a panel, and the
+destructive one is still last.
+
+`§49` asserts all of it: reset is alone on its row **and** the last row of all,
+and the three rows run in that order. The last-row check is the one that would
+have caught the arrangement this version tried first.
+
 ## Tests
 
 ```
-node test/migration.js    # 594 checks — storage, migration, roles, formations,
+node test/migration.js    # 602 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

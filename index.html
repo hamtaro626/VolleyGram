@@ -12,7 +12,7 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.32">
+  <link rel="stylesheet" href="style.css?v=0.34">
 </head>
 <body>
   <main>
@@ -82,33 +82,34 @@
       <!-- The rotation buttons get created by script.js -->
     </div>
 
-    <!-- Everything occasional is folded behind More, leaving the two things
-         that take over the screen. -->
-    <div class="actions two">
-      <button id="toggleMore" aria-expanded="false" aria-controls="moreMenu">More</button>
-      <button id="openScoreboard">Scoreboard</button>
+    <!-- Everything occasional, shut by default. -->
+    <div class="actions one">
+      <button id="toggleMore" aria-expanded="false" aria-controls="moreMenu">More Options</button>
     </div>
 
-    <!-- Opened by More. -->
     <div class="submenu" id="moreMenu" hidden>
       <div class="actions compact">
         <button id="toggleLabels" aria-pressed="true">Labels: on</button>
+        <button id="openScoreboard">Scoreboard</button>
         <button id="startQuiz">Quiz Mode</button>
-        <button id="shareLink">Share team</button>
       </div>
 
-      <!-- The two exports differ only in how much they draw, so they sit
-           behind one word rather than competing for a column each. -->
+      <!-- Three ways of handing the diagram to something else, behind one
+           word rather than competing for a column each. -->
       <div class="actions one compact">
-        <button id="toggleSave" aria-expanded="false" aria-controls="saveMenu">Save&hellip;</button>
+        <button id="toggleShare" aria-expanded="false" aria-controls="shareMenu">Share</button>
       </div>
 
-      <div class="save-menu nested" id="saveMenu" hidden>
+      <div class="share-menu nested" id="shareMenu" hidden>
+        <!-- A link rather than a file, so it sits apart from the two exports. -->
+        <div class="actions one compact">
+          <button id="shareLink">Share team</button>
+        </div>
         <div class="actions two compact">
           <button id="exportImage">Save image</button>
           <button id="exportAll">Save all rotations</button>
         </div>
-        <!-- The setting that governs both buttons, next to the buttons. -->
+        <!-- The setting that governs both exports, next to them. -->
         <label class="setting toggle">
           <input type="checkbox" id="transparentExport">
           <span>Transparent background</span>
@@ -241,6 +242,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.32"></script>
+  <script src="script.js?v=0.34"></script>
 </body>
 </html>

@@ -365,6 +365,31 @@ body.hide-labels .player .label {
   display: block;
 }
 
+/* The overlap flag, as a badge rather than a sentence under the court. Sits
+   opposite the Server pill so a player who is both does not stack them, and
+   red rather than white so it reads as a problem at a glance. */
+.player .overlap-tag {
+  display: none;
+  position: absolute;
+  left: 50%;
+  top: -0.4rem;
+  transform: translateX(-50%);
+  padding: 0.14rem 0.32rem;
+  border-radius: 999px;
+  background: #ff9f9f;
+  color: #16181d;
+  font-size: 0.48rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  z-index: 5;
+}
+
+.player.illegal .overlap-tag {
+  display: block;
+}
+
 /* --- Colour by role --------------------------------------------------- */
 
 /* Bright fills with near-black text. This direction gets *more* contrast than
@@ -410,11 +435,11 @@ body.hide-labels .player .label {
    and everything below them down a line.
 
    The reserve is a custom property so it is one number to change and something
-   the test suite can read. Two lines covers the wording the app generates; a
-   long enough pair of names can still reach three, and min-height lets it,
-   because clipping the status would be worse than moving the buttons. */
+   the test suite can read. Back to one line in v0.33: taking the overlap count
+   out of the wording removed the flip that made two lines worth reserving, and
+   two lines of reserved space for one line of text is its own kind of drift. */
 .status {
-  --status-lines: 2;
+  --status-lines: 1;
   text-align: center;
   margin: 0.9rem 0;
   font-size: 0.9rem;
@@ -526,7 +551,7 @@ body.hide-labels .player .label {
 
 /* Deliberately sets no `display`, so the browser's own rule for `hidden` still
    works and this cannot join the list of things that ignored it. */
-.save-menu > .setting {
+.share-menu > .setting {
   margin-bottom: 0.2rem;
 }
 
