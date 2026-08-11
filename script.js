@@ -390,6 +390,7 @@ let store = {
   roleScope: 'all',      // whether a role edit hits every rotation or just this one
   transparentExport: false,
   checkOverlap: false,   // flag base positions that break rotational order
+  seenIntro: false,      // the fan-out has played once on this device
   // The live match. Top level rather than on a lineup: a score is something
   // happening right now, not a fact about a team, and it would be wrong to
   // carry one into a share link. newMatch() is a function declaration, so it's
@@ -980,6 +981,9 @@ function load() {
       transparentExport: parsed.transparentExport === true,
       // Added in v0.19. Defaults off, so an older save needs no version bump.
       checkOverlap: parsed.checkOverlap === true,
+      // Absent in every save before v0.42, which is exactly right: anyone
+      // upgrading has never seen the intro, so they get it once.
+      seenIntro: parsed.seenIntro === true,
       // Added in v0.22, same treatment: absent in every earlier save, so
       // normaliseMatch() hands back a fresh 0-0 rather than a version bump.
       match: normaliseMatch(parsed.match),
@@ -1518,7 +1522,9 @@ function applyRosterOrder(order) {
   return true;
 }
 
-function rebuild() {
+// Someone using the app never wants to watch it arrive, so `intro` is false
+// every time but the very first open -- see playIntro().
+function rebuild(intro = false) {
   // Drop the animation first, or the rebuilt circles slide in from the corner.
   court.classList.remove('animate');
   buildPlayers();
@@ -1527,7 +1533,75 @@ function rebuild() {
   syncSelects();
   syncFormationControls();
   render();
+  if (intro) {
+    playIntro();
+    return;
+  }
   requestAnimationFrame(() => court.classList.add('animate'));
+}
+
+// --- The one-time intro -----------------------------------------------
+//
+// The players fan out from centre court into their opening rotation. There is
+// almost nothing to it, because the effect already existed as a bug being
+// suppressed: rebuild() has always stripped `animate` before building "or the
+// rebuilt circles slide in from the corner". This is that, aimed on purpose --
+// from the centre rather than the corner, and once rather than every time.
+//
+// It runs *after* render(), so names, roles and colours are already correct and
+// the circles are already where they belong. We move them to the middle before
+// the browser paints, so the first frame anyone sees is the huddle, and the
+// slide out of it is the app arriving at its answer.
+const INTRO_SKIP_MS = 900;
+
+// Sliding overlays are nauseating rather than merely irritating for some
+// people, so a stated preference for less motion means none at all here.
+function motionAllowed() {
+  return !(window.matchMedia
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+function playIntro() {
+  const players = Object.entries(playerElements);
+  // Where render() just put everyone. Kept so the skip has somewhere to land.
+  const settled = players.map(([, el]) => ({ el, left: el.style.left, top: el.style.top }));
+
+  const land = () => settled.forEach(({ el, left, top }) => {
+    el.style.left = left;
+    el.style.top = top;
+  });
+
+  settled.forEach(({ el }) => {
+    el.style.left = '50%';
+    el.style.top = '50%';
+  });
+
+  // Any touch during the intro ends it on the spot. Nothing here is worth
+  // making someone wait for, and the app underneath is already live -- the tap
+  // that skips also does whatever it was aimed at.
+  const skip = () => {
+    document.removeEventListener('pointerdown', skip);
+    court.classList.remove('animate');
+    land();
+    requestAnimationFrame(() => court.classList.add('animate'));
+  };
+  document.addEventListener('pointerdown', skip);
+  setTimeout(() => {
+    document.removeEventListener('pointerdown', skip);
+    // Backstop. requestAnimationFrame is throttled to nothing in a background
+    // tab, so a page opened in one and never looked at would otherwise sit
+    // with all six players in a heap at centre court. land() is idempotent, so
+    // this costs nothing in the normal case.
+    land();
+  }, INTRO_SKIP_MS);
+
+  // Two frames: one to paint the huddle, one to start the slide out of it.
+  // Setting the class and the positions together gets batched and skips the
+  // transition entirely.
+  requestAnimationFrame(() => {
+    court.classList.add('animate');
+    requestAnimationFrame(land);
+  });
 }
 
 // --- Drawing the current rotation -------------------------------------
@@ -2832,7 +2906,12 @@ buildFormationButtons();
 buildFormationOptionSelects();
 transparentToggle.checked = store.transparentExport;
 overlapToggle.checked = store.checkOverlap;
-rebuild();
+
+// Once per device, and never in front of someone who asked for less motion.
+// Marked as seen either way it plays, so a refresh mid-set is not a re-run.
+const introducing = !store.seenIntro && motionAllowed();
+if (introducing) store.seenIntro = true;
+rebuild(introducing);
 renderScoreboard();
 
 // Write straight back after loading, so data saved by an older version gets

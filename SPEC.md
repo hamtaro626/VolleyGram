@@ -2107,10 +2107,71 @@ Both of these were invisible to 652 checks and visible in about four seconds of
 looking at four frames side by side — which is the case that was made for
 building it rather than reaching for a browser driver.
 
+## v0.42 — the first open introduces itself
+
+Open VolleyGram for the first time on a device and the six players start stacked
+at centre court, then fan out into rotation 1. Once ever. After that it opens
+straight to the diagram, as it always did.
+
+### It was already there, being suppressed
+
+`rebuild()` has stripped the `animate` class before building since v0.2, with
+the reason in the comment: *"or the rebuilt circles slide in from the corner"*.
+A load-time fan-out was a bug the app has been carefully avoiding for forty
+versions. This is that effect, aimed on purpose — from the centre rather than
+the corner, and once rather than every time.
+
+So the feature is roughly fifteen lines of movement and rather more lines of
+restraint.
+
+### Why once
+
+This is a reference you open between rallies. An intro on every visit is a toll
+booth on the thing the app exists for, and the moment it would annoy you most is
+the moment it matters most — standing on a court, mid-set, wanting one glance.
+
+`seenIntro` sits at the top level of the store beside `showLabels`, absent from
+every save before this version, which is exactly right: anyone upgrading has
+never seen it and gets it once.
+
+### The four rules it obeys
+
+- **After `render()`, never instead of it.** Names, roles and colours are
+  correct before anything moves; the circles are put in the middle before the
+  browser paints, so the first frame is the huddle rather than a flash of the
+  answer.
+- **Two frames, not one.** Adding the class and the positions together gets
+  batched and skips the transition entirely.
+- **Any tap ends it.** The app underneath is already live, so the tap that
+  skips also does whatever it was aimed at.
+- **`prefers-reduced-motion` means none.** Sliding things are nauseating rather
+  than merely irritating for some people. It also does not *spend* the intro —
+  turn the preference off later and you still get it.
+
+### The backstop
+
+`requestAnimationFrame` is throttled to nothing in a background tab. Open the
+page in one, never look at it, and the two frames never arrive — leaving all six
+players in a heap at centre court whenever you did look. A timeout lands
+everyone regardless. `land()` is idempotent, so it costs nothing normally.
+
+That is the failure worth guarding: not the animation being wrong, but the
+animation never finishing and the app looking broken.
+
+### The harness learned to inject
+
+`boot()` takes a third argument now, merged into the context before the script
+runs, so a test can supply a browser API the stub does not fake — `matchMedia`,
+here. Confirmed by deleting the reduced-motion guard, which fails `§56`.
+
+Fourth stub gap in this stretch, after event listeners, `setAttribute` and
+`className`. Same root cause every time, and the same fix: the stub only fakes
+what someone thought to fake, so it grows a fake the first time a test needs one.
+
 ## Tests
 
 ```
-node test/migration.js    # 666 checks — storage, migration, roles, formations,
+node test/migration.js    # 676 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

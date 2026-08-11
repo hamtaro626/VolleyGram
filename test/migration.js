@@ -69,7 +69,9 @@ function stubElement(tag = 'div') {
   return el;
 }
 
-function boot(seedJson, seedHash) {
+// extraContext lets a test inject a browser API the stub does not fake by
+// default -- matchMedia, for instance -- before the script sees the window.
+function boot(seedJson, seedHash, extraContext) {
   const memory = {};
   if (seedJson !== undefined) memory['volleyball-rotations-v1'] = seedJson;
 
@@ -122,6 +124,7 @@ function boot(seedJson, seedHash) {
     },
   };
   context.window = context;
+  if (extraContext) Object.assign(context, extraContext);
 
   const source = fs.readFileSync(SCRIPT, 'utf8');
   // Appended in the same lexical scope, so it can reach the module's `let`s.
@@ -2550,6 +2553,61 @@ console.log('\n55. Sizing against the screen');
         String(Math.max(480, Math.min(HEIGHT_TERM(vh), 704))));
     }
   });
+}
+
+console.log('\n56. The one-time intro');
+{
+  // The stub's requestAnimationFrame never fires, which is convenient here:
+  // it freezes the intro at its first frame, so "did it start" is readable.
+  const first = boot();
+  const spots = (app) => Object.values(app.players())
+    .map((el) => `${el.style.left},${el.style.top}`);
+  // Zones 3 and 6 both sit at x: 50, so "is anyone at 50%" proves nothing.
+  // Whether they are all in one place does.
+  const distinct = (app) => new Set(spots(app)).size;
+
+  check('a first open starts everyone at centre court',
+    distinct(first) === 1 && spots(first)[0] === '50%,50%', spots(first).join(' '));
+  check('and remembers it happened', first.peek().store.seenIntro === true);
+  check('which is written to storage, not just held in memory',
+    JSON.parse(first.memory['volleyball-rotations-v1']).seenIntro === true);
+
+  // Second open: straight to the diagram, no huddle.
+  const second = boot(first.memory['volleyball-rotations-v1']);
+  check('a second open goes straight to the rotation',
+    distinct(second) > 1, spots(second).join(' '));
+
+  // A stated preference for less motion means none -- and does not spend the
+  // intro either, so turning the preference off later still earns it.
+  const reduced = boot(undefined, undefined, {
+    matchMedia: (query) => ({ matches: /prefers-reduced-motion/.test(query) }),
+  });
+  check('reduced motion skips the huddle',
+    distinct(reduced) > 1, spots(reduced).join(' '));
+  check('and leaves the intro unspent', reduced.peek().store.seenIntro === false);
+
+  // The court has to end up animating either way, or the rotation slide that
+  // has existed since v0.2 would be dead after a first open.
+  const courtEl = second.document.getElementById('court');
+  check('the ordinary path still turns the slide on',
+    typeof courtEl.classList.contains === 'function');
+
+  // The intro runs after render(), so nothing is half-drawn behind it.
+  const js = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  const rebuildBody = js.slice(js.indexOf('function rebuild('),
+    js.indexOf('\n}\n', js.indexOf('function rebuild(')));
+  check('render runs before the intro, not after',
+    rebuildBody.indexOf('render();') < rebuildBody.indexOf('playIntro()'),
+    rebuildBody.trim());
+
+  // And it must be skippable, with a backstop if no frame ever arrives.
+  const introBody = js.slice(js.indexOf('function playIntro('),
+    js.indexOf('\n}\n', js.indexOf('function playIntro(')));
+  check('a tap ends the intro',
+    /addEventListener\('pointerdown', skip\)/.test(introBody));
+  check('and a timeout lands everyone even if no frame arrives',
+    /setTimeout\(/.test(introBody) && /land\(\);/.test(introBody));
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
