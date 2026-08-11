@@ -40,8 +40,11 @@ index.html      structure and controls
 style.css       ~17 KB
 script.js       ~82 KB, all application logic
 SPEC.md         the design log — read this first
+dev/
+  preview.html  the real app in live iframes at real device widths, for the
+                layout questions a stubbed DOM cannot answer
 test/
-  migration.js  647 checks: storage, migration, roles, formations, quiz,
+  migration.js  654 checks: storage, migration, roles, formations, quiz,
                 sharing, dragging, short-handed rosters, playing surface,
                 scoreboard
   contrast.js   contrast, hue separation, every role against all three court
@@ -64,10 +67,22 @@ python3 -m http.server 8000
 Opened off the filesystem, the version marker in the corner reads `dev` instead
 of a number. That's expected — see *Bumping the version* below.
 
+### Checking layout
+
+`dev/preview.html` opens the real app in four live frames at real device widths
+— 320, 390, 430 and 744 — side by side, with a landscape toggle. The frames are
+built at the true pixel width and only *visually* scaled, so wrapping and
+overflow are genuine.
+
+It exists because the test suite runs against a stubbed DOM and can't see
+layout, which is where most phone-reported bugs have lived. **320px is the one
+that bites.** It can't show you touch behaviour — double-tap zoom, finger
+scrolling, dragging a player still need a real device.
+
 ## Tests
 
 ```sh
-node test/migration.js    # 647 checks across 53 groups
+node test/migration.js    # 654 checks across 54 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
@@ -153,7 +168,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.38. Working title, actively developed, no issues or PRs open yet.
+v0.39. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

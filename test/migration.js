@@ -2443,5 +2443,34 @@ console.log('\n53. Players from the keyboard');
     String(edge.call.positionsFor('base', 1)[eid].x));
 }
 
+console.log('\n54. The device shelf');
+{
+  // dev/preview.html is a looking tool, not a test -- but it points at the real
+  // app by relative path, and a rename would break it silently. Nobody notices
+  // a dev tool going stale until they need it.
+  const preview = fs.readFileSync(path.join(__dirname, '..', 'dev', 'preview.html'), 'utf8');
+  check('the shelf loads the real app', /src = '\.\.\/index\.html'/.test(preview));
+  check('and the file it points at exists',
+    fs.existsSync(path.join(__dirname, '..', 'index.html')));
+
+  // The frames must be built at real device width and scaled only visually. If
+  // the width were scaled instead, every wrapping answer it gave would be a
+  // lie -- which is the one thing this page exists to get right.
+  check('frames are sized in real device pixels',
+    /frame\.width = w;/.test(preview) && /frame\.height = h;/.test(preview));
+  check('and shrunk with a transform, not by narrowing them',
+    /transform = `scale\(\$\{zoom\}\)`/.test(preview));
+
+  // 320 is where every wrapping bug this app has had turned up.
+  check('the narrowest phone is on the shelf', /w: 320/.test(preview));
+
+  // It carries no dependency and no build: the whole point of choosing it over
+  // a browser-driver.
+  check('the shelf is a plain static page',
+    !/<script[^>]+src=/.test(preview) && !/import |require\(/.test(preview));
+  check('and the repo still has no package manifest',
+    !fs.existsSync(path.join(__dirname, '..', 'package.json')));
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);

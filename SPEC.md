@@ -1862,10 +1862,71 @@ new formation instead of nothing.
 alert-once path with a throwing `localStorage`, and the whole nudge lifecycle
 including clamping and undo economy.
 
+## v0.39 — a device shelf, and where the dependency line sits
+
+`dev/preview.html` loads the real app in four live iframes at real device
+widths, side by side. It is a looking tool, not a test.
+
+### Why this rather than a browser driver
+
+The suite runs against a stubbed DOM, so it is blind to layout, wrapping, touch
+and paint — and **that is where almost every bug reported from a phone has
+lived**: the three-across share row, the iPad score size, double-tap zoom, the
+court eating vertical scrolls. Not one of those was catchable by a test that
+never draws anything.
+
+Playwright would close that gap properly. It also brings the first dependency
+this project has ever had, and the costs are real: `npm install` in a README
+that currently promises none, a few hundred megabytes of `node_modules`,
+install-time script execution, slower CI with new ways to fail, and — the one
+that decided it — **flaky tests**. The two suites here are deterministic and
+finish in under a second. A suite that cries wolf occasionally is worse than a
+smaller one that never does, because the day it is right is the day it gets
+ignored.
+
+And the credits that would have paid for building it expire; the maintenance
+does not.
+
+So: the cheap thing first. If layout bugs keep reaching a phone after a few
+weeks of this, the Playwright conversation is worth having with evidence in
+hand rather than in advance.
+
+### The one thing it has to get right
+
+Frames are created at the device's **real pixel width** and then scaled with a
+CSS transform. Layout happens at the true width, so wrapping and overflow are
+genuine; the transform only changes how much of the shelf fits on a monitor.
+
+Narrowing the frames instead would have been easier and would have made every
+answer a lie — which is the single thing the page exists to get right. `§54`
+asserts it: real width and height on the frame, `scale()` for the shrinking.
+
+### What it cannot show you
+
+Touch. Double-tap zoom, scrolling with a finger starting on the court, dragging
+a player. Those are hardware questions and a mouse in an iframe will not find
+them, which is why the page says so in its own margin rather than leaving
+someone to assume otherwise.
+
+The frames also share one `localStorage` with the real app, being the same
+origin. Editing a lineup in a frame edits your own saved data. Said out loud on
+the page for the same reason.
+
+### Where the line is now
+
+The app is still three static files with no dependencies, and that rule is
+unchanged and not up for negotiation — it is what makes the thing open off a
+filesystem, deploy by push, and still run untouched in five years.
+
+`dev/` sits beside `test/` as tooling: static, dependency-free, never loaded by
+`index.html`, never shipped to a phone. `§54` asserts the repo still has no
+`package.json`, so the day that stops being true it will be a decision rather
+than a drift.
+
 ## Tests
 
 ```
-node test/migration.js    # 647 checks — storage, migration, roles, formations,
+node test/migration.js    # 654 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

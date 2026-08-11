@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VolleyGram — device shelf</title>
+<style>
+  /* This page is a dev tool, not part of the app. It shares no CSS with it on
+     purpose: if it did, a mistake here could disguise a mistake there. */
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    padding: 1rem;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    background: #0f1115;
+    color: #f2f4f8;
+  }
+
+  h1 { font-size: 1rem; margin: 0 0 0.25rem; }
+
+  .lede {
+    margin: 0 0 1rem;
+    font-size: 0.8rem;
+    line-height: 1.5;
+    color: #a9b2c6;
+    max-width: 62ch;
+  }
+
+  .bar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.6rem 0.75rem;
+    margin-bottom: 1rem;
+    border: 1px solid #2a3040;
+    border-radius: 10px;
+    background: #161a22;
+    font-size: 0.8rem;
+  }
+
+  .bar label { display: flex; align-items: center; gap: 0.4rem; }
+
+  button, select {
+    font: inherit;
+    font-size: 0.8rem;
+    padding: 0.4rem 0.7rem;
+    border-radius: 7px;
+    border: 1px solid #3a4152;
+    background: #232833;
+    color: #f2f4f8;
+    cursor: pointer;
+  }
+
+  .shelf {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    overflow-x: auto;
+    padding-bottom: 1rem;
+  }
+
+  figure { margin: 0; flex: 0 0 auto; }
+
+  figcaption {
+    font-size: 0.72rem;
+    color: #a9b2c6;
+    margin-bottom: 0.35rem;
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* The frame is created at the device's real pixel width, then scaled down
+     visually. That distinction is the whole point: the browser lays the page
+     out at the true width, so wrapping and overflow are genuine -- scaling only
+     changes how much of the shelf fits on your monitor. */
+  .viewport {
+    position: relative;
+    overflow: hidden;
+    border: 1px solid #2a3040;
+    border-radius: 12px;
+    background: #16181d;
+  }
+
+  iframe {
+    border: 0;
+    display: block;
+    transform-origin: top left;
+  }
+
+  .hints {
+    margin-top: 1.5rem;
+    padding: 0.75rem 1rem;
+    border: 1px solid #2a3040;
+    border-radius: 10px;
+    font-size: 0.78rem;
+    line-height: 1.6;
+    color: #a9b2c6;
+    max-width: 70ch;
+  }
+
+  .hints h2 { font-size: 0.82rem; margin: 0 0 0.4rem; color: #f2f4f8; }
+  .hints ul { margin: 0; padding-left: 1.1rem; }
+  code { color: #d8a029; }
+</style>
+</head>
+<body>
+
+<h1>VolleyGram — device shelf</h1>
+<p class="lede">
+  The real app, at real widths, side by side. Each frame is live — tap around in
+  it exactly as you would on the device. The frames are built at the listed
+  pixel width and then <em>visually</em> scaled to fit your monitor, so text
+  wrapping and overflow are truthful; only the apparent size changes.
+</p>
+
+<div class="bar">
+  <label>Zoom
+    <select id="zoom">
+      <option value="0.45">45%</option>
+      <option value="0.6" selected>60%</option>
+      <option value="0.8">80%</option>
+      <option value="1">100%</option>
+    </select>
+  </label>
+  <label>Orientation
+    <select id="orientation">
+      <option value="portrait" selected>Portrait</option>
+      <option value="landscape">Landscape</option>
+    </select>
+  </label>
+  <button id="reload">Reload all</button>
+  <span id="note"></span>
+</div>
+
+<div class="shelf" id="shelf"></div>
+
+<div class="hints">
+  <h2>What this is for</h2>
+  <ul>
+    <li><strong>320 is the one that bites.</strong> Every wrapping bug this app
+      has had showed up there and nowhere else.</li>
+    <li>Check the three-across rows inside <em>Show options</em> — the share row
+      is the tightest, at roughly 80px a column.</li>
+    <li>Open the <em>Scoreboard</em> in landscape, and on a tablet width, to
+      check the score digits. They size off the panel, not the screen.</li>
+    <li>Switch <em>Surface</em> to sand: it is the only one that flips the court
+      lines to dark, so it is the one to check for invisible marks.</li>
+    <li><strong>What this can't show you:</strong> touch. Double-tap zoom,
+      scrolling with a finger on the court, and dragging a player are all real
+      hardware questions. A mouse in a frame will not find those.</li>
+  </ul>
+</div>
+
+<script>
+// Widths chosen for what they catch, not for brand coverage: the narrowest
+// phone still in use, a common modern phone, a large phone, and a tablet for
+// the scoreboard. Heights are the real device heights so vertical crowding is
+// honest too.
+const DEVICES = [
+  { name: 'iPhone SE',        w: 320,  h: 568 },
+  { name: 'iPhone 15',        w: 390,  h: 844 },
+  { name: 'iPhone 15 Pro Max',w: 430,  h: 932 },
+  { name: 'iPad mini',        w: 744,  h: 1133 },
+];
+
+const shelf = document.getElementById('shelf');
+const zoomSelect = document.getElementById('zoom');
+const orientationSelect = document.getElementById('orientation');
+
+function build() {
+  const zoom = parseFloat(zoomSelect.value);
+  const landscape = orientationSelect.value === 'landscape';
+  shelf.replaceChildren();
+
+  DEVICES.forEach((device) => {
+    const w = landscape ? device.h : device.w;
+    const h = landscape ? device.w : device.h;
+
+    const figure = document.createElement('figure');
+
+    const caption = document.createElement('figcaption');
+    caption.textContent = `${device.name} — ${w}x${h}`;
+
+    const viewport = document.createElement('div');
+    viewport.className = 'viewport';
+    // The box shrinks; the frame inside it does not.
+    viewport.style.width = `${w * zoom}px`;
+    viewport.style.height = `${h * zoom}px`;
+
+    const frame = document.createElement('iframe');
+    frame.src = '../index.html';
+    frame.width = w;
+    frame.height = h;
+    frame.style.transform = `scale(${zoom})`;
+    frame.title = `VolleyGram at ${w} by ${h}`;
+
+    viewport.appendChild(frame);
+    figure.append(caption, viewport);
+    shelf.appendChild(figure);
+  });
+}
+
+zoomSelect.addEventListener('change', build);
+orientationSelect.addEventListener('change', build);
+document.getElementById('reload').addEventListener('click', build);
+
+// Every frame shares one localStorage with the real app, because they are the
+// same origin. Worth saying out loud: edit a lineup in a frame and you have
+// edited your own saved data, and the other frames will not notice until they
+// reload.
+document.getElementById('note').textContent =
+  'Frames share your real saved data — edits here are edits.';
+
+build();
+</script>
+
+</body>
+</html>
