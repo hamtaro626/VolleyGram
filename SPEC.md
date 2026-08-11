@@ -1307,13 +1307,57 @@ Coordinates are the one thing it can still assert about drawing, since they are
 computed rather than rendered — so where a coordinate is computed, it should be
 checked.
 
+## v0.28 — the occasional controls fold away
+
+Four rows of buttons had accumulated under the rotation numbers again, which is
+the same drift v0.17 last cleaned up. Now:
+
+| Row | Buttons |
+|-----|---------|
+| 1 | Labels · **More** · Scoreboard |
+| 2 | *(More, opened)* Save image · Share team · Quiz Mode |
+| 3 | Show roster |
+| 4 | Hold to reset all |
+
+**More** holds the three controls you don't reach for every time you open the
+app. Save image and Share team hand the diagram to something else; Quiz Mode
+takes over the screen. None of them is part of looking something up courtside,
+which is what row 1 is for.
+
+The submenu is boxed rather than flush, so it reads as belonging to the button
+above it rather than as another peer row, and it closes whenever one of its
+three fires — two hand you off elsewhere and the third takes the screen, so
+leaving it open would only be something to tidy up later.
+
+**Show roster** gets its own row. It opens the longest panel in the app and it
+is the one you leave open while editing a lineup, so it is the odd one out among
+controls you tap and forget.
+
+`More` takes the same white pressed styling as `Show roster`, added in v0.24 —
+one visual language for "this panel is open".
+
+### `.actions[hidden]`
+
+Third time: `.actions` sets `display: grid`, and an author rule beats the
+browser's built-in `display: none` for `hidden`. The roster panel hit it in
+v0.6 and the scoreboard in v0.22. Anything in this stylesheet that sets a
+`display` and can also be hidden needs the matching `[hidden]` rule, and the
+suite now checks this one.
+
+### The layout is asserted
+
+`§49` parses `index.html` and checks which buttons sit in which row, that the
+submenu starts closed, that Show roster is alone, and that Hold to reset all is
+still last. Same principle as `contrast.js` reading `style.css`: the arrangement
+is a decision, and the next button added should have to notice it.
+
 ## Tests
 
 ```
-node test/migration.js    # 561 checks — storage, migration, roles, formations,
+node test/migration.js    # 570 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
-                          #   touch handling, bench geometry
+                          #   touch handling, bench geometry, control layout
 node test/contrast.js     # colour contrast, hue separation, and every role
                           #   against every court surface
 ```

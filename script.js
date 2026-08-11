@@ -2603,6 +2603,30 @@ document.getElementById('clearRoleOverrides').addEventListener('click', () => {
   render();
 });
 
+// The occasional controls, folded behind More so the main column stays one row
+// shorter. Closed again whenever one of them fires: two of the three hand you
+// off somewhere else entirely, and the third takes over the screen.
+const moreMenu = document.getElementById('moreMenu');
+const moreButton = document.getElementById('toggleMore');
+
+function syncMoreButton() {
+  moreButton.setAttribute('aria-expanded', String(!moreMenu.hidden));
+}
+
+function closeMore() {
+  moreMenu.hidden = true;
+  syncMoreButton();
+}
+
+moreButton.addEventListener('click', () => {
+  moreMenu.hidden = !moreMenu.hidden;
+  syncMoreButton();
+});
+
+['exportImage', 'shareLink', 'startQuiz'].forEach((id) => {
+  document.getElementById(id).addEventListener('click', closeMore);
+});
+
 const rosterButton = document.getElementById('toggleRoster');
 rosterButton.addEventListener('click', () => {
   rosterPanel.hidden = !rosterPanel.hidden;
@@ -2656,6 +2680,7 @@ load();
 importFromUrl();
 syncLabelsButton();
 syncRosterButton();
+syncMoreButton();
 syncUndoButton();
 roleScopeSelect.value = store.roleScope;
 buildZoneLabels();

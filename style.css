@@ -486,6 +486,20 @@ body.hide-labels .player .label {
   padding: 0.7rem 0.2rem;
 }
 
+/* Folded away behind More. Boxed so it reads as belonging to the button above
+   it rather than as another peer row of controls. */
+.actions.submenu {
+  border: 1px solid #3a4152;
+  border-radius: 10px;
+  padding: 0.4rem;
+}
+
+/* `hidden` sets display:none, but .actions sets display:grid and an author rule
+   beats the browser's. Same trap the roster panel and the scoreboard hit. */
+.actions[hidden] {
+  display: none;
+}
+
 /* --- Scoreboard ------------------------------------------------------- */
 
 /* This one is not phone-first. It's meant to be propped on a bench and read
@@ -924,7 +938,8 @@ button.glyph {
 /* Open panels read as pressed. Same treatment the formation tabs and rotation
    numbers already use for "this is the one you're on", so there is one visual
    language for selected in the app rather than two. */
-#toggleRoster[aria-expanded="true"] {
+#toggleRoster[aria-expanded="true"],
+#toggleMore[aria-expanded="true"] {
   background: #f2f4f8;
   border-color: #f2f4f8;
   color: #16181d;

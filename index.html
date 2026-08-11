@@ -12,7 +12,7 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.27">
+  <link rel="stylesheet" href="style.css?v=0.28">
 </head>
 <body>
   <main>
@@ -82,19 +82,24 @@
       <!-- The rotation buttons get created by script.js -->
     </div>
 
-    <!-- Getting the diagram out of the app: look at it, save it, send it.
-         Three across needs the smaller type, same as the formation tabs. -->
+    <!-- The three you reach for without thinking. Everything occasional is
+         folded behind More, which keeps this to one row instead of two. -->
     <div class="actions compact">
       <button id="toggleLabels" aria-pressed="true">Labels: on</button>
-      <button id="exportImage">Save image</button>
-      <button id="shareLink">Share team</button>
+      <button id="toggleMore" aria-expanded="false" aria-controls="moreMenu">More</button>
+      <button id="openScoreboard">Scoreboard</button>
     </div>
 
-    <!-- The panels that take over the screen. Three across needs the smaller
-         type, same as the row above. -->
-    <div class="actions compact">
+    <!-- Opened by More. Getting the diagram out of the app, plus the quiz. -->
+    <div class="actions compact submenu" id="moreMenu" hidden>
+      <button id="exportImage">Save image</button>
+      <button id="shareLink">Share team</button>
       <button id="startQuiz">Quiz Mode</button>
-      <button id="openScoreboard">Scoreboard</button>
+    </div>
+
+    <!-- Alone: it opens the longest panel in the app, and it is the one you
+         leave open while editing a lineup. -->
+    <div class="actions one">
       <button id="toggleRoster" aria-expanded="false">Show roster</button>
     </div>
 
@@ -223,6 +228,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.27"></script>
+  <script src="script.js?v=0.28"></script>
 </body>
 </html>

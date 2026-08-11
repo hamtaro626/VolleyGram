@@ -121,7 +121,7 @@ function boot(seedJson, seedHash) {
       cycleIndexFor: cycleIndex, courtRing,
       scorePoint, undoRally, newGame, renameTeam, normaliseMatch, gamesWon,
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
-      closeNewGame };
+      closeNewGame, closeMore, syncMoreButton };
     globalThis.__players = () => playerElements;
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
@@ -1978,6 +1978,60 @@ console.log('\n48. Touch handling');
   // The roster drag handle has the same requirement as a player.
   check('the roster drag handle keeps its own touch-action',
     /\.roster button\.icon\.handle\s*\{[^}]*touch-action:\s*none/.test(css));
+}
+
+console.log('\n49. The control rows');
+{
+  // The layout is a decision, not an accident, so it is asserted rather than
+  // left to drift the next time a button is added. Parsed out of index.html
+  // for the same reason contrast.js parses style.css.
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const rows = [...html.matchAll(/<div class="actions([^"]*)"([^>]*)>([\s\S]*?)<\/div>/g)]
+    .map(([, classes, attrs, body]) => ({
+      classes: classes.trim(),
+      hidden: /\bhidden\b/.test(attrs),
+      ids: [...body.matchAll(/<button[^>]*id="([^"]+)"/g)].map((m) => m[1]),
+    }))
+    .filter((row) => row.ids.length > 0);
+
+  const find = (id) => rows.find((row) => row.ids.includes(id));
+
+  check('Labels, More and Scoreboard share a row',
+    JSON.stringify(find('toggleMore').ids)
+      === JSON.stringify(['toggleLabels', 'toggleMore', 'openScoreboard']),
+    JSON.stringify(find('toggleMore').ids));
+
+  check('Save image, Share team and Quiz Mode are in the submenu',
+    JSON.stringify(find('exportImage').ids)
+      === JSON.stringify(['exportImage', 'shareLink', 'startQuiz']),
+    JSON.stringify(find('exportImage').ids));
+
+  check('the submenu starts closed', find('exportImage').hidden === true);
+  check('and is the row More controls',
+    /id="toggleMore"[^>]*aria-controls="moreMenu"/.test(html));
+
+  check('Show roster is alone on its row',
+    JSON.stringify(find('toggleRoster').ids) === JSON.stringify(['toggleRoster']),
+    JSON.stringify(find('toggleRoster').ids));
+
+  check('Hold to reset all is still alone and last',
+    JSON.stringify(rows[rows.length - 1].ids) === JSON.stringify(['resetAll']),
+    JSON.stringify(rows[rows.length - 1].ids));
+
+  // .actions is display:grid, so `hidden` needs putting back by hand.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  check('a hidden .actions row is actually hidden',
+    /\.actions\[hidden\]\s*\{[^}]*display:\s*none/.test(css));
+
+  // aria-expanded has to follow the panel, not be set once and forgotten.
+  const app = boot();
+  check('More reports closed at startup',
+    app.document.getElementById('moreMenu').hidden === true);
+  app.document.getElementById('moreMenu').hidden = false;
+  app.call.syncMoreButton();
+  app.call.closeMore();
+  check('closeMore hides the submenu',
+    app.document.getElementById('moreMenu').hidden === true);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
