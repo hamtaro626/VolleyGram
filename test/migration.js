@@ -34,7 +34,13 @@ function stubElement(tag = 'div') {
         return want;
       },
     },
-    addEventListener() {},
+    listeners: {},
+    addEventListener(type, fn) {
+      (this.listeners[type] = this.listeners[type] || []).push(fn);
+    },
+    dispatch(type, event) {
+      (this.listeners[type] || []).forEach((fn) => fn(event || {}));
+    },
     appendChild(c) { this.children.push(c); return c; },
     append(...cs) { cs.forEach((c) => this.children.push(c)); },
     replaceChildren(...cs) { this.children = cs; },
@@ -68,7 +74,13 @@ function boot(seedJson, seedHash) {
       return byId[id];
     },
     createElement: (tag) => stubElement(tag),
-    addEventListener() {},
+    listeners: {},
+    addEventListener(type, fn) {
+      (this.listeners[type] = this.listeners[type] || []).push(fn);
+    },
+    dispatch(type, event) {
+      (this.listeners[type] || []).forEach((fn) => fn(event || {}));
+    },
   };
 
   const warnings = [];
@@ -2020,6 +2032,7 @@ console.log('\n49. The control rows');
 
   // .actions is display:grid, so `hidden` needs putting back by hand.
   const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+
   // The status line above these rows flips between one and two lines as the
   // rotation changes, and used to shove every control below it down a line.
   const reserved = css.match(/--status-lines:\s*(\d+)/);
@@ -2034,6 +2047,13 @@ console.log('\n49. The control rows');
     /(?:^|\n)button\s*\{[^}]*-webkit-user-select:\s*none/.test(css));
   check('and raise no iOS callout',
     /(?:^|\n)button\s*\{[^}]*-webkit-touch-callout:\s*none/.test(css));
+  // A roster drag has to commit even if the handle's own pointerup never
+  // arrives, or the panel shows an order the roster array does not have.
+  const js = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  check('the roster reorder has a document-level release fallback',
+    /document\.addEventListener\('pointerup', endRowDrag\)/.test(js));
+  check('and endRowDrag is safe to call twice',
+    /function endRowDrag\(\) \{\s*\n\s*if \(!rowDrag\) return;/.test(js));
 
   check('a hidden .actions row is actually hidden',
     /\.actions\[hidden\]\s*\{[^}]*display:\s*none/.test(css));
@@ -2047,6 +2067,75 @@ console.log('\n49. The control rows');
   app.call.closeMore();
   check('closeMore hides the submenu',
     app.document.getElementById('moreMenu').hidden === true);
+}
+
+console.log('\n50. Reordering the roster by drag');
+{
+  // The bug this section exists for: swapping two rows moved them on screen and
+  // never reached saved.roster, so the next buildRosterRows() -- which changing
+  // rotation triggers -- rebuilt the list from the array and it snapped back.
+  //
+  // Cause: onRowDragMove moves the row through the DOM, the handle lives inside
+  // that row, and moving it drops the handle's pointer capture. The release then
+  // landed elsewhere and endRowDrag never ran.
+  const names = ['Jen', 'Player 4', 'Matt', 'Evi', 'Player 5', 'Player 6', 'Player 7'];
+  const seed = JSON.stringify({ version: 2, activeId: 'a', lineups: { a: {
+    name: 'My team', system: 'simple', layouts: {},
+    roster: names.map((name, i) => ({ id: 'P' + i, role: 'NONE', name, fallback: name })) } } });
+
+  const app = boot(seed);
+  const rows = () => app.document.getElementById('rosterRows').children;
+  const order = () => app.peek().saved.roster.map((p) => p.name).join(',');
+
+  check('starting order', order() === names.join(','), order());
+
+  // Nothing after pointerdown is bound to the handle any more, which is the
+  // whole point -- the handle is what stops being reachable mid-drag.
+  const handle = rows()[2].children[0];
+  check('the handle only starts the drag',
+    Object.keys(handle.listeners).sort().join(',') === 'keydown,pointerdown',
+    Object.keys(handle.listeners).join(','));
+  check('move and release listen on the document',
+    ['pointermove', 'pointerup', 'pointercancel']
+      .every((type) => (app.document.listeners[type] || []).length > 0));
+
+  // Swap Matt and Evi, exactly as the screenshots did.
+  handle.dispatch('pointerdown', { currentTarget: handle, pointerId: 1 });
+  const kids = app.document.getElementById('rosterRows').children;
+  [kids[2], kids[3]] = [kids[3], kids[2]];
+
+  // The release does NOT arrive at the handle -- that is the failure being
+  // reproduced. It arrives at the document, and that has to be enough.
+  app.document.dispatch('pointerup', {});
+
+  const swapped = ['Jen', 'Player 4', 'Evi', 'Matt', 'Player 5', 'Player 6', 'Player 7'];
+  check('the swap reaches the roster array', order() === swapped.join(','), order());
+
+  // The symptom, checked directly: changing rotation rebuilds the rows, and the
+  // order has to survive that.
+  app.call.setRotation(2);
+  check('and survives changing rotation', order() === swapped.join(','), order());
+  check('the rebuilt rows show it too',
+    rows().map((r) => r.dataset.playerId).join(',') === 'P0,P1,P3,P2,P4,P5,P6',
+    rows().map((r) => r.dataset.playerId).join(','));
+
+  // Rotation 2 benches roster row 3, so who is off court is the giveaway that
+  // the array really changed -- it was Matt in the report, and is now Evi.
+  const benched = app.peek().saved.roster
+    .filter((_, i) => app.call.slotFor(i, 2) === null)
+    .map((p) => p.name);
+  check('and the bench follows the new order', benched.join(',') === 'Evi', benched.join(','));
+
+  // A reorder naming nobody must say so rather than quietly doing nothing. The
+  // keep-everyone-anyway guard made that failure indistinguishable from success.
+  const quiet = boot(seed);
+  const before = quiet.peek().saved.roster.map((p) => p.id).join(',');
+  const acted = quiet.call.applyRosterOrder([undefined, undefined, undefined]);
+  check('a reorder naming no known player is refused', acted === false, String(acted));
+  check('and changes nothing',
+    quiet.peek().saved.roster.map((p) => p.id).join(',') === before);
+  check('and warns', quiet.warnings.some((w) => /named no known players/.test(w)),
+    quiet.warnings.join(' | '));
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

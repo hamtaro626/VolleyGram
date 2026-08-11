@@ -1147,10 +1147,9 @@ function buildRosterRows() {
     handle.className = 'icon handle';
     handle.textContent = '⠿';
     handle.title = `Drag to reorder ${displayName(player)}, or use the arrow keys`;
+    // Only the start is bound here. Everything after it listens on the
+    // document -- see startRowDrag() for why.
     handle.addEventListener('pointerdown', (event) => startRowDrag(event, row));
-    handle.addEventListener('pointermove', onRowDragMove);
-    handle.addEventListener('pointerup', endRowDrag);
-    handle.addEventListener('pointercancel', endRowDrag);
     handle.addEventListener('keydown', (event) => {
       if (event.key === 'ArrowUp') {
         event.preventDefault();
@@ -1361,10 +1360,31 @@ function movePlayer(index, delta) {
 // also means one undo step per drag rather than one per pixel.
 let rowDrag = null;
 
+// Move and release are listened for on the *document*, not on the handle that
+// started the drag.
+//
+// They used to be on the handle, with pointer capture holding the gesture
+// there. But onRowDragMove() reorders by moving the row through the DOM, and
+// the handle lives inside that row -- so the move takes the handle out of the
+// document for an instant and the browser drops its pointer capture. From then
+// on events retarget to whatever is under the finger, the handle never sees
+// pointerup, and endRowDrag() never runs.
+//
+// The row had already moved on screen, so the panel looked reordered while
+// `saved.roster` was untouched. It stayed looking right until the next
+// buildRosterRows() rebuilt the list from the array -- which is what changing
+// rotation does, so the order appeared to revert on pressing < or >.
+//
+// One adjacent swap is exactly one insertBefore, which is why even the simplest
+// reorder failed.
 function startRowDrag(event, row) {
   rowDrag = row;
   row.classList.add('row-dragging');
-  event.currentTarget.setPointerCapture(event.pointerId);
+  // Still requested: it keeps a mouse drag glued to the handle, and losing it
+  // no longer matters now that nothing depends on it.
+  if (event.currentTarget.setPointerCapture) {
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
 }
 
 function onRowDragMove(event) {
@@ -1391,6 +1411,12 @@ function onRowDragMove(event) {
   }
 }
 
+// Bound once, for every row drag there will ever be. Each guards on rowDrag, so
+// they cost nothing when no drag is running.
+document.addEventListener('pointermove', onRowDragMove);
+document.addEventListener('pointerup', endRowDrag);
+document.addEventListener('pointercancel', endRowDrag);
+
 function endRowDrag() {
   if (!rowDrag) return;
   rowDrag.classList.remove('row-dragging');
@@ -1405,9 +1431,23 @@ function applyRosterOrder(order) {
   const current = saved.roster.map((player) => player.id);
   if (order.join(' ') === current.join(' ')) return false;
 
+  const byId = new Map(saved.roster.map((player) => [player.id, player]));
+  const reordered = order.map((id) => byId.get(id)).filter(Boolean);
+
+  // The keep-everyone-anyway guard below is a good safety net and a terrible
+  // error message: an order of ids this lineup has never heard of resolves to
+  // nothing, every player counts as missing, and the roster comes back in its
+  // original order with no sign anything went wrong. That is indistinguishable
+  // from the reorder silently failing, so say so and change nothing.
+  if (reordered.length === 0) {
+    console.warn('Ignoring a reorder that named no known players:', order);
+    return false;
+  }
+  if (reordered.length !== order.length) {
+    console.warn('Reorder named players this lineup does not have:', order);
+  }
+
   changeLineup(() => {
-    const byId = new Map(saved.roster.map((player) => [player.id, player]));
-    const reordered = order.map((id) => byId.get(id)).filter(Boolean);
     // Anyone the incoming list left out keeps their place at the end, so a bad
     // order can never silently delete a player.
     const missing = saved.roster.filter((player) => !order.includes(player.id));

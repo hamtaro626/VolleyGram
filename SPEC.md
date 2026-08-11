@@ -1386,13 +1386,81 @@ The reserve is a custom property so it is one number to change, and so the test
 suite can read it: `§49` asserts it is at least two and that the `min-height` is
 actually built from it.
 
+## v0.31 — reordering the roster did not stick
+
+### The bug
+
+Drag two roster rows past each other and they swap on screen. Press `<` or `>`
+and they swap back.
+
+Reported with screenshots, which is what made it solvable: rotation 2 showed
+**Matt** off court. Rotation 2 benches roster row 3, and Matt is row 3 only in
+the *unswapped* array. So the reorder had never reached `saved.roster` at all —
+the panel was showing a DOM that no longer matched the data behind it, and
+changing rotation calls `buildRosterRows()`, which rebuilds the list from the
+array and threw the display away.
+
+### The cause
+
+`onRowDragMove()` reorders by moving the row through the DOM. The drag handle
+lives *inside* that row. Moving a node takes it out of the document for an
+instant, and that releases the pointer capture the handle was holding — after
+which events retarget to whatever is under the finger, the handle never sees
+`pointerup`, and `endRowDrag()` never runs.
+
+One adjacent swap is exactly one `insertBefore`, so even the simplest reorder
+failed. v0.10's note that "the dragged row's DOM node is moved directly rather
+than rebuilding the list" was about not destroying the node; it did not follow
+that moving the node has the same effect on capture.
+
+### The fix
+
+Move and release now listen on the **document**, bound once, guarded on
+`rowDrag`. The handle keeps only `pointerdown` and its arrow keys. Pointer
+capture is still requested — it keeps a mouse drag glued to the handle — but
+nothing depends on it surviving any more.
+
+### A silent failure made it harder to see
+
+`applyRosterOrder()` has a guard that keeps any player the incoming order left
+out, so a bad order can never delete anyone. Good safety net, terrible error
+message: an order of ids the lineup does not recognise resolves to nothing,
+*every* player counts as missing, and the roster comes back in its original
+order with no sign anything went wrong — indistinguishable from the reorder
+silently failing.
+
+It now refuses an order that names no known player, returns false, and warns.
+A partially-unknown order still applies, and still warns.
+
+### The stub learned to listen
+
+`stubElement()` and the fake `document` discarded every `addEventListener` call.
+That is why a suite with 576 checks could not see a bug in which the wrong
+element was listening: **there was nothing anywhere that knew what was bound to
+what.**
+
+Both now record handlers and expose `dispatch()`. `§50` drives the real sequence
+through them — pointerdown on the handle, the DOM swap, then a `pointerup` that
+arrives at the **document rather than the handle**, which is the failure being
+reproduced — and asserts the swap reaches the array, survives a rotation change,
+and moves who ends up on the bench.
+
+Run against the old wiring it fails 7 checks, including `and the bench follows
+the new order — Matt`, which is the screenshot.
+
+The general lesson matches v0.27's. That one noted the suite was strong on state
+and blind to geometry. This one adds: it was blind to *wiring* — which handler
+is attached to which element — for the same reason, that the stub only faked
+what someone had thought to fake.
+
 ## Tests
 
 ```
-node test/migration.js    # 574 checks — storage, migration, roles, formations,
+node test/migration.js    # 586 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
-                          #   touch handling, bench geometry, control layout
+                          #   touch handling, bench geometry, control layout,
+                          #   roster reordering
 node test/contrast.js     # colour contrast, hue separation, and every role
                           #   against every court surface
 ```
