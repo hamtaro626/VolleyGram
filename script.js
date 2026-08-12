@@ -425,6 +425,7 @@ const lineupSelect = document.getElementById('lineup');
 const passersSelect = document.getElementById('passers');
 const defenseSystemSelect = document.getElementById('defenseSystem');
 const defenseSideSelect = document.getElementById('defenseSide');
+const titleButton = document.getElementById('replayIntro');
 
 // --- Working out who stands where -------------------------------------
 
@@ -1523,7 +1524,8 @@ function applyRosterOrder(order) {
 }
 
 // Someone using the app never wants to watch it arrive, so `intro` is false
-// every time but the very first open -- see playIntro().
+// every time but the very first open and a deliberate tap on the title --
+// see playIntro().
 function rebuild(intro = false) {
   // Drop the animation first, or the rebuilt circles slide in from the corner.
   court.classList.remove('animate');
@@ -1540,19 +1542,49 @@ function rebuild(intro = false) {
   requestAnimationFrame(() => court.classList.add('animate'));
 }
 
-// --- The one-time intro -----------------------------------------------
+// --- The intro ---------------------------------------------------------
 //
-// The players fan out from centre court into their opening rotation. There is
-// almost nothing to it, because the effect already existed as a bug being
-// suppressed: rebuild() has always stripped `animate` before building "or the
-// rebuilt circles slide in from the corner". This is that, aimed on purpose --
-// from the centre rather than the corner, and once rather than every time.
+// Three beats. The players huddle at centre court, orbit it once and a quarter
+// while spreading out, then settle into the opening rotation. The pun is the
+// point: an app about rotation opens by rotating.
 //
 // It runs *after* render(), so names, roles and colours are already correct and
 // the circles are already where they belong. We move them to the middle before
-// the browser paints, so the first frame anyone sees is the huddle, and the
-// slide out of it is the app arriving at its answer.
-const INTRO_SKIP_MS = 900;
+// the browser paints, so the first frame anyone sees is the huddle.
+//
+// The orbit is driven a frame at a time rather than by a CSS transition,
+// because a transition can only interpolate a straight line between two points
+// -- players would cut across the circle as chords instead of travelling round
+// it. The landing hands back to the CSS transition, which is exactly the eased
+// 450ms slide the app already uses between rotations.
+const INTRO_HUDDLE_MS = 220;   // a beat at centre, so the huddle registers
+const INTRO_SPIN_MS = 1200;    // the orbit
+const INTRO_TURNS = 1.25;      // ending a quarter turn past the start, not on it
+const INTRO_RADIUS = 26;       // % of court width, at the widest point
+
+// Fast out, slow in: the circles fling away from the huddle and drift the last
+// of the way, which reads as thrown rather than pushed.
+const easeOut = (p) => 1 - (1 - p) ** 3;
+// Eased at both ends, so the spin starts and stops without a visible jerk.
+const easeInOut = (p) => (p < 0.5 ? 4 * p ** 3 : 1 - (-2 * p + 2) ** 3 / 2);
+
+// Where player `i` of `count` stands at progress `p` through the orbit, as
+// percentages of the court. Split out of the frame loop so the geometry can be
+// checked on its own, without having to drive an animation to look at it.
+//
+// `aspect` is the court's width divided by its height. A circle drawn in
+// percentages is an ellipse on screen, because `left` is a share of the court's
+// width and `top` a share of its taller height; scaling the vertical term by
+// the aspect ratio cancels that out and makes the orbit round again.
+function introSpot(i, count, p, aspect) {
+  const angle = (i / count) * Math.PI * 2 - Math.PI / 2
+    + easeInOut(p) * INTRO_TURNS * Math.PI * 2;
+  const radius = easeOut(p) * INTRO_RADIUS;
+  return {
+    left: 50 + Math.cos(angle) * radius,
+    top: 50 + Math.sin(angle) * radius * aspect,
+  };
+}
 
 // Sliding overlays are nauseating rather than merely irritating for some
 // people, so a stated preference for less motion means none at all here.
@@ -1561,47 +1593,92 @@ function motionAllowed() {
     && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
 }
 
+// Set while an intro is in flight, so a second one can cut the first short
+// rather than the two fighting over the same six elements.
+let introCancel = null;
+
 function playIntro() {
-  const players = Object.entries(playerElements);
-  // Where render() just put everyone. Kept so the skip has somewhere to land.
-  const settled = players.map(([, el]) => ({ el, left: el.style.left, top: el.style.top }));
+  if (introCancel) introCancel();
+
+  // Where render() just put everyone. Kept so the intro has somewhere to land.
+  const settled = Object.values(playerElements)
+    .map((el) => ({ el, left: el.style.left, top: el.style.top }));
+  if (settled.length === 0) return;
 
   const land = () => settled.forEach(({ el, left, top }) => {
     el.style.left = left;
     el.style.top = top;
   });
 
+  // Measured once. A resize mid-intro would leave the orbit slightly oval for
+  // the second or so it has left to run, which is not worth a listener.
+  const box = court.getBoundingClientRect();
+  const aspect = box.height > 0 ? box.width / box.height : 1;
+
   settled.forEach(({ el }) => {
     el.style.left = '50%';
     el.style.top = '50%';
   });
 
+  let frame = 0;
+  let started = null;
+  let over = false;
+
+  const cleanup = () => {
+    over = true;
+    cancelAnimationFrame(frame);
+    clearTimeout(backstop);
+    document.removeEventListener('pointerdown', skip);
+    introCancel = null;
+  };
+
   // Any touch during the intro ends it on the spot. Nothing here is worth
   // making someone wait for, and the app underneath is already live -- the tap
-  // that skips also does whatever it was aimed at.
-  const skip = () => {
-    document.removeEventListener('pointerdown', skip);
+  // that skips also does whatever it was aimed at. No transition on the way
+  // out: someone who cut the intro short wants the diagram, not more sliding.
+  function skip() {
+    if (over) return;
+    cleanup();
     court.classList.remove('animate');
     land();
     requestAnimationFrame(() => court.classList.add('animate'));
-  };
-  document.addEventListener('pointerdown', skip);
-  setTimeout(() => {
-    document.removeEventListener('pointerdown', skip);
-    // Backstop. requestAnimationFrame is throttled to nothing in a background
-    // tab, so a page opened in one and never looked at would otherwise sit
-    // with all six players in a heap at centre court. land() is idempotent, so
-    // this costs nothing in the normal case.
-    land();
-  }, INTRO_SKIP_MS);
+  }
 
-  // Two frames: one to paint the huddle, one to start the slide out of it.
-  // Setting the class and the positions together gets batched and skips the
-  // transition entirely.
-  requestAnimationFrame(() => {
+  // The graceful ending: hand the last leg to the CSS transition. Two frames,
+  // because setting the class and the positions together gets batched and
+  // skips the transition entirely.
+  const settle = () => {
+    if (over) return;
+    cleanup();
     court.classList.add('animate');
     requestAnimationFrame(land);
-  });
+  };
+
+  const step = (now) => {
+    if (started === null) started = now;
+    const elapsed = now - started;
+    if (elapsed >= INTRO_HUDDLE_MS) {
+      const p = Math.min(1, (elapsed - INTRO_HUDDLE_MS) / INTRO_SPIN_MS);
+      settled.forEach(({ el }, i) => {
+        const spot = introSpot(i, settled.length, p, aspect);
+        el.style.left = `${spot.left}%`;
+        el.style.top = `${spot.top}%`;
+      });
+      if (p >= 1) {
+        settle();
+        return;
+      }
+    }
+    frame = requestAnimationFrame(step);
+  };
+
+  // Backstop. requestAnimationFrame is throttled to nothing in a background
+  // tab, so a page opened in one and never looked at would otherwise sit with
+  // all six players in a heap at centre court until it was next touched.
+  const backstop = setTimeout(skip, INTRO_HUDDLE_MS + INTRO_SPIN_MS + 500);
+  document.addEventListener('pointerdown', skip);
+  introCancel = skip;
+  frame = requestAnimationFrame(step);
 }
 
 // --- Drawing the current rotation -------------------------------------
@@ -2646,6 +2723,12 @@ function flashShareButton(message) {
 document.getElementById('prev').addEventListener('click', () => step(-1));
 document.getElementById('next').addEventListener('click', () => step(1));
 undoButton.addEventListener('click', undo);
+
+// Tapping the title replays the intro. This ignores prefers-reduced-motion,
+// where the automatic first-open one obeys it: that setting is about motion
+// nobody asked for, and this is a button whose entire stated job is to play an
+// animation. It changes no data -- rebuild() redraws what is already saved.
+titleButton.addEventListener('click', () => rebuild(true));
 
 document.getElementById('reset').addEventListener('click', () => {
   pushHistory();

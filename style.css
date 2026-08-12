@@ -45,6 +45,37 @@ h1 {
   font-weight: 600;
 }
 
+/* The title is a button that replays the intro, but it should read as a title
+   and nothing else -- so every one of the browser's button defaults is undone.
+   font and white-space are set rather than inherited: form controls are exempt
+   from inheriting them, so the h1's clamp and nowrap would not reach in here.
+   No hover or pressed state either: an affordance that announced itself would
+   be a second thing competing for attention above the court, and the intro is
+   a garnish, not a feature anyone needs to find. */
+.title-replay {
+  font: inherit;
+  font-size: inherit;
+  white-space: nowrap;
+  color: inherit;
+  background: none;
+  border: 0;
+  padding: 0;
+  margin: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  cursor: pointer;
+  /* Suppresses the double-tap-to-zoom wait, which would otherwise sit between
+     the tap and the replay. */
+  touch-action: manipulation;
+}
+
+/* Keyboard users do get told, since they cannot discover it by poking. */
+.title-replay:focus-visible {
+  outline: 2px solid #7aa2ff;
+  outline-offset: 3px;
+  border-radius: 4px;
+}
+
 .picker {
   display: block;
   margin-bottom: 0.5rem;

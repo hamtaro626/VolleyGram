@@ -12,11 +12,17 @@
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.42">
+  <link rel="stylesheet" href="style.css?v=0.43">
 </head>
 <body>
   <main>
-    <h1>VolleyGram &ndash; A Volleyball Rotation Reference</h1>
+    <!-- The title is a real button inside the heading, rather than a heading
+         with role="button": this keeps the h1 a heading for a screen reader and
+         still gives the tap target proper keyboard and focus behaviour. -->
+    <h1><button type="button" id="replayIntro" class="title-replay"
+      title="Replay the intro"
+      aria-label="VolleyGram &ndash; A Volleyball Rotation Reference. Replay the intro."
+      >VolleyGram &ndash; A Volleyball Rotation Reference</button></h1>
 
     <label class="picker">
       <span>VolleyGram Name</span>
@@ -238,6 +244,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.42"></script>
+  <script src="script.js?v=0.43"></script>
 </body>
 </html>

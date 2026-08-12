@@ -37,6 +37,12 @@ function stubElement(tag = 'div') {
     addEventListener(type, fn) {
       (this.listeners[type] = this.listeners[type] || []).push(fn);
     },
+    // Really removes it. A stub that only pretended would let a test watch a
+    // handler that the app had already detached, which is the wrong answer in
+    // the direction that passes.
+    removeEventListener(type, fn) {
+      this.listeners[type] = (this.listeners[type] || []).filter((f) => f !== fn);
+    },
     dispatch(type, event) {
       (this.listeners[type] || []).forEach((fn) => fn(event || {}));
     },
@@ -87,6 +93,9 @@ function boot(seedJson, seedHash, extraContext) {
     addEventListener(type, fn) {
       (this.listeners[type] = this.listeners[type] || []).push(fn);
     },
+    removeEventListener(type, fn) {
+      this.listeners[type] = (this.listeners[type] || []).filter((f) => f !== fn);
+    },
     dispatch(type, event) {
       (this.listeners[type] || []).forEach((fn) => fn(event || {}));
     },
@@ -102,6 +111,7 @@ function boot(seedJson, seedHash, extraContext) {
     },
     console: { warn: (...a) => warnings.push(a.join(' ')), log: () => {} },
     requestAnimationFrame: () => {},
+    cancelAnimationFrame: () => {},
     setTimeout: () => 0,
     clearTimeout: () => {},
     prompt: () => 'Prompted name',
@@ -143,7 +153,9 @@ function boot(seedJson, seedHash, extraContext) {
       cycleIndexFor: cycleIndex, courtRing,
       scorePoint, undoRally, newGame, renameTeam, normaliseMatch, gamesWon,
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
-      closeNewGame, closeMore, syncMenuButtons };
+      closeNewGame, closeMore, syncMenuButtons, introSpot, playIntro };
+    globalThis.__intro = () => ({ HUDDLE: INTRO_HUDDLE_MS, SPIN: INTRO_SPIN_MS,
+      TURNS: INTRO_TURNS, RADIUS: INTRO_RADIUS });
     globalThis.__players = () => playerElements;
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
@@ -157,7 +169,8 @@ function boot(seedJson, seedHash, extraContext) {
   vm.runInNewContext(source + expose, context, { filename: 'script.js' });
   return { ...context, memory, warnings, peek: context.__peek, call: context.__call,
            consts: context.__const, status: context.__status, quiz: context.__quiz,
-           stacks: context.__stacks, players: context.__players };
+           stacks: context.__stacks, players: context.__players,
+           intro: context.__intro };
 }
 
 const mod6 = (n, m) => ((n % m) + m) % m;
@@ -2555,7 +2568,7 @@ console.log('\n55. Sizing against the screen');
   });
 }
 
-console.log('\n56. The one-time intro');
+console.log('\n56. The intro');
 {
   // The stub's requestAnimationFrame never fires, which is convenient here:
   // it freezes the intro at its first frame, so "did it start" is readable.
@@ -2607,7 +2620,184 @@ console.log('\n56. The one-time intro');
   check('a tap ends the intro',
     /addEventListener\('pointerdown', skip\)/.test(introBody));
   check('and a timeout lands everyone even if no frame arrives',
-    /setTimeout\(/.test(introBody) && /land\(\);/.test(introBody));
+    /setTimeout\(skip/.test(introBody));
+}
+
+console.log('\n57. The orbit');
+{
+  // introSpot() is the whole geometry, pulled out of the frame loop so it can
+  // be measured directly instead of inferred from an animation.
+  const app = boot();
+  const { introSpot } = app.call;
+  const { TURNS, RADIUS } = app.intro();
+  const SIX = 6;
+  const near = (a, b, slack = 1e-9) => Math.abs(a - b) <= slack;
+
+  const at = (p, aspect = 1) =>
+    Array.from({ length: SIX }, (_, i) => introSpot(i, SIX, p, aspect));
+
+  // Progress 0 is the huddle: everyone on the same spot, dead centre.
+  const start = at(0);
+  check('the orbit starts as a huddle at centre court',
+    start.every((s) => near(s.left, 50) && near(s.top, 50)),
+    JSON.stringify(start[0]));
+
+  // Pixel distance from centre, undoing the aspect squash that put it there.
+  const reach = (s, aspect) => Math.hypot(s.left - 50, (s.top - 50) / aspect);
+
+  const half = at(0.5);
+  check('everyone travels the same distance from the middle',
+    new Set(half.map((s) => reach(s, 1).toFixed(9))).size === 1,
+    half.map((s) => reach(s, 1).toFixed(3)).join(' '));
+  check('and they are spread evenly around it, never stacked',
+    new Set(half.map((s) => `${s.left.toFixed(6)},${s.top.toFixed(6)}`)).size === SIX);
+
+  // The radius grows out of the huddle and stops at INTRO_RADIUS: any further
+  // and the circles would be leaving the court.
+  const reaches = [0, 0.25, 0.5, 0.75, 1].map((p) => reach(at(p)[0], 1));
+  check('the circles spread outwards the whole way, never back inwards',
+    reaches.every((r, i) => i === 0 || r > reaches[i - 1]),
+    reaches.map((r) => r.toFixed(2)).join(' -> '));
+  check('and stop at the stated radius',
+    near(reaches[reaches.length - 1], RADIUS, 1e-9), String(reaches.at(-1)));
+
+  // The point of the whole thing: it is a rotation, so it has to rotate.
+  const angle = (s, aspect) => Math.atan2((s.top - 50) / aspect, s.left - 50);
+  const swept = [0.25, 0.5, 0.75, 1].map((p) => angle(at(p)[0], 1));
+  check('the players actually orbit rather than just fanning out',
+    new Set(swept.map((a) => a.toFixed(6))).size === swept.length,
+    swept.map((a) => a.toFixed(2)).join(' '));
+
+  // A whole number of turns would land everyone back on their starting spoke,
+  // which reads as a wobble rather than a spin. The quarter is what sells it.
+  check('it ends off its starting spoke, so the turn is visible',
+    !near(swept[swept.length - 1], -Math.PI / 2, 1e-6)
+      && near(TURNS % 1, 0.25, 1e-9), String(TURNS));
+
+  // The ellipse trap: `left` is a share of the court's width and `top` a share
+  // of its greater height, so an uncorrected circle comes out as an oval. A
+  // court half as tall again as it is wide must squash the vertical offsets by
+  // exactly that much -- and the pixel reach must come out unchanged.
+  const tall = at(0.5, 2 / 3);
+  check('a taller court squashes the vertical offsets to match',
+    tall.every((s, i) => near(s.top - 50, (half[i].top - 50) * (2 / 3), 1e-9)),
+    `${tall[1].top} vs ${half[1].top}`);
+  check('so the orbit stays a circle on screen, not an oval',
+    tall.every((s) => near(reach(s, 2 / 3), reach(half[0], 1), 1e-9)));
+  check('and the horizontal offsets are untouched by it',
+    tall.every((s, i) => near(s.left, half[i].left, 1e-9)));
+}
+
+console.log('\n58. Replaying it from the title');
+{
+  // A hand-driven requestAnimationFrame, so the orbit can be run a frame at a
+  // time and looked at. The stub's default never fires, which is what lets
+  // every other test see the intro frozen at its huddle.
+  // Frames are keyed by id and cancelling really drops them, so "how many
+  // frames are pending" is a true count of how many loops are in flight.
+  const frames = new Map();
+  let nextFrame = 1;
+  let cancels = 0;
+  const clock = {
+    requestAnimationFrame: (fn) => { frames.set(nextFrame, fn); return nextFrame++; },
+    cancelAnimationFrame: (id) => { cancels += 1; frames.delete(id); },
+  };
+  const app = boot(undefined, undefined, clock);
+  const { HUDDLE, SPIN } = app.intro();
+  const spots = () => Object.values(app.players())
+    .map((el) => `${el.style.left},${el.style.top}`);
+  const pump = (t) => {
+    const due = [...frames.values()];
+    frames.clear();
+    due.forEach((fn) => fn(t));
+  };
+
+  check('the intro is frozen at the huddle until a frame arrives',
+    new Set(spots()).size === 1, spots().join(' '));
+
+  pump(0);
+  pump(HUDDLE / 2);
+  // The position alone proves nothing here -- progress 0 has a radius of 0, so
+  // a huddle of no length at all still leaves everyone stacked at the centre.
+  // The beat has to be long enough to actually read as a pause.
+  check('and holds the huddle for a beat before moving',
+    new Set(spots()).size === 1 && HUDDLE >= 120, `${HUDDLE}ms`);
+
+  pump(HUDDLE + SPIN / 2);
+  check('then spreads everyone onto the orbit', new Set(spots()).size === 6);
+
+  // Running past the end settles: the CSS transition is switched on and the
+  // players are put back where render() had them.
+  pump(HUDDLE + SPIN);
+  const courtEl = app.document.getElementById('court');
+  check('running to the end turns the rotation slide back on',
+    courtEl.classList.contains('animate'));
+  pump(HUDDLE + SPIN + 16);
+  const landed = spots();
+  const plain = boot(JSON.stringify({ ...JSON.parse(app.memory['volleyball-rotations-v1']) }));
+  check('and lands them exactly where the diagram wanted them',
+    landed.join(' ') === Object.values(plain.players())
+      .map((el) => `${el.style.left},${el.style.top}`).join(' '),
+    landed.join(' '));
+
+  // The title replays it. This is the only way back to the intro once the
+  // first open has spent it, so it has to work on an app that has seen it.
+  const title = app.document.getElementById('replayIntro');
+  check('the title is wired up as a button', (title.listeners.click || []).length === 1);
+  title.dispatch('click');
+  check('tapping it huddles everyone up again',
+    new Set(spots()).size === 1 && spots()[0] === '50%,50%', spots().join(' '));
+  check('and replaying does not disturb what is saved',
+    JSON.stringify(app.peek().saved) === JSON.stringify(plain.peek().saved));
+
+  // Reduced motion suppresses the automatic intro but not this button: the
+  // setting is about motion nobody asked for, and this was asked for.
+  const quiet = [];
+  const reduced = boot(undefined, undefined, {
+    matchMedia: (q) => ({ matches: /prefers-reduced-motion/.test(q) }),
+    requestAnimationFrame: (fn) => quiet.push(fn),
+    cancelAnimationFrame: () => {},
+  });
+  const reducedSpots = () => Object.values(reduced.players())
+    .map((el) => `${el.style.left},${el.style.top}`);
+  check('reduced motion still opens straight to the diagram',
+    new Set(reducedSpots()).size > 1);
+  reduced.document.getElementById('replayIntro').dispatch('click');
+  check('but the button still plays it when asked',
+    new Set(reducedSpots()).size === 1, reducedSpots().join(' '));
+
+  // An intro is running right now, from the tap above. A second tap has to cut
+  // it short: two live frame loops would write to the same six elements from
+  // two different points in the orbit, and the loser would never stop asking
+  // for frames. Counting the cancel is the direct evidence -- pending frames
+  // are not, since the loop being cut short queues one of its own on the way
+  // out to switch the rotation slide back on.
+  const before = cancels;
+  title.dispatch('click');
+  check('a second tap cancels the running intro rather than racing it',
+    cancels > before, `${before} -> ${cancels} cancels`);
+
+  // The markup: a real button inside the heading, so the h1 stays a heading.
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const heading = html.slice(html.indexOf('<h1'), html.indexOf('</h1>'));
+  check('the title is a real button, not a div pretending',
+    /<button[^>]*id="replayIntro"/.test(heading), heading.trim());
+  check('and it says what it does for anyone who cannot see it',
+    /aria-label="[^"]*[Rr]eplay/.test(heading));
+
+  // And the CSS has to undo the browser's button chrome, or the title renders
+  // as a grey bevelled control above the court.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const rule = css.slice(css.indexOf('.title-replay {'), css.indexOf('}', css.indexOf('.title-replay {')));
+  ['font: inherit', 'background: none', 'border: 0', 'appearance: none'].forEach((decl) => {
+    check(`the title button drops the browser's ${decl.split(':')[0]}`,
+      rule.includes(decl), rule.trim());
+  });
+  // Form controls do not inherit font or white-space, so the h1's nowrap does
+  // not reach the button: without its own, the title wraps on a narrow phone.
+  check('and sets nowrap itself, since a button does not inherit it',
+    /white-space:\s*nowrap/.test(rule));
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

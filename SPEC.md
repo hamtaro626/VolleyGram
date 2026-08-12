@@ -2168,10 +2168,135 @@ Fourth stub gap in this stretch, after event listeners, `setAttribute` and
 `className`. Same root cause every time, and the same fix: the stub only fakes
 what someone thought to fake, so it grows a fake the first time a test needs one.
 
+## v0.43 — the intro spins, and the title replays it
+
+Two changes to v0.42, both asked for after seeing it: it was over too quickly,
+and there was no way to watch it again.
+
+### Three beats instead of two
+
+The players huddle at centre court, **orbit it once and a quarter** while
+spreading outwards, then settle into the opening rotation. Roughly 220ms of
+huddle, 1200ms of orbit, 450ms of landing.
+
+The pun is now the point. This is an app about rotation, and it opens by
+rotating.
+
+### Why the orbit could not be a CSS transition
+
+v0.42's whole charm was that it reused the 450ms slide the app already had
+between rotations, so the animation cost about fifteen lines. That does not
+extend to a spin.
+
+A CSS transition interpolates a **straight line** between two positions. Ask it
+to move a player from one point on a circle to another and it cuts across the
+middle as a chord. Enough waypoints would approximate the arc, but each one
+would need its own transition and its own timing, which is worse than the honest
+version: drive the positions a frame at a time and let the maths be maths.
+
+So the orbit is a `requestAnimationFrame` loop with the transition switched
+*off* — a transition would fight it, lagging every frame by 450ms — and the
+landing switches the transition back on and hands the last leg to it. The eased
+arrival is still the app's own rotation slide.
+
+### The ellipse
+
+`left` is a share of the court's **width**, `top` a share of its greater
+**height**. So a circle drawn in percentages arrives on screen as an oval,
+squashed exactly as much as the court is tall.
+
+Multiplying the vertical term by the court's aspect ratio cancels it. Confirmed
+by deleting it: `§57` fails twice.
+
+### The geometry is a function, not a loop body
+
+`introSpot(i, count, p, aspect)` returns where player `i` stands at progress `p`.
+It was inside the frame loop first, and the tests for it were miserable — the
+only way to see the maths was to drive an animation and read the results back
+off the elements.
+
+Pulled out, it is a pure function of four numbers, and `§57` measures it
+directly: everyone equidistant from the centre, evenly spaced around it, radius
+growing monotonically to exactly `INTRO_RADIUS`, the angle genuinely advancing,
+and a tall court squashing the vertical offsets while leaving the horizontal
+ones and the on-screen radius alone.
+
+**The rule this is an instance of:** when a check about some maths is hard to
+write, the maths is usually in the wrong place. Moving it did more for the tests
+than any amount of cleverness in the test would have.
+
+### A quarter turn, deliberately
+
+`INTRO_TURNS = 1.25`. A whole number of turns lands everyone back on the spoke
+they started from, which reads as a wobble rather than a spin — you cannot tell
+a full rotation from a twitch if the start and end look identical. The extra
+quarter is what makes the turn legible. `§57` asserts the fraction, because it
+is a decision rather than a coincidence.
+
+### Tapping the title replays it
+
+The `<h1>` now contains a real `<button>`. Not an `<h1 role="button">`: that
+trades the heading away for the button, and a screen reader should still find
+the page's heading. A button inside the heading keeps both.
+
+Every default the browser gives a button is undone in CSS, so it still reads as
+a title. Two of those matter more than they look:
+
+- **`font: inherit` and `white-space: nowrap`.** Form controls are exempt from
+  inheriting font and white-space, so the `h1`'s `clamp()` and its `nowrap` do
+  not reach inside. Without them the title renders at the browser's default
+  button size and wraps on a narrow phone — undoing v0.11's guarantee that the
+  title survives a 320px screen.
+- **No hover or pressed state.** An affordance that announced itself would be a
+  second thing competing for attention above the court. The intro is a garnish;
+  nobody needs to find it. Keyboard users get a `:focus-visible` ring, since
+  they cannot discover it by poking.
+
+### Where reduced motion lands now
+
+The automatic first-open intro still obeys `prefers-reduced-motion` completely.
+The button does not.
+
+That looks inconsistent and isn't. The setting is about motion **nobody asked
+for** — animation that happens *at* you. A button whose entire stated job is to
+replay an animation is a request, and honouring the setting there would mean
+shipping a control that does nothing when pressed, which is worse for everyone
+including the person who set the preference. The `aria-label` says "Replay the
+intro" so the request is informed.
+
+If this turns out to be the wrong call, the fix is one line.
+
+### Two more stub gaps, and one loose test
+
+`removeEventListener` did not exist on the stub — no test had ever reached a
+cleanup path before, because the stub's `requestAnimationFrame` never fires and
+so no intro had ever finished. `cancelAnimationFrame` did not exist either.
+
+`§58` gives the intro a **hand-driven clock**: frames keyed by id, cancellation
+that really cancels, and a `pump(t)` that runs everything queued at a timestamp
+of the test's choosing. That is what makes the orbit observable at all — huddle
+holds, players spread, court re-animates, everyone lands exactly where a
+non-intro boot put them.
+
+Two of the new checks did not bite when first written, and both failed *open*:
+
+- **The huddle.** Asserting "still stacked at centre" during the huddle passes
+  with a huddle of zero length, because progress 0 has a radius of 0 — everyone
+  is at the centre either way. The check now also requires the beat to be long
+  enough to perceive.
+- **The cancel.** "One intro means one pending frame" is false: the intro being
+  cut short queues a frame of its own on the way out, to switch the rotation
+  slide back on. Counting `cancelAnimationFrame` calls is the direct evidence.
+
+Same failure mode as the comment-matching regexes in v0.30 and v0.35, in a new
+costume: **a check that passes for a reason unrelated to the thing it names.**
+The only reliable defence is the one used here — break the code on purpose and
+watch the check go red before trusting it green.
+
 ## Tests
 
 ```
-node test/migration.js    # 676 checks — storage, migration, roles, formations,
+node test/migration.js    # 704 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,
