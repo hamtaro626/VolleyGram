@@ -2416,10 +2416,117 @@ an interval, because the bug was not a wrong position at any given instant but
 two things writing over each other across a span of time. That distinction is
 worth remembering: **a check that samples cannot see a fight.**
 
+## v0.46 — the logo
+
+A 2000×2000 wordmark arrived, transparent, 6.2MB. Adding it well is mostly
+deciding what *not* to do with it.
+
+### A lockup, not a stack
+
+The mark reads "VOLLEYGRAM" on two lines, so it is a wordmark: it already says
+the name. Putting it above a heading that also says the name is the standard way
+this goes wrong, and it costs the most height of any arrangement.
+
+So the mark sits on one line with the description beside it, and the heading text
+drops the name it was duplicating:
+
+```
+[VOLLEY]  A Volleyball Rotation Reference
+[GRAM  ]
+```
+
+The mark is a `<button>` — it is the replay control from v0.43 — and the
+description deliberately is not, or the full width of the header would replay the
+intro whenever a thumb landed near the top of the screen.
+
+### Two rem of a budget that has four claimants
+
+Everything above the court comes out of the court, because `main`'s width is
+derived from the height left over: `clamp(30rem, calc(100dvh - 24rem), 44rem)`.
+That constant was 22rem. The header grew by about 27px, so it is 24rem now.
+
+The devices that fit before still fit. iPhone 15 has 102px to spare, which is
+the number to look at before anything else is added up there — a second header of
+this size would take it. The test now reads the constant out of the CSS rather
+than restating it, because a copy of `352` would have gone on quietly describing
+a header that no longer existed.
+
+### What the icons actually needed
+
+Four separate constraints, none of them "resize the logo":
+
+- **iOS ignores alpha on a home-screen icon** and composites it onto black. A
+  transparent icon therefore gets a background chosen by the phone. All the
+  icons ship opaque, on the app's own `#16181d`, so the choice is ours.
+- **Android crops a maskable icon to a circle of 80% diameter.** The ordinary
+  icon has the mark near its edges and would lose its ends, so the maskable one
+  is a *separate file* with far more padding. Declaring the tight one maskable is
+  the common mistake, and the test refuses it.
+- **A crawler has no page to resolve a relative path against**, so `og:image` is
+  absolute. This app's whole sharing story is a URL sent by text, so the preview
+  card is not decoration.
+- **`theme-color` is a fourth copy of the background colour**, after the CSS, the
+  manifest's `theme_color` and its `background_color`. A phone shows several of
+  them at once. They are checked against each other.
+
+### 6.2MB is not a size, it is whatever the tool exported
+
+The master is what a design tool produced. Shipping it, or a lightly resized
+version of it, is the default outcome and the wrong one.
+
+macOS has `sips` but no PNG optimiser, so the derivatives were re-encoded with
+adaptive filtering and maximum compression, and the opaque ones had their alpha
+channel dropped — a quarter of the bytes for a channel that was entirely 255.
+
+Only two files are on the critical path: the header mark and the favicon. The
+mark is WebP, which is safe here for a specific reason rather than a general one:
+**the app already requires Safari 16 for container query units, and WebP shipped
+in Safari 14.** No browser exists that can render this app but not its logo, so a
+`<picture>` fallback would be a fallback for the empty set. That leaves 24K on
+the critical path, against a 6.2MB master.
+
+The budget is a test, not a comment. A logo re-exported from a design tool and
+dropped in at 2000px would fail it.
+
+### Regenerating them
+
+From a square master with the mark centred on transparency. `sips` and `cwebp`
+only — nothing here is a project dependency, and none of it runs at build time.
+
+```sh
+# Trim the transparent margin. The mark is centred, so a centred crop finds it;
+# check with a decoder first if a new master is not.
+sips -c 1934 1736 "VolleyGram Logo.png" --out trim.png
+
+# Header mark, transparent, ~3.5x its 3rem display height.
+sips -Z 200 trim.png --out logo200.png
+cwebp -q 86 logo200.png -o assets/logo.webp
+
+# Icons, opaque on the app background, ~16% margin.
+sips -p 2320 2320 --padColor 16181D trim.png --out square.png
+sips -z 180 180 square.png --out assets/icon-180.png     # and 192, 512
+sips -z  32  32 square.png --out assets/favicon-32.png
+
+# Maskable: the mark at ~55% of the canvas, inside Android's 80% circle.
+sips -Z 1400 trim.png --out mask-mark.png
+sips -p 2560 2560 --padColor 16181D mask-mark.png --out maskable.png
+sips -z 512 512 maskable.png --out assets/icon-maskable-512.png
+
+# Link preview, 600x315.
+sips -Z 260 trim.png --out og-mark.png
+sips -p 315 600 --padColor 16181D og-mark.png --out assets/og.png
+```
+
+`sips` writes PNGs with no adaptive filtering, default compression and a 2KB
+tail of metadata, which roughly doubles them. Re-encode afterwards and drop the
+alpha channel on everything opaque. Then bump `?v=` on all seven URLs, and let
+`§59` confirm the sizes in the manifest and the `<img>` still describe the files
+that are actually there.
+
 ## Tests
 
 ```
-node test/migration.js    # 716 checks — storage, migration, roles, formations,
+node test/migration.js    # 746 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

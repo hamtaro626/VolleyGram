@@ -4,25 +4,62 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <!-- Working title. Short on purpose: this is the browser tab, the bookmark,
-       and the home-screen shortcut, all of which truncate. The descriptive
-       version lives in the <h1>. -->
+       and the home-screen shortcut, all of which truncate. The description
+       lives beside the mark in the <h1>. -->
   <title>VolleyGram</title>
   <meta name="apple-mobile-web-app-title" content="VolleyGram">
+  <!-- Must match body's background in style.css, or the browser chrome and the
+       page disagree by a shade on a phone. -->
+  <meta name="theme-color" content="#16181d">
+
+  <!-- Icons. All PNG and all opaque: iOS ignores alpha on a home-screen icon
+       and fills it with black, so the app's own background is baked in on
+       purpose rather than arrived at by accident. The maskable one is a
+       separate file because Android crops to a circle of 80% diameter, which
+       would take the ends off a wordmark drawn to the edges. -->
+  <link rel="icon" href="assets/favicon-32.png?v=0.46" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.46">
+  <link rel="manifest" href="manifest.webmanifest?v=0.46">
+
+  <!-- Link previews. The share feature sends URLs to team-mates by text, so
+       these are what a chat app draws in the bubble. og:image has to be
+       absolute -- a crawler has no page to resolve a relative path against. -->
+  <meta property="og:type" content="website">
+  <meta property="og:title" content="VolleyGram">
+  <meta property="og:description" content="A volleyball rotation reference. See where everyone stands in every rotation.">
+  <meta property="og:url" content="https://hamtaro626.github.io/VolleyGram/">
+  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.46">
+  <meta name="twitter:card" content="summary_large_image">
   <!-- The ?v= query is cache busting. A browser caches by URL, so changing the
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.45">
+  <link rel="stylesheet" href="style.css?v=0.46">
 </head>
 <body>
   <main>
-    <!-- The title is a real button inside the heading, rather than a heading
-         with role="button": this keeps the h1 a heading for a screen reader and
-         still gives the tap target proper keyboard and focus behaviour. -->
-    <h1><button type="button" id="replayIntro" class="title-replay"
-      title="Replay the intro"
-      aria-label="VolleyGram &ndash; A Volleyball Rotation Reference. Replay the intro."
-      >VolleyGram &ndash; A Volleyball Rotation Reference</button></h1>
+    <!-- A lockup, not a stack: the mark is a wordmark that already says the
+         name, so the text beside it is the description only. Spelling the name
+         out again next to a logo of the name is the usual way this goes wrong.
+         Side by side rather than above also costs about 2rem of height instead
+         of 5, which matters -- see main's clamp in style.css.
+
+         The button is a real button inside the heading, rather than a heading
+         with role="button": that keeps the h1 a heading for a screen reader and
+         still gives the tap target proper keyboard and focus behaviour. Only
+         the mark is the button; the description is not, or the whole width of
+         the header would replay the intro by accident.
+
+         width and height are the file's real pixel size. They cost nothing and
+         they reserve the space before the image arrives, so the court does not
+         jump down the screen mid-load. -->
+    <h1 class="masthead">
+      <button type="button" id="replayIntro" class="title-replay"
+        title="Replay the intro" aria-label="VolleyGram. Replay the intro."
+        ><img class="logo" src="assets/logo.webp?v=0.46" width="179" height="200"
+          alt="VolleyGram"></button>
+      <span class="tagline">A Volleyball Rotation Reference</span>
+    </h1>
 
     <label class="picker">
       <span>VolleyGram Name</span>
@@ -244,6 +281,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.45"></script>
+  <script src="script.js?v=0.46"></script>
 </body>
 </html>

@@ -684,13 +684,20 @@ console.log('\n20. Source files are plain text');
   check('no player class is also a bare CSS selector', collisions.length === 0,
     collisions.join(', '));
 
-  // Both assets must carry the same cache-busting version, or a deploy can ship
-  // new CSS against cached JS -- which looks like a bug and isn't one.
+  // Everything the page fetches must carry the same cache-busting version, or a
+  // deploy can ship new CSS against cached JS -- which looks like a bug and
+  // isn't one. Named individually rather than counted: the count grew from two
+  // to seven when the icons went in, and a count would have been satisfied by
+  // any seven.
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const versionOf = (file) =>
+    (html.match(new RegExp(`${file.replace('.', '\\.')}\\?v=([\\w.]+)`)) || [])[1];
+  const versioned = ['style.css', 'script.js', 'assets/logo.webp',
+    'assets/favicon-32.png', 'assets/icon-180.png', 'manifest.webmanifest'];
+  versioned.forEach((f) => check(`${f} is versioned`, !!versionOf(f), String(versionOf(f))));
   const versions = [...html.matchAll(/\?v=([\w.]+)/g)].map((m) => m[1]);
-  check('style.css and script.js are both versioned', versions.length === 2,
-    `found ${versions.length}`);
-  check('and carry the same version', new Set(versions).size === 1, versions.join(' vs '));
+  check('and everything carries the same version',
+    new Set(versions).size === 1, [...new Set(versions)].join(' vs '));
 }
 
 
@@ -2529,11 +2536,17 @@ console.log('\n55. Sizing against the screen');
     /max-width:\s*clamp\(30rem,\s*calc\(100dvh[^)]*\),\s*\d+rem\)/.test(mainRule),
     mainRule.trim());
 
+  // How much height everything other than the court needs, read out of the CSS
+  // rather than restated here -- the header grew when the logo went in, and a
+  // copy of this number in the test would have gone on describing the old one.
+  const CHROME = Number((mainRule.match(/100dvh\s*-\s*(\d+)rem/) || [])[1]) * 16;
+  check('the chrome allowance is legible in the CSS', CHROME > 0, String(CHROME));
+
   // What actually reaches the screen is the narrower of the available width
   // and the clamp -- on a phone the width binds long before the height does,
   // which is why nothing about phones changes here.
   const effective = (vw, vh) =>
-    Math.min(vw - 32, Math.max(480, Math.min(vh - 352, 704)));
+    Math.min(vw - 32, Math.max(480, Math.min(vh - CHROME, 704)));
 
   [
     [744, 1133, 704, 'iPad portrait — fills, up from 480'],
@@ -2544,27 +2557,24 @@ console.log('\n55. Sizing against the screen');
     check(`${label}`, effective(vw, vh) === want, String(effective(vw, vh)));
   });
 
-  // The clamp has two jobs and they pull apart on short screens, so state both
-  // rather than pretending it fits everywhere.
+  // Which screens actually fit the court and the controls under it without
+  // scrolling, stated device by device rather than as a rule -- because it is
+  // not one. On the two that do not, the 480px floor wins on purpose: the
+  // alternative was shrinking the court below what it has always been, and a
+  // smaller diagram to save a scroll is a bad trade.
   //
-  // Where there is room -- the height term clears the 480px floor -- the court
-  // and the controls under it fit without scrolling. Where there isn't, the
-  // floor wins on purpose: the alternative was shrinking the court below what
-  // it has always been, and a smaller diagram to save a scroll is a bad trade.
-  // So on those screens you scroll exactly as much as you did before.
-  const HEIGHT_TERM = (vh) => vh - 352;
-
-  [[744, 1133, 'iPad portrait'], [1133, 744, 'iPad landscape'],
-    [390, 844, 'iPhone 15'], [320, 568, 'iPhone SE']].forEach(([vw, vh, label]) => {
-    if (HEIGHT_TERM(vh) >= 480) {
-      check(`${label}: court and controls fit without scrolling`,
-        effective(vw, vh) + 352 <= vh,
-        `${effective(vw, vh)} + 352 vs ${vh}`);
-    } else {
-      check(`${label}: too short either way, so it stays exactly as it was`,
-        Math.max(480, Math.min(HEIGHT_TERM(vh), 704)) === 480,
-        String(Math.max(480, Math.min(HEIGHT_TERM(vh), 704))));
-    }
+  // These are the numbers to watch when anything above the court changes size.
+  // Adding the logo header spent 2rem of the budget, and iPhone 15 kept fitting
+  // with 102px to spare; a second header of that size would not.
+  [
+    [744, 1133, true, 'iPad portrait'],
+    [1133, 744, false, 'iPad landscape'],
+    [390, 844, true, 'iPhone 15'],
+    [320, 568, false, 'iPhone SE'],
+  ].forEach(([vw, vh, wantFit, label]) => {
+    const need = effective(vw, vh) + CHROME;
+    check(`${label}: ${wantFit ? 'fits without scrolling' : 'scrolls, as it always has'}`,
+      (need <= vh) === wantFit, `needs ${need} of ${vh}`);
   });
 }
 
@@ -2906,6 +2916,118 @@ console.log('\n58. Replaying it from the title');
   // not reach the button: without its own, the title wraps on a narrow phone.
   check('and sets nowrap itself, since a button does not inherit it',
     /white-space:\s*nowrap/.test(rule));
+}
+
+console.log('\n59. The logo, the icons and the link preview');
+{
+  const root = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(root, 'style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const asset = (f) => path.join(root, f);
+  const exists = (f) => fs.existsSync(asset(f));
+  // PNG puts width, height and colour type at fixed offsets in IHDR, which is
+  // always the first chunk. No decoding needed to read them.
+  const png = (f) => {
+    const b = fs.readFileSync(asset(f));
+    return { w: b.readUInt32BE(16), h: b.readUInt32BE(20), colour: b[25], bytes: b.length };
+  };
+
+  // Every path the page asks for has to be on disk. A missing icon is invisible
+  // in development -- the browser just shows its default -- and stays invisible
+  // until someone adds the app to a home screen.
+  const referenced = [...html.matchAll(/(?:href|src|content)="([^"]*assets\/[^"?]+)/g)]
+    .map((m) => m[1].replace(/^https?:\/\/[^/]+\/VolleyGram\//, ''));
+  check('the page references the assets it needs', referenced.length >= 4,
+    referenced.join(' '));
+  check('and every one of them exists', referenced.every(exists),
+    referenced.filter((f) => !exists(f)).join(' ') || 'all present');
+
+  // The one asset on the critical path. A logo is exported from a design tool
+  // at whatever size the tool felt like -- the master here is 2000x2000 and
+  // 6MB -- so the guard is a budget, not a reminder to be careful.
+  check('the header mark exists', exists('assets/logo.webp'));
+  const logoBytes = fs.statSync(asset('assets/logo.webp')).size;
+  check('and is small enough to sit on the critical path',
+    logoBytes < 60 * 1024, `${(logoBytes / 1024).toFixed(0)}K`);
+
+  // width and height on the img reserve the space before the image arrives.
+  // Wrong ones are worse than none: the court would settle into a gap of the
+  // wrong height and then jump when the real image landed.
+  const tag = (html.match(/<img[^>]*class="logo"[^>]*>/) || [''])[0];
+  const attr = (n) => Number((tag.match(new RegExp(`${n}="(\\d+)"`)) || [])[1]);
+  const shipped = png('assets/icon-180.png'); // any PNG, just to prove the reader
+  check('the mark declares its own size', attr('width') > 0 && attr('height') > 0, tag);
+  check('and declares the aspect the file actually has',
+    Math.abs((attr('width') / attr('height')) - (179 / 200)) < 0.01,
+    `${attr('width')}x${attr('height')}`);
+  check('it carries alt text, since it is the app name in pixels',
+    /alt="VolleyGram"/.test(tag), tag);
+
+  // iOS ignores alpha on a home-screen icon and composites it onto black, so
+  // an icon shipped with transparency gets a background chosen by the phone
+  // rather than by us. Colour type 6 is RGBA; 2 is RGB.
+  ['assets/favicon-32.png', 'assets/icon-180.png', 'assets/icon-192.png',
+    'assets/icon-512.png', 'assets/icon-maskable-512.png', 'assets/og.png']
+    .forEach((f) => {
+      check(`${path.basename(f)} is opaque, so the phone picks no colour for us`,
+        exists(f) && png(f).colour !== 6, exists(f) ? `type ${png(f).colour}` : 'missing');
+    });
+  check('the PNG header reader is reading real files', shipped.w === 180);
+
+  // The manifest is JSON nobody parses in development -- a trailing comma ships
+  // fine and only fails on a real phone at install time.
+  const manifestPath = asset('manifest.webmanifest');
+  check('there is a manifest', fs.existsSync(manifestPath));
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+  check('the page links it', /rel="manifest"/.test(html));
+  check('it names sizes that match the files it points at',
+    manifest.icons.every((i) => {
+      if (!exists(i.src)) return false;
+      const { w, h } = png(i.src);
+      return i.sizes === `${w}x${h}`;
+    }), manifest.icons.map((i) => `${i.src} ${i.sizes}`).join(' '));
+  // Android crops a maskable icon to a circle of 80% diameter. Declaring an
+  // ordinary icon maskable is how wordmarks lose their ends.
+  check('and ships a separate maskable icon rather than reusing a tight one',
+    manifest.icons.some((i) => i.purpose === 'maskable')
+      && manifest.icons.filter((i) => i.purpose === 'maskable')
+        .every((i) => !manifest.icons.some((o) => o.src === i.src && !o.purpose)),
+    manifest.icons.map((i) => `${i.src}${i.purpose ? ' ' + i.purpose : ''}`).join(' '));
+
+  // Three places name the same colour, and a phone shows all three at once:
+  // the browser chrome, the icon background and the splash screen.
+  const bodyRule = (css.match(/\bbody\s*\{[^}]*\}/) || [''])[0];
+  const background = (bodyRule.match(/background:\s*(#[0-9a-f]{6})/i) || [])[1];
+  const themeColor = (html.match(/name="theme-color"\s+content="(#[0-9a-f]{6})"/i) || [])[1];
+  check('theme-color matches the page background',
+    background && themeColor && background.toLowerCase() === themeColor.toLowerCase(),
+    `css ${background} vs html ${themeColor}`);
+  check('and so does the manifest',
+    manifest.theme_color.toLowerCase() === background.toLowerCase()
+      && manifest.background_color.toLowerCase() === background.toLowerCase(),
+    `${manifest.theme_color} / ${manifest.background_color}`);
+
+  // A crawler has no page to resolve a relative path against, so a relative
+  // og:image silently yields a preview with no picture in it.
+  const ogImage = (html.match(/property="og:image"\s+content="([^"]+)"/) || [])[1];
+  check('og:image is absolute', /^https?:\/\//.test(ogImage || ''), String(ogImage));
+  const og = png('assets/og.png');
+  check('and is at least the size a large card wants',
+    og.w >= 600 && og.h >= 315, `${og.w}x${og.h}`);
+
+  // The wordmark says the name, so the text beside it must not say it again.
+  const heading = (html.match(/<h1[^>]*>[\s\S]*?<\/h1>/) || [''])[0];
+  const tagline = (heading.match(/<span class="tagline">([^<]*)</) || [])[1] || '';
+  check('the description beside the mark does not repeat the name',
+    !/volleygram/i.test(tagline), tagline);
+
+  // The mark is fixed furniture. Sized in vw or cqw it would grow on exactly
+  // the large screens where the court is finally able to fill them.
+  const logoRule = (css.match(/\.logo\s*\{[^}]*\}/) || [''])[0];
+  check('the mark is sized in rem, not off the viewport',
+    /height:\s*[\d.]+rem/.test(logoRule) && !/vw|vh|cq/.test(logoRule),
+    logoRule.trim());
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

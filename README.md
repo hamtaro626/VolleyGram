@@ -33,18 +33,24 @@ Built to use on mobile devices courtside
 
 ## Stack
 
-Three static files.
+Three static files, plus the artwork.
 
 ```
 index.html      structure and controls
-style.css       ~17 KB
-script.js       ~82 KB, all application logic
+style.css       ~18 KB
+script.js       ~119 KB, all application logic
+manifest.webmanifest
+                makes it installable to a home screen
+assets/         the logo, derived from a 2000×2000 master kept outside the
+                repo. logo.webp (24 KB) is the only one on the critical
+                path; the icons are fetched by the OS, the preview by
+                crawlers. Regenerating them is documented in SPEC.md.
 SPEC.md         the design log — read this first
 dev/
   preview.html  the real app in live iframes at real device widths, for the
                 layout questions a stubbed DOM cannot answer
 test/
-  migration.js  716 checks: storage, migration, roles, formations, quiz,
+  migration.js  746 checks: storage, migration, roles, formations, quiz,
                 sharing, dragging, short-handed rosters, playing surface,
                 scoreboard
   contrast.js   contrast, hue separation, every role against all three court
@@ -82,7 +88,7 @@ scrolling, dragging a player still need a real device.
 ## Tests
 
 ```sh
-node test/migration.js    # 716 checks across 58 groups
+node test/migration.js    # 746 checks across 59 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
@@ -139,11 +145,11 @@ have real saved lineups in `localStorage`; if you change the shape, migrate the
 old one and add a case to `migration.js`. Its coverage already runs to every
 historical shape, missing `activeId`, and nine kinds of corrupt input.
 
-**Bump the cache-busting version on any CSS or JS change.** `index.html`
-references `style.css?v=0.20` and `script.js?v=0.20`. Browsers cache by URL, so
-without a bump phones keep serving the old file. Both references need it, and
-`APP_VERSION` is derived from the script's own `?v=`, which is why the corner
-marker reads `dev` on `file://`.
+**Bump the cache-busting version on any CSS, JS or asset change.** Seven URLs in
+`index.html` carry `?v=` — the stylesheet, the script, the manifest and the
+artwork — and they must all move together. Browsers cache by URL, so without a
+bump phones keep serving the old file. `APP_VERSION` is derived from the
+script's own `?v=`, which is why the corner marker reads `dev` on `file://`.
 
 **No NUL bytes in source.** `migration.js` asserts this. One slipped in during
 v0.10 from a mis-written escape — it ran fine but made the file binary to `grep`,
@@ -168,7 +174,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.45. Working title, actively developed, no issues or PRs open yet.
+v0.46. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

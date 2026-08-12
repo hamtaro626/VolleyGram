@@ -30,19 +30,45 @@ body {
    an iPad in portrait goes from 480px to 704px, in landscape it stays at 480. */
 main {
   max-width: 30rem; /* fallback where dvh is unsupported */
-  max-width: clamp(30rem, calc(100dvh - 22rem), 44rem);
+  max-width: clamp(30rem, calc(100dvh - 24rem), 44rem);
   margin: 0 auto;
 }
 
 /* Scales with the viewport so the name and subtitle stay on one line, right
    down to a 320px phone. nowrap makes that a guarantee rather than a hope; the
    vw term is sized to keep it inside the screen at the narrowest width. */
+/* The mark and the description sit on one line, centred as a pair. Stacking
+   them would cost about 5rem of height instead of 2, and every rem above the
+   court comes out of the court -- see main's clamp below. */
 h1 {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
   font-size: clamp(0.7rem, 3.3vw, 1.1rem);
   white-space: nowrap;
   text-align: center;
   margin: 0 0 0.6rem;
   font-weight: 600;
+}
+
+/* Sized in rem rather than by the viewport: the mark is a fixed piece of
+   furniture, and letting it grow with the screen would push the court down on
+   exactly the large screens where the court is finally able to fill it.
+   width: auto keeps the aspect from the width/height attributes in the HTML. */
+.logo {
+  display: block;
+  height: 3rem;
+  width: auto;
+}
+
+/* Ellipsis rather than wrap: h1 is nowrap, so an overflowing description would
+   otherwise push the mark off-centre on a very narrow phone. It has room down
+   to 320px -- this is the guard, not the plan. */
+.tagline {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* The title is a button that replays the intro, but it should read as a title
