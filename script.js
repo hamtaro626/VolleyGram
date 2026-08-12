@@ -1628,6 +1628,12 @@ function playIntro(gather = false) {
   const box = court.getBoundingClientRect();
   const aspect = box.height > 0 ? box.width / box.height : 1;
 
+  // The beat at centre is served by whichever mechanism is already running. On
+  // a first open that is the frame loop, which holds before it starts moving.
+  // On a replay the CSS slide is still switched on, so the beat is spent
+  // waiting there instead -- see the handoff below.
+  const hold = gather ? 0 : INTRO_HUDDLE_MS;
+
   let frame = 0;
   let handoff = 0;
   let started = null;
@@ -1667,8 +1673,8 @@ function playIntro(gather = false) {
   const step = (now) => {
     if (started === null) started = now;
     const elapsed = now - started;
-    if (elapsed >= INTRO_HUDDLE_MS) {
-      const p = Math.min(1, (elapsed - INTRO_HUDDLE_MS) / INTRO_SPIN_MS);
+    if (elapsed >= hold) {
+      const p = Math.min(1, (elapsed - hold) / INTRO_SPIN_MS);
       settled.forEach(({ el }, i) => {
         const spot = introSpot(i, settled.length, p, aspect);
         el.style.left = `${spot.left}%`;
@@ -1703,7 +1709,12 @@ function playIntro(gather = false) {
       frame = requestAnimationFrame(() => {
         if (over) return;
         huddle();
-        handoff = setTimeout(orbit, INTRO_GATHER_MS);
+        // The slide, and then the beat, before the orbit takes over. The beat
+        // doubles as slack: this timer is armed a frame before the browser
+        // paints the new positions, so the transition starts a frame after the
+        // clock does and a wait of exactly INTRO_GATHER_MS could strip it while
+        // it was still running.
+        handoff = setTimeout(orbit, INTRO_GATHER_MS + INTRO_HUDDLE_MS);
       });
     });
   } else {
@@ -1718,7 +1729,6 @@ function playIntro(gather = false) {
     + INTRO_HUDDLE_MS + INTRO_SPIN_MS + 500);
   document.addEventListener('pointerdown', skip);
   introCancel = skip;
-  frame = requestAnimationFrame(step);
 }
 
 // --- Drawing the current rotation -------------------------------------

@@ -2777,9 +2777,19 @@ console.log('\n58. Replaying it from the title');
     new Set(spots()).size === 1 && spots()[0] === '50%,50%'
       && courtEl.classList.contains('animate'), spots().join(' '));
 
+  // Nothing at all may move them while the slide is carrying them in. This is
+  // the one that matters: the frame loop and the slide are two mechanisms
+  // writing to the same six elements, and if the loop starts early it drags
+  // the players onto the orbit while the transition is still trying to reach
+  // the centre, so they converge on a smear near the middle and never arrive.
+  // Frames keep coming throughout the pan in, so pump plenty of them.
+  for (let t = 32; t < GATHER + HUDDLE; t += 16) pump(t);
+  check('and nothing else touches them until the slide has finished',
+    new Set(spots()).size === 1 && spots()[0] === '50%,50%', spots().join(' '));
+
   // Handing over to the orbit means taking the transition back off: a frame
   // loop running against a 450ms transition would smear into a crawl.
-  tick(GATHER);
+  tick(GATHER + HUDDLE);
   check('once they arrive the transition comes off for the orbit',
     !courtEl.classList.contains('animate'));
   pump(1000);
@@ -2868,7 +2878,7 @@ console.log('\n58. Replaying it from the title');
   // the abandoned intro had dragged them to.
   pump(0);
   pump(16);
-  tick(GATHER);
+  tick(GATHER + HUDDLE);
   pump(2000);
   pump(2000 + HUDDLE + SPIN);
   pump(2000 + HUDDLE + SPIN + 16);

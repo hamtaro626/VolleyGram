@@ -2362,10 +2362,64 @@ Both were caught the same way as every other one: by breaking the code and
 watching for red. That is now four vacuous checks found by mutation across two
 versions, and none found by reading.
 
+## v0.45 — the pan in actually pans
+
+v0.44 shipped broken. The replay slid the players *towards* the centre, stopped
+short in a loose cluster, shuffled, and then spun. Reported from use.
+
+### One stray line
+
+`playIntro()` ended with a line left over from v0.43's shape:
+
+```js
+  if (gather) { …start the slide… } else { huddle(); frame = requestAnimationFrame(step); }
+  …
+  introCancel = skip;
+  frame = requestAnimationFrame(step);   // ← still here
+```
+
+So the orbit loop started **immediately, in parallel with the gather**. Two
+mechanisms then wrote to the same six elements at once: the CSS transition
+carrying everyone toward the centre, and the frame loop dragging them onto the
+orbit. The players never arrived because something else kept moving them.
+
+On a first open the same line was invisible — it started a *second* copy of a
+loop that was already running, both computing identical positions from a shared
+`started`. Wasteful, silent, and therefore shipped.
+
+### The wrong diagnosis, kept here on purpose
+
+The first explanation reached for was a plausible one: the handoff timer is
+armed a frame before the browser paints, so the transition starts a frame after
+the clock does, and stripping the class at exactly `INTRO_GATHER_MS` could cut
+the slide off mid-flight. That is a real hazard and the slack that guards it is
+still in the code — the handoff waits `GATHER + HUDDLE`, which is also where the
+beat now lives.
+
+But it was not the bug. **A mechanism that could explain the symptom is not
+evidence that it did.** The tell was that the wrong theory predicted a snap and
+the report described a smear, and that gap should have been the first thing
+chased rather than the last. It was settled in the end by tracing every call
+that queued a frame during a replay, which found two where there should have
+been one — thirty seconds of evidence after several minutes of theory.
+
+### The check that would have caught it
+
+`§58` now pumps frames across the whole pan in and asserts nobody moves off
+`50%,50%` until the slide has finished. With the stray line restored it fails
+loudly, and the failure prints players scattered across the court — 26%,44% and
+42%,27% and 65%,32% — mid-pan, which is the reported symptom rendered as
+numbers.
+
+Every earlier check in this section watched a *single* moment. This one watches
+an interval, because the bug was not a wrong position at any given instant but
+two things writing over each other across a span of time. That distinction is
+worth remembering: **a check that samples cannot see a fight.**
+
 ## Tests
 
 ```
-node test/migration.js    # 715 checks — storage, migration, roles, formations,
+node test/migration.js    # 716 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,
