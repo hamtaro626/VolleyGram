@@ -2293,10 +2293,79 @@ costume: **a check that passes for a reason unrelated to the thing it names.**
 The only reliable defence is the one used here — break the code on purpose and
 watch the check go red before trusting it green.
 
+## v0.44 — the replay pans in
+
+v0.43's replay dropped the six players onto centre court in a single frame: a
+hard, staggered start rather than an animation. Reported from use, which is the
+only way this one was ever going to be found.
+
+### Why the first open got away with it
+
+The two entrances are not the same situation, and v0.43 treated them as one.
+
+A **first open** has nothing to pan from. The page is arriving; there is no
+diagram on screen yet. Putting everyone at the centre before the first paint is
+precisely what makes the huddle the opening image instead of a flash of the
+finished answer. Sliding *would be wrong there* — it would mean showing the
+diagram first and then undoing it.
+
+A **replay** interrupts a diagram someone is already looking at and has already
+read. Teleporting the players is a flinch. They have to travel.
+
+So `playIntro(gather)`. One flag, two entrances, and the flag is the difference
+between an opening image and an interruption.
+
+### The transition earns its place back
+
+The pan in is a straight line from six scattered points to one shared point,
+which is the one thing a CSS transition does *better* than the frame loop — and
+it is the app's own 450ms rotation slide, unchanged since v0.2. So the gather
+borrows it rather than reimplementing it.
+
+This is the exact inverse of v0.43's finding. There, a transition was the wrong
+tool because an orbit is not a straight line and a transition would have cut the
+circle as a chord. Here the movement *is* a straight line, so the transition is
+right and a frame loop would be showing off. Same animation, three phases, two
+different mechanisms, each chosen for the shape of the path:
+
+| Phase | Path | Driven by |
+|---|---|---|
+| Gather (replay only) | straight line inward | CSS transition |
+| Orbit | circular | frame loop, transition off |
+| Land | straight line outward | CSS transition |
+
+The handoff between them is the fiddly part. The frame loop must run with the
+transition **off** — left on, every frame would arrive 450ms late and the spin
+would smear into a crawl — so `orbit()` strips the class before the first step.
+
+### The 450 written in two places
+
+`INTRO_GATHER_MS` has to match the CSS slide it is waiting on. Too short and the
+orbit starts before everyone has arrived; too long and there is a dead pause in
+the middle of the animation. Nothing connects the two numbers but intent, so
+`§58` reads the duration out of `style.css` and asserts they agree.
+
+### Two vacuous checks, again
+
+Same lesson as v0.43, twice more:
+
+- **"The replay switches the slide on."** Written against a court that already
+  had it on, so deleting the line changed nothing observable. It now runs
+  against a court whose startup frame was **thrown away before it could run** —
+  which is what a background tab actually does — where the class really is off
+  and a replay that assumes otherwise snaps.
+- **"A second tap cancels the running intro."** The sequence had grown, and by
+  the time of the second tap the first intro had already finished, so there was
+  nothing left to cancel and the check passed on an empty board.
+
+Both were caught the same way as every other one: by breaking the code and
+watching for red. That is now four vacuous checks found by mutation across two
+versions, and none found by reading.
+
 ## Tests
 
 ```
-node test/migration.js    # 704 checks — storage, migration, roles, formations,
+node test/migration.js    # 715 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

@@ -155,7 +155,7 @@ function boot(seedJson, seedHash, extraContext) {
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
       closeNewGame, closeMore, syncMenuButtons, introSpot, playIntro };
     globalThis.__intro = () => ({ HUDDLE: INTRO_HUDDLE_MS, SPIN: INTRO_SPIN_MS,
-      TURNS: INTRO_TURNS, RADIUS: INTRO_RADIUS });
+      TURNS: INTRO_TURNS, RADIUS: INTRO_RADIUS, GATHER: INTRO_GATHER_MS });
     globalThis.__players = () => playerElements;
     globalThis.__stacks = () => ({ undos: history.length });
     globalThis.__quiz = () => ({ quiz, quizScore });
@@ -2693,23 +2693,37 @@ console.log('\n58. Replaying it from the title');
   // A hand-driven requestAnimationFrame, so the orbit can be run a frame at a
   // time and looked at. The stub's default never fires, which is what lets
   // every other test see the intro frozen at its huddle.
-  // Frames are keyed by id and cancelling really drops them, so "how many
-  // frames are pending" is a true count of how many loops are in flight.
+  // A hand-wound clock. Frames are keyed by id and cancelling really drops
+  // them, so "how many cancels" is true evidence rather than an inference.
+  // Timers carry their delay, so a test can run the short one without also
+  // firing the backstop that is waiting seconds out.
   const frames = new Map();
+  const timers = new Map();
   let nextFrame = 1;
+  let nextTimer = 1;
   let cancels = 0;
   const clock = {
     requestAnimationFrame: (fn) => { frames.set(nextFrame, fn); return nextFrame++; },
     cancelAnimationFrame: (id) => { cancels += 1; frames.delete(id); },
+    setTimeout: (fn, ms) => { timers.set(nextTimer, { fn, ms }); return nextTimer++; },
+    clearTimeout: (id) => { timers.delete(id); },
   };
   const app = boot(undefined, undefined, clock);
-  const { HUDDLE, SPIN } = app.intro();
+  const { HUDDLE, SPIN, GATHER } = app.intro();
   const spots = () => Object.values(app.players())
     .map((el) => `${el.style.left},${el.style.top}`);
   const pump = (t) => {
     const due = [...frames.values()];
     frames.clear();
     due.forEach((fn) => fn(t));
+  };
+  // Fires every timer due at or before `ms`, leaving longer ones armed.
+  const tick = (ms) => {
+    [...timers.entries()].forEach(([id, timer]) => {
+      if (timer.ms > ms) return;
+      timers.delete(id);
+      timer.fn();
+    });
   };
 
   check('the intro is frozen at the huddle until a frame arrives',
@@ -2744,11 +2758,77 @@ console.log('\n58. Replaying it from the title');
   // first open has spent it, so it has to work on an app that has seen it.
   const title = app.document.getElementById('replayIntro');
   check('the title is wired up as a button', (title.listeners.click || []).length === 1);
+
+  const diagram = spots().join(' ');
   title.dispatch('click');
-  check('tapping it huddles everyone up again',
-    new Set(spots()).size === 1 && spots()[0] === '50%,50%', spots().join(' '));
+  // The whole point of the gather: a replay interrupts a diagram someone is
+  // looking at, so nobody may be teleported to the centre. They have to travel.
+  check('a replay does not snap anyone to the centre',
+    spots().join(' ') === diagram, spots().join(' '));
+
+  pump(0);
+  check('it leaves the rotation slide switched on to carry them in',
+    courtEl.classList.contains('animate'));
+  check('and still has not moved anyone until the slide can do it',
+    spots().join(' ') === diagram, spots().join(' '));
+
+  pump(16);
+  check('the next frame sends everyone to the middle, sliding',
+    new Set(spots()).size === 1 && spots()[0] === '50%,50%'
+      && courtEl.classList.contains('animate'), spots().join(' '));
+
+  // Handing over to the orbit means taking the transition back off: a frame
+  // loop running against a 450ms transition would smear into a crawl.
+  tick(GATHER);
+  check('once they arrive the transition comes off for the orbit',
+    !courtEl.classList.contains('animate'));
+  pump(1000);
+  pump(1000 + HUDDLE + SPIN / 2);
+  check('and the spin runs from the centre as it does on a first open',
+    new Set(spots()).size === 6, spots().join(' '));
+  pump(1000 + HUDDLE + SPIN);
+  pump(1000 + HUDDLE + SPIN + 16);
+  check('a replay ends back on the diagram it interrupted',
+    spots().join(' ') === diagram, spots().join(' '));
   check('and replaying does not disturb what is saved',
     JSON.stringify(app.peek().saved) === JSON.stringify(plain.peek().saved));
+
+  // The replay above found the slide already switched on, so it would have
+  // panned correctly even without switching it on itself. This one does not:
+  // its startup frame is thrown away before it can run, which is exactly what a
+  // background tab does. A replay that assumes the slide is on snaps here.
+  const cold = [];
+  const coldApp = boot(app.memory['volleyball-rotations-v1'], undefined, {
+    requestAnimationFrame: (fn) => cold.push(fn),
+    cancelAnimationFrame: () => {},
+    setTimeout: () => 0,
+    clearTimeout: () => {},
+  });
+  const coldCourt = coldApp.document.getElementById('court');
+  const coldSpots = () => Object.values(coldApp.players())
+    .map((el) => `${el.style.left},${el.style.top}`);
+  const runCold = (t) => cold.splice(0).forEach((fn) => fn(t));
+  cold.length = 0;
+  check('a court can reach a replay with the slide still off',
+    !coldCourt.classList.contains('animate'));
+  coldApp.document.getElementById('replayIntro').dispatch('click');
+  runCold(0);
+  check('so the replay switches it on itself rather than assuming',
+    coldCourt.classList.contains('animate'));
+  runCold(16);
+  check('and the pan in is still a slide, not a jump',
+    new Set(coldSpots()).size === 1 && coldCourt.classList.contains('animate'),
+    coldSpots().join(' '));
+
+  // The gather is timed to a duration written in the CSS, so the two can drift
+  // apart silently: too short and the orbit starts before everyone has landed,
+  // too long and there is a dead pause in the middle of the animation.
+  const slide = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const slideRule = slide.slice(slide.indexOf('.court.animate .player {'),
+    slide.indexOf('}', slide.indexOf('.court.animate .player {')));
+  check('the pan in lasts exactly as long as the CSS slide it borrows',
+    new RegExp(`left ${GATHER}ms`).test(slideRule), `${GATHER}ms vs ${slideRule.trim()}`);
 
   // Reduced motion suppresses the automatic intro but not this button: the
   // setting is about motion nobody asked for, and this was asked for.
@@ -2757,25 +2837,43 @@ console.log('\n58. Replaying it from the title');
     matchMedia: (q) => ({ matches: /prefers-reduced-motion/.test(q) }),
     requestAnimationFrame: (fn) => quiet.push(fn),
     cancelAnimationFrame: () => {},
+    setTimeout: () => 0,
+    clearTimeout: () => {},
   });
   const reducedSpots = () => Object.values(reduced.players())
     .map((el) => `${el.style.left},${el.style.top}`);
+  const pumpQuiet = (t) => quiet.splice(0).forEach((fn) => fn(t));
   check('reduced motion still opens straight to the diagram',
     new Set(reducedSpots()).size > 1);
   reduced.document.getElementById('replayIntro').dispatch('click');
+  pumpQuiet(0);
+  pumpQuiet(16);
   check('but the button still plays it when asked',
     new Set(reducedSpots()).size === 1, reducedSpots().join(' '));
 
-  // An intro is running right now, from the tap above. A second tap has to cut
-  // it short: two live frame loops would write to the same six elements from
-  // two different points in the orbit, and the loser would never stop asking
-  // for frames. Counting the cancel is the direct evidence -- pending frames
-  // are not, since the loop being cut short queues one of its own on the way
-  // out to switch the rotation slide back on.
+  // A second tap must cut short the intro the first one started: two live
+  // frame loops would write to the same six elements from two points in the
+  // orbit, and the loser would never stop asking for frames. Counting the
+  // cancel is the direct evidence -- pending frames are not, since the loop
+  // being cut short queues one of its own on the way out to switch the
+  // rotation slide back on.
+  title.dispatch('click');
   const before = cancels;
   title.dispatch('click');
   check('a second tap cancels the running intro rather than racing it',
     cancels > before, `${before} -> ${cancels} cancels`);
+
+  // And the one it cut short must not have taken the diagram with it: the
+  // replacement has to capture where the players really belong, not wherever
+  // the abandoned intro had dragged them to.
+  pump(0);
+  pump(16);
+  tick(GATHER);
+  pump(2000);
+  pump(2000 + HUDDLE + SPIN);
+  pump(2000 + HUDDLE + SPIN + 16);
+  check('and the interrupted one does not corrupt where they land',
+    spots().join(' ') === diagram, spots().join(' '));
 
   // The markup: a real button inside the heading, so the h1 stays a heading.
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
