@@ -2520,13 +2520,74 @@ sips -p 315 600 --padColor 16181D og-mark.png --out assets/og.png
 `sips` writes PNGs with no adaptive filtering, default compression and a 2KB
 tail of metadata, which roughly doubles them. Re-encode afterwards and drop the
 alpha channel on everything opaque. Then bump `?v=` on all seven URLs, and let
-`§59` confirm the sizes in the manifest and the `<img>` still describe the files
+`§60` confirm the sizes in the manifest and the `<img>` still describe the files
 that are actually there.
+
+## v0.47 — the intro plays on every open, and on a reset
+
+Two changes, one decision. The fan-out now runs on every page load rather than
+once per device, and **Hold to reset all** ends with it instead of with the
+positions silently snapping back.
+
+### Reversing v0.42's "why once"
+
+v0.42 argued the intro should be spent once, and the argument was about a toll
+booth: *"the moment it would annoy you most is the moment it matters most —
+standing on a court, mid-set, wanting one glance."*
+
+That case is weaker than it read, because a refresh is not something that
+happens to you mid-set. The app is a static page with everything in
+localStorage; it is left open on a phone between rallies, not reloaded between
+them. Reaching a fresh load means deliberately reopening the tab, and the intro
+is around 1.9s that any tap cuts short. The thing being protected — the glance
+mid-set — never touches this path.
+
+What was lost by spending it once is that the app's one piece of character was
+visible exactly once per device, and the only way back to it was knowing the
+title is a button.
+
+So `seenIntro` is gone: removed from the store's shape, from `load()`, and from
+the startup gate, which is now just `motionAllowed()`. Nothing needs migrating —
+an old save carrying the key simply has it dropped on the next write, which is
+what the load-then-`save()` at the bottom of the file already does.
+
+### The reset earns it more than the load does
+
+Holding the reset for 1.5s throws away every dragged position on every rotation.
+Before this, the diagram changed under your thumb with no more ceremony than a
+single tap gets, and on a rotation you had not dragged, *nothing visibly
+happened at all* — the strongest confirmation the button could give was that the
+progress bar filled.
+
+The fan-out is the confirmation. It says the diagram was rebuilt from scratch,
+which is exactly what the reset did.
+
+It uses `gather` mode — the same path as the title replay, not the page-load
+path. The players are on screen and being looked at, so they travel to the
+centre rather than being dropped there. That distinction is v0.44's, and the
+reset is simply the second caller to need it.
+
+It obeys `prefers-reduced-motion`, where the title button does not: this one
+plays without anyone asking for an animation, so it is motion nobody requested.
+The reset itself still happens, at once, either way.
+
+### One thing that had to be checked
+
+The intro starts *while the finger is still down*, since the reset fires from a
+timer at the end of the hold. `playIntro()` skips itself on any `pointerdown` —
+so the concern was the press that started the hold killing the intro it caused.
+It cannot: that event finished dispatching 1.5s earlier, and the release is a
+`pointerup`. A *second* tap during the fan-out still cuts it short, which is
+the rule everywhere else.
+
+`§59` drives it frame by frame on a hand-wound clock: nobody snaps to the
+centre, the slide carries them in, the transition comes off for the orbit, and
+it lands back on the diagram the reset produced.
 
 ## Tests
 
 ```
-node test/migration.js    # 746 checks — storage, migration, roles, formations,
+node test/migration.js    # 756 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

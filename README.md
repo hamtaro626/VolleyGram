@@ -174,7 +174,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.46. Working title, actively developed, no issues or PRs open yet.
+v0.47. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

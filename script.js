@@ -390,7 +390,6 @@ let store = {
   roleScope: 'all',      // whether a role edit hits every rotation or just this one
   transparentExport: false,
   checkOverlap: false,   // flag base positions that break rotational order
-  seenIntro: false,      // the fan-out has played once on this device
   // The live match. Top level rather than on a lineup: a score is something
   // happening right now, not a fact about a team, and it would be wrong to
   // carry one into a share link. newMatch() is a function declaration, so it's
@@ -982,9 +981,6 @@ function load() {
       transparentExport: parsed.transparentExport === true,
       // Added in v0.19. Defaults off, so an older save needs no version bump.
       checkOverlap: parsed.checkOverlap === true,
-      // Absent in every save before v0.42, which is exactly right: anyone
-      // upgrading has never seen the intro, so they get it once.
-      seenIntro: parsed.seenIntro === true,
       // Added in v0.22, same treatment: absent in every earlier save, so
       // normaliseMatch() hands back a fresh 0-0 rather than a version bump.
       match: normaliseMatch(parsed.match),
@@ -1523,9 +1519,9 @@ function applyRosterOrder(order) {
   return true;
 }
 
-// Someone using the app never wants to watch it arrive, so `intro` is false
-// every time but the very first open and a deliberate tap on the title --
-// see playIntro().
+// `intro` is true on the page load that starts a session and false for every
+// rebuild after it -- a rebuild happens mid-use, when someone is looking at the
+// diagram and wants the edit they just made, not a performance. See playIntro().
 function rebuild(intro = false) {
   // Drop the animation first, or the rebuilt circles slide in from the corner.
   court.classList.remove('animate');
@@ -1598,11 +1594,12 @@ function motionAllowed() {
 // rather than the two fighting over the same six elements.
 let introCancel = null;
 
-// `gather` is the difference between the two ways in. A first open has nothing
+// `gather` is the difference between the two ways in. A page load has nothing
 // to gather from -- the page is arriving -- so the players are placed at the
 // centre before the browser paints, and the huddle is the opening image. A
-// replay interrupts a diagram someone is already looking at, so they have to
-// travel to the centre; dropping them there is a flinch.
+// replay (the title, or a reset) interrupts a diagram someone is already
+// looking at, so they have to travel to the centre; dropping them there is a
+// flinch.
 function playIntro(gather = false) {
   if (introCancel) introCancel();
 
@@ -1629,7 +1626,7 @@ function playIntro(gather = false) {
   const aspect = box.height > 0 ? box.width / box.height : 1;
 
   // The beat at centre is served by whichever mechanism is already running. On
-  // a first open that is the frame loop, which holds before it starts moving.
+  // a page load that is the frame loop, which holds before it starts moving.
   // On a replay the CSS slide is still switched on, so the beat is spent
   // waiting there instead -- see the handoff below.
   const hold = gather ? 0 : INTRO_HUDDLE_MS;
@@ -2775,11 +2772,11 @@ document.getElementById('next').addEventListener('click', () => step(1));
 undoButton.addEventListener('click', undo);
 
 // Tapping the title replays the intro. This ignores prefers-reduced-motion,
-// where the automatic first-open one obeys it: that setting is about motion
-// nobody asked for, and this is a button whose entire stated job is to play an
-// animation. It changes no data, and it deliberately does not rebuild -- the
-// diagram on screen is already right, and the players need to pan away from
-// where they are rather than from freshly created elements.
+// where the automatic ones on load and on reset obey it: that setting is about
+// motion nobody asked for, and this is a button whose entire stated job is to
+// play an animation. It changes no data, and it deliberately does not rebuild
+// -- the diagram on screen is already right, and the players need to pan away
+// from where they are rather than from freshly created elements.
 titleButton.addEventListener('click', () => playIntro(true));
 
 document.getElementById('reset').addEventListener('click', () => {
@@ -2833,6 +2830,11 @@ function startHold() {
     saved.layouts = emptyLayouts();
     save();
     render();
+    // The fan-out again, so a reset reads as the diagram being rebuilt rather
+    // than dragged positions quietly vanishing. `gather` is true: the players
+    // are on screen already, so they travel to the centre rather than
+    // appearing there.
+    if (motionAllowed()) playIntro(true);
   }, HOLD_MS);
 }
 
@@ -3042,10 +3044,8 @@ buildFormationOptionSelects();
 transparentToggle.checked = store.transparentExport;
 overlapToggle.checked = store.checkOverlap;
 
-// Once per device, and never in front of someone who asked for less motion.
-// Marked as seen either way it plays, so a refresh mid-set is not a re-run.
-const introducing = !store.seenIntro && motionAllowed();
-if (introducing) store.seenIntro = true;
+// Every load, and never in front of someone who asked for less motion.
+const introducing = motionAllowed();
 rebuild(introducing);
 renderScoreboard();
 

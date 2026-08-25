@@ -2591,23 +2591,20 @@ console.log('\n56. The intro');
 
   check('a first open starts everyone at centre court',
     distinct(first) === 1 && spots(first)[0] === '50%,50%', spots(first).join(' '));
-  check('and remembers it happened', first.peek().store.seenIntro === true);
-  check('which is written to storage, not just held in memory',
-    JSON.parse(first.memory['volleyball-rotations-v1']).seenIntro === true);
+  check('and nothing about it is written to storage',
+    !('seenIntro' in JSON.parse(first.memory['volleyball-rotations-v1'])));
 
-  // Second open: straight to the diagram, no huddle.
+  // Every open, not just the first: a refresh is how you ask for it again.
   const second = boot(first.memory['volleyball-rotations-v1']);
-  check('a second open goes straight to the rotation',
-    distinct(second) > 1, spots(second).join(' '));
+  check('a second open huddles too',
+    distinct(second) === 1 && spots(second)[0] === '50%,50%', spots(second).join(' '));
 
-  // A stated preference for less motion means none -- and does not spend the
-  // intro either, so turning the preference off later still earns it.
+  // A stated preference for less motion means none, on every open.
   const reduced = boot(undefined, undefined, {
     matchMedia: (query) => ({ matches: /prefers-reduced-motion/.test(query) }),
   });
   check('reduced motion skips the huddle',
     distinct(reduced) > 1, spots(reduced).join(' '));
-  check('and leaves the intro unspent', reduced.peek().store.seenIntro === false);
 
   // The court has to end up animating either way, or the rotation slide that
   // has existed since v0.2 would be dead after a first open.
@@ -2758,14 +2755,16 @@ console.log('\n58. Replaying it from the title');
     courtEl.classList.contains('animate'));
   pump(HUDDLE + SPIN + 16);
   const landed = spots();
-  const plain = boot(JSON.stringify({ ...JSON.parse(app.memory['volleyball-rotations-v1']) }));
+  // Reduced motion, so this one lands on the settled diagram rather than the
+  // huddle -- it is here to say where render() puts people, not to animate.
+  const plain = boot(JSON.stringify({ ...JSON.parse(app.memory['volleyball-rotations-v1']) }),
+    undefined, { matchMedia: (query) => ({ matches: /prefers-reduced-motion/.test(query) }) });
   check('and lands them exactly where the diagram wanted them',
     landed.join(' ') === Object.values(plain.players())
       .map((el) => `${el.style.left},${el.style.top}`).join(' '),
     landed.join(' '));
 
-  // The title replays it. This is the only way back to the intro once the
-  // first open has spent it, so it has to work on an app that has seen it.
+  // The title replays it on demand, without waiting for a refresh.
   const title = app.document.getElementById('replayIntro');
   check('the title is wired up as a button', (title.listeners.click || []).length === 1);
 
@@ -2918,7 +2917,110 @@ console.log('\n58. Replaying it from the title');
     /white-space:\s*nowrap/.test(rule));
 }
 
-console.log('\n59. The logo, the icons and the link preview');
+console.log('\n59. Replaying it after a reset');
+{
+  // Same hand-wound clock as the replay above: the reset's intro is a gather,
+  // and a gather is only correct if it can be watched frame by frame.
+  const frames = new Map();
+  const timers = new Map();
+  let nextFrame = 1;
+  let nextTimer = 1;
+  const clock = {
+    requestAnimationFrame: (fn) => { frames.set(nextFrame, fn); return nextFrame++; },
+    cancelAnimationFrame: (id) => { frames.delete(id); },
+    setTimeout: (fn, ms) => { timers.set(nextTimer, { fn, ms }); return nextTimer++; },
+    clearTimeout: (id) => { timers.delete(id); },
+  };
+  const app = boot(undefined, undefined, clock);
+  const { HUDDLE, SPIN, GATHER } = app.intro();
+  const spots = () => Object.values(app.players())
+    .map((el) => `${el.style.left},${el.style.top}`);
+  const pump = (t) => {
+    const due = [...frames.values()];
+    frames.clear();
+    due.forEach((fn) => fn(t));
+  };
+  const tick = (ms) => {
+    [...timers.entries()].forEach(([id, timer]) => {
+      if (timer.ms > ms) return;
+      timers.delete(id);
+      timer.fn();
+    });
+  };
+
+  // Run the opening intro out of the way. This test is about the next one.
+  pump(0);
+  pump(HUDDLE + SPIN);
+  pump(HUDDLE + SPIN + 16);
+  const diagram = spots().join(' ');
+  const courtEl = app.document.getElementById('court');
+  check('the opening intro has landed before the reset is touched',
+    new Set(spots()).size === 6, diagram);
+
+  const reset = app.document.getElementById('resetAll');
+  check('the reset button is wired to a press and a release',
+    (reset.listeners.pointerdown || []).length === 1
+      && (reset.listeners.pointerup || []).length === 1);
+
+  const undosBefore = app.stacks().undos;
+  reset.dispatch('pointerdown');
+  tick(100);
+  check('a press let go of early resets nothing and starts no intro',
+    app.stacks().undos === undosBefore && spots().join(' ') === diagram);
+
+  // Held through. HOLD_MS is 1.5s, so anything past it fires the reset.
+  tick(2000);
+  check('holding it through does the reset', app.stacks().undos === undosBefore + 1);
+  // The players are on screen and being looked at, so the same rule as the
+  // title replay applies: nobody may be teleported to the centre.
+  check('and does not snap anyone to the centre',
+    spots().join(' ') === diagram, spots().join(' '));
+
+  pump(0);
+  check('it leaves the rotation slide switched on to carry them in',
+    courtEl.classList.contains('animate'));
+  pump(16);
+  check('the next frame sends everyone to the middle, sliding',
+    new Set(spots()).size === 1 && spots()[0] === '50%,50%'
+      && courtEl.classList.contains('animate'), spots().join(' '));
+
+  tick(GATHER + HUDDLE);
+  check('once they arrive the transition comes off for the orbit',
+    !courtEl.classList.contains('animate'));
+  pump(2000);
+  pump(2000 + HUDDLE + SPIN / 2);
+  check('and the spin runs from the centre as it does on an open',
+    new Set(spots()).size === 6, spots().join(' '));
+  pump(2000 + HUDDLE + SPIN);
+  pump(2000 + HUDDLE + SPIN + 16);
+  check('the reset intro ends on the reset diagram',
+    spots().join(' ') === diagram, spots().join(' '));
+
+  // Reduced motion resets without any of this. The reset still has to happen.
+  const quietTimers = new Map();
+  let nextQuiet = 1;
+  const quiet = boot(undefined, undefined, {
+    matchMedia: (query) => ({ matches: /prefers-reduced-motion/.test(query) }),
+    setTimeout: (fn, ms) => { quietTimers.set(nextQuiet, { fn, ms }); return nextQuiet++; },
+    clearTimeout: (id) => { quietTimers.delete(id); },
+  });
+  const quietSpots = () => Object.values(quiet.players())
+    .map((el) => `${el.style.left},${el.style.top}`);
+  const quietDiagram = quietSpots().join(' ');
+  const quietReset = quiet.document.getElementById('resetAll');
+  const quietUndos = quiet.stacks().undos;
+  quietReset.dispatch('pointerdown');
+  [...quietTimers.entries()].forEach(([id, timer]) => {
+    if (timer.ms > 2000) return;
+    quietTimers.delete(id);
+    timer.fn();
+  });
+  check('reduced motion still resets', quiet.stacks().undos === quietUndos + 1);
+  check('and leaves everyone on the diagram, unmoved',
+    quietSpots().join(' ') === quietDiagram, quietSpots().join(' '));
+}
+
+console.log('\n60. The logo, the icons and the link preview');
 {
   const root = path.join(__dirname, '..');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
