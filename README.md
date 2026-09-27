@@ -27,7 +27,8 @@ Built to use on mobile devices courtside
   background
 - **Share links** that carry the whole diagram in the URL — no server involved
 - **Scoreboard** — a standalone, read-it-from-across-the-gym score counter for
-  two named teams in red and blue, with a per-game match record
+  two named teams in red and blue, with a per-game match record, a game
+  timer and the time of day
 - **Playing surface** per lineup — indoor clay, grass green or off-white sand,
   contrast-checked against every role
 
@@ -50,7 +51,7 @@ dev/
   preview.html  the real app in live iframes at real device widths, for the
                 layout questions a stubbed DOM cannot answer
 test/
-  migration.js  746 checks: storage, migration, roles, formations, quiz,
+  migration.js  781 checks: storage, migration, roles, formations, quiz,
                 sharing, dragging, short-handed rosters, playing surface,
                 scoreboard
   contrast.js   contrast, hue separation, every role against all three court
@@ -174,7 +175,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.47. Working title, actively developed, no issues or PRs open yet.
+v0.48. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

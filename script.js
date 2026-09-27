@@ -212,7 +212,7 @@ const MIN_PLAYERS = 2;
 const HOLD_MS = 1500;
 const HISTORY_LIMIT = 40;
 
-// One entry per point scored, kept so the scoreboard can undo a mis-tap. A set
+// One entry per point scored, kept so the scoreboard can take one back. A set
 // to 25 runs 45-90 rallies, so this holds a long one whole and still costs
 // almost nothing in localStorage.
 const RALLY_LIMIT = 120;
@@ -758,8 +758,8 @@ function draggedLayout(formation, rotation) {
 // Only the lineups. It used to be the whole store, which quietly made undo a
 // time machine for everything living beside them: one undo of a player nudge
 // rewound the scoreboard's match to whatever the score was when the nudge was
-// made, rally trail included. The match has its own undo (undoRally) on its
-// own screen; the display flags are current preferences, not edits. Undo means
+// made, rally trail included. The match has its own take-back (subtractPoint)
+// on its own screen; the display flags are current preferences, not edits. Undo means
 // "take back what I did to the diagram", so the snapshot is the diagram.
 function pushHistory() {
   history.push(structuredClone({ activeId: store.activeId, lineups: store.lineups }));
@@ -2132,6 +2132,11 @@ function newMatch() {
     // the whiteboard: tapping a point should not bury a drag you want back, and
     // undoing a drag should not rewind the score.
     rallies: [],
+    // When the current game's first point was scored, in epoch ms, or null
+    // before it has one. A timestamp rather than a running count of seconds,
+    // so the game clock stays right through a locked phone, a closed
+    // scoreboard, or a refresh -- nothing has to be ticking for time to pass.
+    startedAt: null,
   };
 }
 
@@ -2169,6 +2174,9 @@ function normaliseMatch(raw) {
     game: Math.max(1, count(raw.game) || 1, games.length + 1),
     games,
     rallies,
+    // A game with no points hasn't started, whatever the stored time says.
+    startedAt: Number.isFinite(raw.startedAt) && raw.startedAt > 0
+      && count(raw.homeScore) + count(raw.awayScore) > 0 ? raw.startedAt : null,
   };
 }
 
@@ -2181,6 +2189,9 @@ function scorePoint(which) {
   match.rallies.push({ side: which });
   if (match.rallies.length > RALLY_LIMIT) match.rallies.shift();
   match[scoreKey(which)] += 1;
+  // The first point starts the game clock. Opening the scoreboard doesn't,
+  // because it usually goes up during warm-ups.
+  if (match.startedAt === null) match.startedAt = Date.now();
 
   save();
   renderScoreboard();
@@ -2188,13 +2199,29 @@ function scorePoint(which) {
 
 // Courtside, on a phone, with a rally starting: the mis-tap is not a rare case,
 // it's the normal one.
-function undoRally() {
+//
+// Takes a point off one named side, rather than undoing whatever was scored
+// last. v0.48 swapped a single Undo for this because a mis-tap is often noticed
+// a rally or two late -- by then the last point is a real one, and undo would
+// take back the wrong thing.
+function subtractPoint(which) {
+  if (!SIDES.includes(which)) return;
   const match = store.match;
-  const last = match.rallies.pop();
-  if (!last) return;
+  const key = scoreKey(which);
+  if (match[key] === 0) return;
 
-  const key = scoreKey(last.side);
-  match[key] = Math.max(0, match[key] - 1);
+  match[key] -= 1;
+  // Drop that side's newest entry from the trail too, so the trail still adds
+  // up to the score. It may already have aged out past RALLY_LIMIT.
+  for (let i = match.rallies.length - 1; i >= 0; i--) {
+    if (match.rallies[i].side === which) {
+      match.rallies.splice(i, 1);
+      break;
+    }
+  }
+  // Back to 0-0 means the only point was a mis-tap, so the game hasn't
+  // started after all.
+  if (match.homeScore + match.awayScore === 0) match.startedAt = null;
 
   save();
   renderScoreboard();
@@ -2218,6 +2245,7 @@ function newGame(winner) {
   match.homeScore = 0;
   match.awayScore = 0;
   match.rallies = [];
+  match.startedAt = null;
 
   closeNewGame();
   save();
@@ -2249,11 +2277,13 @@ const scoreElements = {
   home: {
     name: document.getElementById('sbHomeName'),
     score: document.getElementById('sbHomeScore'),
+    minus: document.getElementById('sbHomeMinus'),
     win: document.getElementById('sbHomeWon'),
   },
   away: {
     name: document.getElementById('sbAwayName'),
     score: document.getElementById('sbAwayScore'),
+    minus: document.getElementById('sbAwayMinus'),
     win: document.getElementById('sbAwayWon'),
   },
 };
@@ -2264,6 +2294,7 @@ function renderScoreboard() {
   SIDES.forEach((which) => {
     const el = scoreElements[which];
     el.score.textContent = String(match[scoreKey(which)]);
+    el.minus.disabled = match[scoreKey(which)] === 0;
     // Only written when it differs, or typing in the field would fight the
     // cursor back to the end on every keystroke.
     if (el.name.value !== match[which]) el.name.value = match[which];
@@ -2274,7 +2305,7 @@ function renderScoreboard() {
   const tally = homeGames + awayGames > 0 ? ` · Games ${homeGames}–${awayGames}` : '';
   document.getElementById('sbGame').textContent = `Game ${match.game}${tally}`;
 
-  document.getElementById('sbUndo').disabled = match.rallies.length === 0;
+  renderTimes();
 
   const played = match.homeScore + match.awayScore > 0;
   document.getElementById('sbFinal').textContent = played
@@ -2284,6 +2315,34 @@ function renderScoreboard() {
   // Nothing was played, so there is no winner to offer -- only the option to
   // move on. Offering a winner here would put a 0-0 game in the record.
   newGamePanel.classList.toggle('nothing-played', !played);
+}
+
+// How long the game has run, as m:ss, or h:mm:ss once it passes an hour.
+// Negative time (the device clock was wound back mid-game) reads as 0:00
+// rather than as nonsense.
+function formatElapsed(ms) {
+  const total = Math.max(0, Math.floor((Number(ms) || 0) / 1000));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const seconds = String(total % 60).padStart(2, '0');
+  return hours > 0
+    ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}`
+    : `${minutes}:${seconds}`;
+}
+
+// Time of day in whatever format the phone itself uses, 12- or 24-hour.
+function formatClock(date) {
+  return date.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+}
+
+function renderTimes(now = Date.now()) {
+  const { startedAt } = store.match;
+  const timer = document.getElementById('sbTimer');
+  timer.textContent = startedAt === null ? '0:00' : formatElapsed(now - startedAt);
+  // Dimmed while it waits for the first point, so a stopped 0:00 doesn't look
+  // like a broken clock.
+  timer.classList.toggle('idle', startedAt === null);
+  document.getElementById('sbClock').textContent = formatClock(new Date(now));
 }
 
 function openNewGame() {
@@ -2300,6 +2359,9 @@ function closeNewGame() {
 // denied, or a backgrounded tab all land in the same catch, and the scoreboard
 // works the same either way.
 let wakeLock = null;
+// Only ticks while the scoreboard is up. The times are worked out from
+// timestamps, so stopping this loses nothing -- it just stops repainting.
+let timeTicker = null;
 
 async function keepAwake(want) {
   try {
@@ -2337,6 +2399,7 @@ function openScoreboard() {
   closeNewGame();
   renderScoreboard();
   keepAwake(true);
+  if (!timeTicker) timeTicker = setInterval(() => renderTimes(), 1000);
 }
 
 function closeScoreboard() {
@@ -2344,6 +2407,8 @@ function closeScoreboard() {
   scorePanel.hidden = true;
   closeNewGame();
   keepAwake(false);
+  clearInterval(timeTicker);
+  timeTicker = null;
 }
 
 
@@ -2995,8 +3060,6 @@ function syncRosterButton() {
 
 document.getElementById('openScoreboard').addEventListener('click', openScoreboard);
 document.getElementById('closeScoreboard').addEventListener('click', closeScoreboard);
-document.getElementById('sbUndo').addEventListener('click', undoRally);
-
 // The one control that ends a game, so it asks who won rather than silently
 // throwing the score away.
 document.getElementById('sbEndGame').addEventListener('click', openNewGame);
@@ -3007,6 +3070,8 @@ SIDES.forEach((which) => {
   const capitalised = which[0].toUpperCase() + which.slice(1);
   document.getElementById(`sb${capitalised}Point`)
     .addEventListener('click', () => scorePoint(which));
+  document.getElementById(`sb${capitalised}Minus`)
+    .addEventListener('click', () => subtractPoint(which));
   document.getElementById(`sb${capitalised}Won`)
     .addEventListener('click', () => newGame(which));
   document.getElementById(`sb${capitalised}Name`)

@@ -2584,10 +2584,76 @@ the rule everywhere else.
 centre, the slide carries them in, the transition comes off for the orbit, and
 it lands back on the diagram the reset produced.
 
+## v0.48 — a game clock, a wall clock, and a minus per side
+
+Three changes to the scoreboard.
+
+### Game time and the time of day, in the top bar
+
+Beside the game number, two small readouts: **Game time** (how long this game
+has run) and **Now** (the time of day, in the phone's own 12- or 24-hour
+format). Both sit in the bar rather than on the halves, because the halves are
+for the score and nothing else should compete with it from across a gym.
+
+The game clock **starts on the first point**, not when the scoreboard opens —
+the scoreboard usually goes up during warm-ups, and a clock that has already
+counted ten minutes of warm-up answers the wrong question. Until then it shows
+a dimmed `0:00`. It resets when a game ends.
+
+It's stored as a timestamp (`match.startedAt`), not as a count of seconds
+ticking up. That's the important choice: a count only advances while something
+is running, and a phone mid-set gets locked, backgrounded and refreshed. A
+timestamp is right whenever it's read, so the clock survives all of that, and
+the once-a-second repaint is only there to redraw it — it runs only while the
+scoreboard is open.
+
+Subtracting back to 0-0 clears the start time too: if the only point was a
+mis-tap, the game hasn't actually started.
+
+### A −1 on each side instead of Undo
+
+The single **Undo point** button is gone. Each team's half now has a small
+**−1** laid over its bottom edge, which takes one point off *that* team.
+
+Undo takes back whatever was scored last. That's the right thing only if the
+mistake is noticed straight away, and courtside it often isn't: by the time
+someone says "that was their point", another rally has been played, and undo
+would take back the real one. A minus per side takes the point off the team
+that shouldn't have it, however late it's noticed.
+
+It hides at zero, where there's nothing to take. It's a sibling of the big
+score button, not inside it, because a button can't contain a button — browsers
+split them apart.
+
+The rally trail stays, and subtracting removes that side's newest entry from it,
+so the trail still adds up to the score.
+
+### End game moves up beside Done
+
+With Undo gone the bottom bar held one button, so it went too, and **End game**
+joined **Done** in the top bar. The score halves get that space back.
+
+On a phone held upright, five things don't fit across, and the game line was
+being cut to "G…" — losing the number it exists to show. Below 480px wide it
+takes its own row and the times and buttons share the one under it. Checked in
+headless Chrome at 360×740, 390×844, 844×390 and 1180×820.
+
+### Not doing
+
+- **Recording each game's length in the match record.** It would be one field
+  on each finished game, but the ask was a clock to glance at, not a stat.
+  Easy to add later since the start time already exists.
+- **Pausing the game clock** for timeouts or between sets. Real time is what
+  it shows; a clock that can be paused is a clock that can be left paused.
+
+`§61` covers subtracting per side, the trail staying consistent, the clock
+starting, surviving a reload, clearing, the time formats, and where the
+buttons sit in the markup.
+
 ## Tests
 
 ```
-node test/migration.js    # 756 checks — storage, migration, roles, formations,
+node test/migration.js    # 781 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

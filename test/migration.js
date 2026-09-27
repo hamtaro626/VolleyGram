@@ -114,6 +114,8 @@ function boot(seedJson, seedHash, extraContext) {
     cancelAnimationFrame: () => {},
     setTimeout: () => 0,
     clearTimeout: () => {},
+    setInterval: () => 0,
+    clearInterval: () => {},
     prompt: () => 'Prompted name',
     confirm: () => true,
     alert: () => {},
@@ -151,9 +153,10 @@ function boot(seedJson, seedHash, extraContext) {
       startDrag, onDrag, endDrag, versionFrom, overlapViolations, applySurface,
       benchPosition,
       cycleIndexFor: cycleIndex, courtRing,
-      scorePoint, undoRally, newGame, renameTeam, normaliseMatch, gamesWon,
+      scorePoint, subtractPoint, newGame, renameTeam, normaliseMatch, gamesWon,
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
-      closeNewGame, closeMore, syncMenuButtons, introSpot, playIntro };
+      closeNewGame, closeMore, syncMenuButtons, introSpot, playIntro,
+      formatElapsed, renderTimes };
     globalThis.__intro = () => ({ HUDDLE: INTRO_HUDDLE_MS, SPIN: INTRO_SPIN_MS,
       TURNS: INTRO_TURNS, RADIUS: INTRO_RADIUS, GATHER: INTRO_GATHER_MS });
     globalThis.__players = () => playerElements;
@@ -1667,7 +1670,7 @@ console.log('\n42. Playing surface');
   });
 }
 
-console.log('\n43. Scoreboard — scoring, undo, and staying out of the diagram');
+console.log('\n43. Scoreboard — scoring, subtracting, and staying out of the diagram');
 {
   const app = boot();
   const match = () => app.peek().store.match;
@@ -1694,13 +1697,13 @@ console.log('\n43. Scoreboard — scoring, undo, and staying out of the diagram'
   check('and the match carries no serving field',
     !('serving' in match()), Object.keys(match()).join(','));
 
-  app.call.undoRally();
-  check('undo takes the last point back', match().homeScore === 2);
-  check('undo does not move the rotation either', app.peek().currentRotation === 1);
+  app.call.subtractPoint('home');
+  check('subtract takes a point off that side', match().homeScore === 2);
+  check('subtract does not move the rotation either', app.peek().currentRotation === 1);
 
   const empty = boot();
-  empty.call.undoRally();
-  check('undo on an empty trail does nothing',
+  empty.call.subtractPoint('home');
+  check('subtract at zero does nothing',
     empty.peek().store.match.homeScore === 0 && empty.peek().store.match.awayScore === 0);
 
   // An unknown side must not invent a score key.
@@ -3130,6 +3133,116 @@ console.log('\n60. The logo, the icons and the link preview');
   check('the mark is sized in rem, not off the viewport',
     /height:\s*[\d.]+rem/.test(logoRule) && !/vw|vh|cq/.test(logoRule),
     logoRule.trim());
+}
+
+console.log('\n61. Scoreboard — subtract per side, and the game clock');
+{
+  const app = boot();
+  const match = () => app.peek().store.match;
+  const el = (id) => app.document.getElementById(id);
+
+  // Home scores, then away twice, then home notices the mis-tap two rallies
+  // late. The old single Undo would have taken away's real point.
+  app.call.scorePoint('home');
+  app.call.scorePoint('away');
+  app.call.scorePoint('away');
+  app.call.subtractPoint('home');
+  check('subtract takes from the side asked, not the last point scored',
+    match().homeScore === 0 && match().awayScore === 2,
+    `${match().homeScore}-${match().awayScore}`);
+  check('and the rally trail still adds up to the score',
+    match().rallies.length === 2 && match().rallies.every((r) => r.side === 'away'),
+    JSON.stringify(match().rallies));
+  check('the minus button hides at zero and shows above it',
+    el('sbHomeMinus').disabled === true && el('sbAwayMinus').disabled === false);
+
+  const bogus = boot();
+  bogus.call.scorePoint('home');
+  bogus.call.subtractPoint('middle');
+  check('subtracting from an unknown side does nothing',
+    bogus.peek().store.match.homeScore === 1);
+
+  // A point older than the trail cap still comes off.
+  const aged = boot(JSON.stringify({ version: 2,
+    match: { homeScore: 30, awayScore: 0, rallies: [], startedAt: 1000 } }));
+  aged.call.subtractPoint('home');
+  check('a point older than the trail still subtracts',
+    aged.peek().store.match.homeScore === 29);
+
+  // The game clock.
+  const clock = boot();
+  const cm = () => clock.peek().store.match;
+  check('a fresh game has no start time', cm().startedAt === null);
+  const before = Date.now();
+  clock.call.scorePoint('away');
+  check('the first point starts the clock',
+    cm().startedAt >= before && cm().startedAt <= Date.now(), String(cm().startedAt));
+  const started = cm().startedAt;
+  clock.call.scorePoint('home');
+  check('later points do not restart it', cm().startedAt === started);
+  clock.call.subtractPoint('home');
+  check('a subtract that leaves points on the board keeps it running',
+    cm().startedAt === started);
+  clock.call.subtractPoint('away');
+  check('back to 0-0 clears it -- the only point was a mis-tap',
+    cm().startedAt === null);
+  clock.call.scorePoint('home');
+  clock.call.newGame('home');
+  check('a new game clears it', cm().startedAt === null);
+
+  clock.call.scorePoint('home');
+  const stored = JSON.parse(clock.memory['volleyball-rotations-v1']).match.startedAt;
+  check('the start time is saved, so a refresh keeps counting',
+    stored === cm().startedAt && stored !== null, String(stored));
+  const reloaded = boot(clock.memory['volleyball-rotations-v1']);
+  check('and survives a reload', reloaded.peek().store.match.startedAt === stored);
+
+  const junk = boot(JSON.stringify({ version: 2,
+    match: { homeScore: 3, awayScore: 1, startedAt: 'yesterday' } }));
+  check('a junk start time is dropped', junk.peek().store.match.startedAt === null);
+  const orphan = boot(JSON.stringify({ version: 2,
+    match: { homeScore: 0, awayScore: 0, startedAt: 12345 } }));
+  check('a start time on a 0-0 game is dropped',
+    orphan.peek().store.match.startedAt === null);
+
+  const f = clock.call.formatElapsed;
+  check('elapsed reads m:ss', f(0) === '0:00' && f(65 * 1000) === '1:05'
+    && f(25 * 60 * 1000 + 999) === '25:00', `${f(0)} ${f(65000)} ${f(1500999)}`);
+  check('and h:mm:ss past an hour', f((3600 + 5 * 60 + 7) * 1000) === '1:05:07',
+    f(3907000));
+  check('and never negative when the device clock is wound back', f(-5000) === '0:00');
+
+  // Drive the painter with a fixed "now" and read what it wrote.
+  const paint = boot();
+  const timer = () => paint.document.getElementById('sbTimer');
+  paint.call.renderTimes(Date.now());
+  check('the timer shows 0:00 before the first point, dimmed',
+    timer().textContent === '0:00' && timer().classList.contains('idle'));
+  paint.call.scorePoint('home');
+  const t0 = paint.peek().store.match.startedAt;
+  paint.call.renderTimes(t0 + 12 * 60 * 1000 + 34 * 1000);
+  check('and the running time after it, undimmed',
+    timer().textContent === '12:34' && !timer().classList.contains('idle'),
+    timer().textContent);
+  check('the time of day is filled in',
+    /\d:\d\d/.test(paint.document.getElementById('sbClock').textContent),
+    paint.document.getElementById('sbClock').textContent);
+
+  // Layout: End game is up in the head beside Done, and Undo is gone.
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const head = (html.match(/<div class="sb-head">[\s\S]*?<\/div>/) || [''])[0];
+  check('End game sits in the top bar with Done',
+    /id="sbEndGame"/.test(head) && /id="closeScoreboard"/.test(head));
+  check('and so do the timer and the clock',
+    /id="sbTimer"/.test(head) && /id="sbClock"/.test(head));
+  check('the undo-point button is gone', !/id="sbUndo"/.test(html));
+  // A button inside a button is invalid HTML, and browsers split them apart.
+  check('each side has its own minus, outside the score button',
+    ['Home', 'Away'].every((side) => {
+      const point = html.match(new RegExp(`<button[^>]*id="sb${side}Point"[\\s\\S]*?</button>`));
+      return point && !/sb-minus/.test(point[0])
+        && new RegExp(`id="sb${side}Minus"`).test(html);
+    }));
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

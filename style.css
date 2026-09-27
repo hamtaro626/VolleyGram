@@ -714,7 +714,7 @@ body.scoring > .version {
 .sb-head {
   display: flex;
   align-items: center;
-  gap: 1rem;
+  gap: clamp(0.5rem, 2vmin, 1.5rem);
   flex: 0 0 auto;
 }
 
@@ -728,9 +728,58 @@ body.scoring > .version {
   text-overflow: ellipsis;
 }
 
-.sb-close {
+.sb-close,
+.sb-end {
   flex: 0 0 auto;
   padding: 0.6rem 1.2rem;
+}
+
+/* Game time and time of day: a small label over the number, so the pair stays
+   narrow enough to share a phone's width with the game line and two buttons. */
+.sb-stat {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1.1;
+}
+
+.sb-stat-label {
+  font-size: clamp(0.6rem, 1.6vmin, 0.8rem);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #aab2c0;
+}
+
+.sb-stat-value {
+  font-size: clamp(0.9rem, 3vmin, 1.6rem);
+  font-weight: 700;
+  /* Digits keep their own width, so the clock doesn't shuffle every second. */
+  font-variant-numeric: tabular-nums;
+}
+
+/* Waiting for the first point. */
+.sb-stat-value.idle {
+  color: #aab2c0;
+}
+
+/* A phone held upright can't fit all five across: the game line was cut down
+   to "G..." and lost the one number it exists to show. So it takes a row of its
+   own, and the times and buttons share the row under it. Portrait has height
+   to spare, which is exactly what it doesn't have sideways. */
+@media (max-width: 480px) {
+  .sb-head {
+    flex-wrap: wrap;
+    row-gap: 0.4rem;
+  }
+
+  .sb-game {
+    flex-basis: 100%;
+  }
+
+  .sb-end {
+    margin-left: auto;
+  }
 }
 
 /* --- Team colours ----------------------------------------------------- */
@@ -788,11 +837,22 @@ body.scoring > .version {
   appearance: none;
 }
 
+/* Holds the score and the subtract button laid over its bottom edge. They're
+   siblings rather than one inside the other because a button can't contain a
+   button. */
+.sb-pad {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+}
+
 /* The whole half is the tap target, filled with the team's colour. Courtside
    you are not aiming. */
 .sb-point {
   flex: 1 1 auto;
   min-height: 0;
+  width: 100%;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -844,11 +904,36 @@ body.scoring > .version {
   }
 }
 
-.sb-actions {
-  flex: 0 0 auto;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
+/* Takes a point back off this side. Deliberately smaller than the score and
+   pinned to the bottom edge, so it is reachable without aiming hard but is
+   not where a thumb lands when scoring. A darkened wash over the team colour
+   rather than a new colour: it reads as part of that team's half. 44px is
+   Apple's minimum comfortable target. */
+.sb-minus {
+  position: absolute;
+  left: 50%;
+  bottom: 1.5vmin;
+  transform: translateX(-50%);
+  min-width: 44px;
+  min-height: 44px;
+  padding: 0.3rem clamp(1rem, 3vmin, 2rem);
+  font-size: clamp(1rem, 3vmin, 1.6rem);
+  font-weight: 700;
+  border: 2px solid rgba(242, 244, 248, 0.5);
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+  color: #f2f4f8;
+  touch-action: manipulation;
+}
+
+.sb-minus:active {
+  background: rgba(0, 0, 0, 0.5);
+}
+
+/* Nothing to take back at zero. Hidden rather than greyed so a 0 panel stays
+   clean from across the gym. */
+.sb-minus:disabled {
+  visibility: hidden;
 }
 
 /* --- Ending a game ---------------------------------------------------- */

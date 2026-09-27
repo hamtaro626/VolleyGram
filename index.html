@@ -17,9 +17,9 @@
        purpose rather than arrived at by accident. The maskable one is a
        separate file because Android crops to a circle of 80% diameter, which
        would take the ends off a wordmark drawn to the edges. -->
-  <link rel="icon" href="assets/favicon-32.png?v=0.46" sizes="32x32" type="image/png">
-  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.46">
-  <link rel="manifest" href="manifest.webmanifest?v=0.46">
+  <link rel="icon" href="assets/favicon-32.png?v=0.48" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.48">
+  <link rel="manifest" href="manifest.webmanifest?v=0.48">
 
   <!-- Link previews. The share feature sends URLs to team-mates by text, so
        these are what a chat app draws in the bubble. og:image has to be
@@ -28,13 +28,13 @@
   <meta property="og:title" content="VolleyGram">
   <meta property="og:description" content="A volleyball rotation reference. See where everyone stands in every rotation.">
   <meta property="og:url" content="https://hamtaro626.github.io/VolleyGram/">
-  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.46">
+  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.48">
   <meta name="twitter:card" content="summary_large_image">
   <!-- The ?v= query is cache busting. A browser caches by URL, so changing the
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.46">
+  <link rel="stylesheet" href="style.css?v=0.48">
 </head>
 <body>
   <main>
@@ -56,7 +56,7 @@
     <h1 class="masthead">
       <button type="button" id="replayIntro" class="title-replay"
         title="Replay the intro" aria-label="VolleyGram. Replay the intro."
-        ><img class="logo" src="assets/logo.webp?v=0.46" width="179" height="200"
+        ><img class="logo" src="assets/logo.webp?v=0.48" width="179" height="200"
           alt="VolleyGram"></button>
       <span class="tagline">A Volleyball Rotation Reference</span>
     </h1>
@@ -232,8 +232,19 @@
        than sitting inside it. Landscape and iPad are the target: prop the thing
        up on the bench and read it from the far side of the court. -->
   <section class="scoreboard" id="scoreboard" hidden>
+    <!-- Everything that isn't a score lives up here, so the two halves below
+         get the whole rest of the screen. -->
     <div class="sb-head">
       <span class="sb-game" id="sbGame">Game 1</span>
+      <span class="sb-stat" title="Starts on the first point of each game">
+        <span class="sb-stat-label">Game time</span>
+        <span class="sb-stat-value" id="sbTimer">0:00</span>
+      </span>
+      <span class="sb-stat">
+        <span class="sb-stat-label">Now</span>
+        <span class="sb-stat-value" id="sbClock"></span>
+      </span>
+      <button id="sbEndGame" class="sb-end">End game</button>
       <button id="closeScoreboard" class="sb-close">Done</button>
     </div>
 
@@ -243,23 +254,24 @@
       <div class="sb-team side-home">
         <input class="sb-name" id="sbHomeName" maxlength="20"
                aria-label="Home team name" autocomplete="off" spellcheck="false">
-        <button class="sb-point" id="sbHomePoint" aria-label="Point to the home team">
-          <span class="sb-score" id="sbHomeScore">0</span>
-        </button>
+        <div class="sb-pad">
+          <button class="sb-point" id="sbHomePoint" aria-label="Point to the home team">
+            <span class="sb-score" id="sbHomeScore">0</span>
+          </button>
+          <button class="sb-minus" id="sbHomeMinus" aria-label="Take a point off the home team" disabled>&minus;1</button>
+        </div>
       </div>
 
       <div class="sb-team side-away">
         <input class="sb-name" id="sbAwayName" maxlength="20"
                aria-label="Away team name" autocomplete="off" spellcheck="false">
-        <button class="sb-point" id="sbAwayPoint" aria-label="Point to the away team">
-          <span class="sb-score" id="sbAwayScore">0</span>
-        </button>
+        <div class="sb-pad">
+          <button class="sb-point" id="sbAwayPoint" aria-label="Point to the away team">
+            <span class="sb-score" id="sbAwayScore">0</span>
+          </button>
+          <button class="sb-minus" id="sbAwayMinus" aria-label="Take a point off the away team" disabled>&minus;1</button>
+        </div>
       </div>
-    </div>
-
-    <div class="sb-actions">
-      <button id="sbUndo" disabled>Undo point</button>
-      <button id="sbEndGame">End game</button>
     </div>
 
     <!-- Ending a game asks who took it. That answer is the match record, and
@@ -281,6 +293,6 @@
        never means scrolling, and filled by script.js from its own URL. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.46"></script>
+  <script src="script.js?v=0.48"></script>
 </body>
 </html>
