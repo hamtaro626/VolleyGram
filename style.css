@@ -373,6 +373,9 @@ body.quiz-hide-players .player.serving {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
+  /* A long press opens the sub prompt (v0.50), so iOS mustn't put its own
+     callout on top of it. */
+  -webkit-touch-callout: none;
 }
 
 /* The slide between rotations. The class goes on after the first paint so
@@ -506,12 +509,61 @@ body.hide-labels .player .label {
   display: block;
 }
 
+/* A temporary sub (v0.50). Same spot as the overlap badge, in the Server pill's
+   neutral colours -- it's information, not a problem -- which each surface
+   already sets to read against itself. When both apply, the overlap flag wins the spot:
+   it's the one that needs fixing, and the title still says who's subbed. */
+.player .sub-tag {
+  display: none;
+  position: absolute;
+  left: 50%;
+  top: -0.4rem;
+  transform: translateX(-50%);
+  padding: 0.14rem 0.32rem;
+  border-radius: 999px;
+  background: var(--pill-bg);
+  color: var(--pill-fg);
+  font-size: 0.48rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  line-height: 1;
+  text-transform: uppercase;
+  white-space: nowrap;
+  z-index: 5;
+}
+
+.player.subbed .sub-tag {
+  display: block;
+}
+
+.player.subbed.illegal .sub-tag {
+  display: none;
+}
+
 /* Keyboard focus on a player. An outline, which deliberately displaces the
    illegal-overlap outline while focused -- the focused player is the one being
    fixed, and its tooltip and aria-label still name the rule. */
 .player:focus-visible {
   outline: 3px solid var(--line);
   outline-offset: 2px;
+}
+
+/* Swap mode, v0.49. A pointer rather than a grab hand: nothing is being placed.
+   The picked player (tap-to-swap) and the one a drag would land on share one
+   look -- a solid ring in the court's own ink, a size up -- since both mean
+   "this is half of the swap". Outline, like the overlap flag, because the
+   setter ring owns box-shadow; and it outranks the overlap flag, because
+   overlap is about positions and swap mode is not touching any. */
+body.swapping .player {
+  cursor: pointer;
+}
+
+.player.swap-picked,
+.player.swap-target {
+  outline: 3px solid var(--line);
+  outline-offset: 3px;
+  transform: translate(-50%, -50%) scale(1.12);
+  z-index: 6;
 }
 
 /* --- Colour by role --------------------------------------------------- */
@@ -1139,6 +1191,12 @@ button.glyph {
 
 /* Lifted and faded while it's being moved, so it reads as detached from the
    list it's being dropped back into. */
+/* Subbed out for the night: the starter's name stays, dimmed and italic. */
+.roster-row.subbed-out input[type="text"] {
+  font-style: italic;
+  opacity: 0.6;
+}
+
 .roster-row.row-dragging {
   opacity: 0.85;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);

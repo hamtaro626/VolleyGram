@@ -156,7 +156,9 @@ function boot(seedJson, seedHash, extraContext) {
       scorePoint, subtractPoint, newGame, renameTeam, normaliseMatch, gamesWon,
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
       closeNewGame, closeMore, syncMenuButtons, introSpot, playIntro,
-      formatElapsed, renderTimes };
+      formatElapsed, renderTimes, swapPlayers, pickForSwap, setSwapMode,
+      subOut, subIn, openSubPrompt, normaliseSubs, applySystem };
+    globalThis.__swap = () => ({ swapMode, swapPicked });
     globalThis.__intro = () => ({ HUDDLE: INTRO_HUDDLE_MS, SPIN: INTRO_SPIN_MS,
       TURNS: INTRO_TURNS, RADIUS: INTRO_RADIUS, GATHER: INTRO_GATHER_MS });
     globalThis.__players = () => playerElements;
@@ -173,7 +175,7 @@ function boot(seedJson, seedHash, extraContext) {
   return { ...context, memory, warnings, peek: context.__peek, call: context.__call,
            consts: context.__const, status: context.__status, quiz: context.__quiz,
            stacks: context.__stacks, players: context.__players,
-           intro: context.__intro };
+           intro: context.__intro, swap: context.__swap };
 }
 
 const mod6 = (n, m) => ((n % m) + m) % m;
@@ -1206,6 +1208,8 @@ console.log('\n34. Share links');
 console.log('\n35. A tap on a player is not a drag');
 {
   const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  // Swap is the default since v0.49; this section is about Move.
+  app.call.setSwapMode(false);
   const el = app.players().S1;
   const before = app.stacks().undos;
 
@@ -1423,6 +1427,8 @@ console.log('\n39. A drag updates the overlap marks straight away');
   const app = boot(JSON.stringify({
     system: '4-2', roster: null, entrySlot: 1, checkOverlap: true,
   }));
+  // Swap is the default since v0.49; this section is about Move.
+  app.call.setSwapMode(false);
   const { saved } = app.peek();
   const z4 = saved.roster[saved.roster.findIndex((_, i) => app.call.slotFor(i, 1) === 4)].id;
   const el = app.players()[z4];
@@ -2418,6 +2424,8 @@ console.log('\n52. Wake lock, stray arrows, and saving out loud');
 console.log('\n53. Players from the keyboard');
 {
   const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  // Swap is the default since v0.49; this section is about Move.
+  app.call.setSwapMode(false);
   const { saved } = app.peek();
   const id = saved.roster[0].id;
   const el = app.players()[id];
@@ -2466,6 +2474,8 @@ console.log('\n53. Players from the keyboard');
 
   // Nudging must clamp at the same fences a pointer drag is held to.
   const edge = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  // Swap is the default since v0.49; this section is about Move.
+  edge.call.setSwapMode(false);
   const eid = edge.peek().saved.roster[0].id;
   const eel = edge.players()[eid];
   for (let i = 0; i < 60; i++) {
@@ -3243,6 +3253,336 @@ console.log('\n61. Scoreboard — subtract per side, and the game clock');
       return point && !/sb-minus/.test(point[0])
         && new RegExp(`id="sb${side}Minus"`).test(html);
     }));
+}
+
+console.log('\n62. Swap mode');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const ids = () => app.peek().saved.roster.map((p) => p.id).join(' ');
+  const zoneOf = (id, rotation) =>
+    app.call.slotFor(app.peek().saved.roster.findIndex((p) => p.id === id), rotation);
+  // A circle a tenth of the court wide, centred on the same 150,150 the other
+  // drag tests grab at -- so grab offsets are zero and clientX 3 = 1% of court.
+  // The stub's default 300px circle would put the whole court in reach.
+  const small = (el) => {
+    el.getBoundingClientRect = () => ({ left: 135, top: 135, width: 30, height: 30 });
+    return el;
+  };
+  const dragTo = (el, spot) => {
+    app.call.startDrag({ currentTarget: el, clientX: 150, clientY: 150, pointerId: 1 });
+    app.call.onDrag({ clientX: spot.x * 3, clientY: spot.y * 3 });
+    app.call.endDrag();
+  };
+  const tap = (el) => {
+    app.call.startDrag({ currentTarget: el, clientX: 150, clientY: 150, pointerId: 1 });
+    app.call.endDrag();
+  };
+  const button = (id) => app.document.getElementById(id);
+
+  check('it opens in Swap, the thing testers asked for', app.swap().swapMode === true);
+  check('and the body says so from the start, for the cursor',
+    app.document.body.classList.contains('swapping'));
+  check('and the Drag button says Swap',
+    button('dragMode').textContent === 'Drag: Swap'
+    && button('dragMode').attrs['aria-pressed'] === 'true',
+    `${button('dragMode').textContent} ${JSON.stringify(button('dragMode').attrs)}`);
+
+  // Positioned by hand first, in Move, so there is something for a swap to keep.
+  const original = ids();
+  const zones = ['S1', 'OH1'].map((id) => [1, 2, 3, 4, 5, 6].map((r) => zoneOf(id, r)));
+  button('dragMode').dispatch('click');
+  check('one press of Drag switches to Move',
+    app.swap().swapMode === false && button('dragMode').textContent === 'Drag: Move'
+    && button('dragMode').attrs['aria-pressed'] === 'false'
+    && !app.document.body.classList.contains('swapping'),
+    button('dragMode').textContent);
+  dragTo(small(app.players().OH1), { x: 40, y: 40 });
+  check('a Move drag still writes a position',
+    app.peek().saved.layouts.base['1'].OH1.x === 40,
+    JSON.stringify(app.peek().saved.layouts.base['1']));
+
+  button('dragMode').dispatch('click');
+  check('and the next press switches back to Swap',
+    app.swap().swapMode === true && button('dragMode').textContent === 'Drag: Swap');
+
+  // Drop S1 on OH1.
+  const undos = app.stacks().undos;
+  const target = app.call.positionsFor('base', 1).OH1;
+  dragTo(small(app.players().S1), target);
+  const swapped = app.peek().saved;
+  check('dropping one player on another swaps them in the roster',
+    swapped.roster[0].id === 'OH1' && swapped.roster[2].id === 'S1', ids());
+  check('S1 takes OH1’s zone in every rotation, not just this one',
+    [1, 2, 3, 4, 5, 6].every((r, k) => zoneOf('S1', r) === zones[1][k]),
+    JSON.stringify([1, 2, 3, 4, 5, 6].map((r) => zoneOf('S1', r))));
+  check('and OH1 takes S1’s',
+    [1, 2, 3, 4, 5, 6].every((r, k) => zoneOf('OH1', r) === zones[0][k]));
+  check('the swap is one undo step', app.stacks().undos === undos + 1,
+    `${undos} -> ${app.stacks().undos}`);
+  check('the hand-placed position stays with the spot, so S1 now has it',
+    swapped.layouts.base['1'].S1 && swapped.layouts.base['1'].S1.x === 40
+    && !swapped.layouts.base['1'].OH1,
+    JSON.stringify(swapped.layouts.base['1']));
+  check('it is saved', (() => {
+    const stored = JSON.parse(app.memory['volleyball-rotations-v1']);
+    return stored.lineups[stored.activeId].roster[0].id === 'OH1';
+  })());
+  check('no circle is left marked as a target', !Object.values(app.players())
+    .some((el) => el.classList.contains('swap-target')));
+
+  app.call.undo();
+  check('undo puts the lineup back', ids() === original, ids());
+
+  // A drop on empty court changes nothing and the circle goes home.
+  const before = app.stacks().undos;
+  const el = small(app.players().MB1);
+  dragTo(el, { x: 50, y: 2 });
+  check('a drop on nobody changes nothing', ids() === original, ids());
+  check('and costs no undo step', app.stacks().undos === before);
+  check('and writes no position, because swap mode positions nothing',
+    !app.peek().saved.layouts.base['1'] || !app.peek().saved.layouts.base['1'].MB1,
+    JSON.stringify(app.peek().saved.layouts.base));
+  const home = app.call.positionsFor('base', 1).MB1;
+  check('and the circle is put back where it stands',
+    el.style.left === `${home.x}%` && el.style.top === `${home.y}%`,
+    `${el.style.left},${el.style.top}`);
+
+  // Tap one, then the other.
+  tap(small(app.players().S2));
+  check('a tap picks a player', app.swap().swapPicked === 'S2');
+  check('and marks them on the court', app.players().S2.classList.contains('swap-picked'));
+  tap(app.players().S2);
+  check('tapping them again lets go', app.swap().swapPicked === null
+    && !app.players().S2.classList.contains('swap-picked'));
+  tap(app.players().S2);
+  tap(small(app.players().MB2));
+  check('tapping a second player swaps the two',
+    app.peek().saved.roster[3].id === 'MB2' && app.peek().saved.roster[4].id === 'S2', ids());
+  check('and nobody is left picked', app.swap().swapPicked === null);
+
+  // From the keyboard.
+  const key = (el, k) => el.dispatch('keydown',
+    { key: k, preventDefault() {}, stopPropagation() {} });
+  const layoutsBefore = JSON.stringify(app.peek().saved.layouts);
+  key(app.players().OH2, 'ArrowLeft');
+  check('arrows do not nudge in swap mode',
+    JSON.stringify(app.peek().saved.layouts) === layoutsBefore);
+  key(app.players().OH2, 'Enter');
+  key(app.players().MB1, ' ');
+  const after = app.peek().saved.roster.map((p) => p.id);
+  check('Enter and Space swap from the keyboard',
+    after.indexOf('OH2') === 1 && after.indexOf('MB1') === 5, after.join(' '));
+
+  app.call.setSwapMode(false);
+  check('back in Move', app.swap().swapMode === false
+    && !app.document.body.classList.contains('swapping'));
+  dragTo(small(app.players().S1), app.call.positionsFor('base', 1).OH2);
+  check('a Move drag onto someone positions, it does not swap',
+    app.peek().saved.roster.map((p) => p.id).join(' ') === after.join(' '));
+}
+
+console.log('\n63. Swap mode brings someone off the bench');
+{
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }));
+  const roster = app.peek().saved.roster;
+  // Seven players: one sits out every rotation.
+  roster.push({ id: 'X7', name: 'Sub', fallback: 'P7', role: 'OH' });
+  app.call.rebuild();
+  const benched = roster.find((_, i) => app.call.slotFor(i, 1) === null).id;
+  const playing = roster.find((_, i) => app.call.slotFor(i, 1) === 4).id;
+  app.call.setSwapMode(true);
+  app.call.pickForSwap(benched);
+  app.call.pickForSwap(playing);
+  const idx = (id) => app.peek().saved.roster.findIndex((p) => p.id === id);
+  check('the player who was off court is now in zone 4',
+    app.call.slotFor(idx(benched), 1) === 4, String(app.call.slotFor(idx(benched), 1)));
+  check('and the one they replaced is off court',
+    app.call.slotFor(idx(playing), 1) === null);
+  check('a pick does not survive a lineup rebuild', (() => {
+    app.call.pickForSwap(benched);
+    app.call.rebuild();
+    return app.swap().swapPicked === null;
+  })());
+}
+
+{
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  // One button on the Undo/Reset row, parsed the way §49 parses the rows.
+  const rows = [...html.matchAll(/<div class="actions([^"]*)"([^>]*)>([\s\S]*?)<\/div>/g)]
+    .map(([, , , body]) => [...body.matchAll(/<button[^>]*id="([^"]+)"/g)].map((m) => m[1]));
+  const row = rows.find((ids) => ids.includes('dragMode')) || [];
+  check('the Drag toggle shares the Undo/Reset row',
+    JSON.stringify(row) === JSON.stringify(['undo', 'reset', 'dragMode']), JSON.stringify(row));
+  check('and starts as Drag: Swap',
+    /id="dragMode"[^>]*aria-pressed="true"[^>]*>Drag: Swap</.test(html));
+  check('and that row is compact, so three fit at 320px',
+    /<div class="actions compact">\s*<button id="undo"/.test(html));
+  check('the two-button row is gone, markup and CSS',
+    !/drag-mode/.test(html) && !/\.drag-mode/.test(css));
+  check('a picked player and a drop target are both marked',
+    /\.player\.swap-picked,\s*\n\.player\.swap-target\s*\{[^}]*outline:/.test(css));
+}
+
+console.log('\n64. Temporary subs');
+{
+  // setTimeout is captured rather than stubbed to nothing, so the test decides
+  // when a long press has lasted long enough. prompt and confirm answer
+  // whatever the test sets next.
+  const timers = [];
+  let promptAnswer = null;
+  let confirmAnswer = true;
+  const asked = [];
+  const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }), undefined, {
+    setTimeout: (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length; },
+    clearTimeout: (id) => { if (timers[id - 1]) timers[id - 1].live = false; },
+    prompt: (q) => { asked.push(q); return promptAnswer; },
+    confirm: (q) => { asked.push(q); return confirmAnswer; },
+  });
+  const pending = () => timers.filter((t) => t.live && t.ms === 600);
+  const fire = () => pending().forEach((t) => { t.live = false; t.fn(); });
+  const saved = () => app.peek().saved;
+  const zoneOf = (id, r) => app.call.slotFor(saved().roster.findIndex((p) => p.id === id), r);
+  const down = (el) => app.call.startDrag({ currentTarget: el, clientX: 150, clientY: 150, pointerId: 1 });
+  const s1 = app.players().S1;
+  const zonesBefore = [1, 2, 3, 4, 5, 6].map((r) => zoneOf('S1', r));
+
+  // Hold, then type a name.
+  const undos = app.stacks().undos;
+  promptAnswer = '  Jordan  ';
+  down(s1);
+  check('holding a player starts a 600ms timer', pending().length === 1, String(pending().length));
+  fire();
+  check('which asks who is coming in', /Who's coming in for Setter 1\?/.test(asked[asked.length - 1]),
+    asked[asked.length - 1]);
+  check('the sub is recorded, trimmed', saved().subs.S1 === 'Jordan', JSON.stringify(saved().subs));
+  check('and named on the court', app.players().S1.classList.contains('subbed'));
+  check('the title says who they are in for',
+    /^Jordan \(sub for Setter 1\)/.test(app.players().S1.title), app.players().S1.title);
+  check('the roster still holds the starter', saved().roster[0].name === '');
+  check('the sub takes the exact same spot in every rotation',
+    JSON.stringify([1, 2, 3, 4, 5, 6].map((r) => zoneOf('S1', r))) === JSON.stringify(zonesBefore));
+  check('subbing is one undo step', app.stacks().undos === undos + 1);
+  check('and it is saved', (() => {
+    const stored = JSON.parse(app.memory['volleyball-rotations-v1']);
+    return stored.lineups[stored.activeId].subs.S1 === 'Jordan';
+  })());
+  // In a 4-2 the front-row setter sets, so look at a rotation where S1 is front.
+  const front = [1, 2, 3, 4, 5, 6].find((r) => [2, 3, 4].includes(zoneOf('S1', r)));
+  app.call.setRotation(front);
+  check('the status line names who is actually setting', /Jordan \(zone/.test(app.status()), app.status());
+  app.call.setRotation(1);
+
+  // The lost pointerup after the prompt does nothing.
+  const swapsBefore = saved().roster.map((p) => p.id).join(' ');
+  app.call.endDrag();
+  check('the pointerup after a hold neither picks nor swaps',
+    app.swap().swapPicked === null && saved().roster.map((p) => p.id).join(' ') === swapsBefore);
+  check('and no circle is left dragging', !app.players().S1.classList.contains('dragging'));
+
+  // Cancel and blank do nothing.
+  for (const answer of [null, '   ']) {
+    const before = app.stacks().undos;
+    promptAnswer = answer;
+    down(app.players().MB1);
+    fire();
+    app.call.endDrag();
+    check(`answering ${answer === null ? 'Cancel' : 'blank'} changes nothing`,
+      !saved().subs.MB1 && app.stacks().undos === before);
+  }
+
+  // Moving cancels the hold; lifting cancels it too.
+  down(app.players().OH1);
+  app.call.onDrag({ clientX: 160, clientY: 150 });
+  check('moving 3px cancels the hold', pending().length === 0);
+  app.call.endDrag();
+  down(app.players().OH1);
+  app.call.endDrag();
+  check('lifting cancels it too', pending().length === 0);
+  check('and a tap still picks in Swap mode', app.swap().swapPicked === 'OH1');
+  app.call.pickForSwap('OH1');
+
+  // A swap carries the sub with the roster spot.
+  app.call.swapPlayers('S1', 'MB1');
+  check('a swap carries the sub with the player it covers',
+    saved().subs.S1 === 'Jordan' && saved().roster[1].id === 'S1');
+  app.call.undo();
+
+  // Share links leave subs out.
+  const link = app.call.shareUrl();
+  const shared = app.call.decodeLineup(link.split('#g=')[1]);
+  check('a share link carries no subs', !('subs' in shared), Object.keys(shared).join(','));
+
+  // Hold a subbed player to bring the starter back.
+  confirmAnswer = false;
+  down(app.players().S1);
+  fire();
+  check('declining the sub-back keeps the sub', saved().subs.S1 === 'Jordan');
+  confirmAnswer = true;
+  down(app.players().S1);
+  fire();
+  check('which asks to bring the starter back',
+    /Bring Setter 1 back in for Jordan\?/.test(asked[asked.length - 1]), asked[asked.length - 1]);
+  check('confirming brings them back', !saved().subs.S1
+    && !app.players().S1.classList.contains('subbed'));
+  app.call.endDrag();
+
+  // Right-click, Menu key or Shift+F10.
+  promptAnswer = 'Casey';
+  let prevented = false;
+  app.players().OH2.dispatch('contextmenu', { preventDefault() { prevented = true; } });
+  check('contextmenu opens the same prompt', saved().subs.OH2 === 'Casey');
+  check('and keeps the browser menu away', prevented);
+
+  // Undo takes it back.
+  app.call.undo();
+  check('undo takes a sub back', !saved().subs.OH2);
+
+  // A new system brings new player ids, some reused (S1, OH1), so the subs
+  // start over rather than attach to whoever inherits an id.
+  app.call.subOut('MB2', 'Riley');
+  app.call.applySystem('5-1');
+  check('changing system clears the subs', JSON.stringify(saved().subs) === '{}',
+    JSON.stringify(saved().subs));
+  app.call.subOut(saved().roster[1].id, 'Riley');
+  app.call.setSwapMode(false);
+  app.call.startQuiz();
+  down(app.players()[saved().roster[1].id]);
+  check('nothing is held during a quiz', pending().length === 0);
+  app.call.endDrag();
+  app.call.endQuiz();
+
+  // Normalising what storage hands back.
+  const roster = saved().roster;
+  const norm = app.call.normaliseSubs;
+  check('missing subs become none', JSON.stringify(norm(undefined, roster)) === '{}');
+  check('an array is not a subs map', JSON.stringify(norm(['x'], roster)) === '{}');
+  check('a sub for nobody on the roster is dropped',
+    JSON.stringify(norm({ ZZ9: 'Ghost', S1: 'Jo' }, roster)) === '{"S1":"Jo"}');
+  check('empty and non-string names are dropped',
+    JSON.stringify(norm({ S1: '  ', MB1: 7, OH1: 'Ok' }, roster)) === '{"OH1":"Ok"}');
+  check('a long name is cut to the roster limit',
+    norm({ S1: 'A'.repeat(40) }, roster).S1.length === 14);
+  const loaded = boot(JSON.stringify({ system: '4-2', roster: null, subs: { S1: 'Jo', nope: 'x' } }));
+  check('an old-shape save keeps a valid sub and drops the rest',
+    JSON.stringify(loaded.peek().saved.subs) === '{"S1":"Jo"}',
+    JSON.stringify(loaded.peek().saved.subs));
+  check('a fresh lineup has no subs', JSON.stringify(boot().peek().saved.subs) === '{}');
+}
+
+{
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  const js = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  check('every player carries a sub pill',
+    /<span class="sub-tag">Sub<\/span>/.test(js));
+  check('shown only on a subbed player',
+    /\.player\.subbed \.sub-tag\s*\{[^}]*display:\s*block/.test(css));
+  check('and giving way to the overlap flag',
+    /\.player\.subbed\.illegal \.sub-tag\s*\{[^}]*display:\s*none/.test(css));
+  check('iOS shows no callout on a long press',
+    /\.player\s*\{[^}]*-webkit-touch-callout:\s*none/.test(css));
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

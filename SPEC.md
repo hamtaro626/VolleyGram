@@ -2650,10 +2650,154 @@ headless Chrome at 360×740, 390×844, 844×390 and 1180×820.
 starting, surviving a reload, clearing, the time formats, and where the
 buttons sit in the markup.
 
+## v0.49 — Swap mode, and it's the default (2026-10-27)
+
+The most common complaint from testers: they wanted to switch two players by
+dragging one onto the other. Dragging has always meant *positioning* — it
+writes where someone stands in one rotation and formation — so a second
+meaning needed its own mode rather than a guess about intent.
+
+### Drag: Swap / Drag: Move
+
+One toggle button, third on the Undo/Reset row, labelled the way `Labels: on`
+is. **Swap is what a drag does when the app opens**, because it's what testers
+asked for. **Move** is the old behaviour, one tap away for positioning.
+
+It sits with Undo and Reset because all three act on the diagram. The row went
+from `two` to `compact`, the same 0.8rem three-across the share row uses, and
+fits at 320px (checked in headless Chrome at 320 and 390). A first draft gave
+it a two-button row of its own under the formation tabs; folded into the
+existing row instead, so the page didn't grow a row.
+
+In **Swap**:
+
+- **Drag one player onto another** and they trade places in the lineup. The
+  player you'd land on gets a ring while you hover, so you can see the swap
+  before you let go. Drop on empty court and the circle goes back; nothing
+  changes and no undo step is spent.
+- **Or tap one, then another.** Tapping the same one again lets go. Enter or
+  Space does the same from the keyboard, for the v0.38 reason: a drag-only
+  control is unusable without a pointer. Arrows don't nudge in Swap.
+- **It works on the bench.** With seven or more players, swapping someone off
+  court with someone on it is a substitution, done on the court itself.
+
+### It swaps the lineup, so it swaps every rotation
+
+The roster order is the serving order (v0.23), so trading two players' places
+in it moves them in all six rotations, not just the one on screen. That's what
+"build the team" means, and it's the only reading that stays consistent: a
+swap that only held for one rotation would be a positioning edit, which is
+what Move is for.
+
+### Hand-placed positions stay with the spot
+
+A roster reorder (`changeLineup()`) wipes every dragged position, because the
+people no longer line up with them. A swap doesn't have to: after it, A stands
+exactly where B stood in every rotation, so B's hand-placed positions are the
+right ones for A. `swapPlayers()` trades the two players' entries in every
+formation and rotation instead of deleting them. One swap shouldn't cost an
+evening's positioning.
+
+Per-rotation role overrides stay with the **person** — they describe what that
+player does, not where they stand.
+
+### Not stored, on purpose
+
+Every open starts in Swap. Someone positioning switches to Move for that
+session; nobody comes back to a mode they forgot they'd left on.
+
+### Not doing
+
+- **Swapping by dragging in Move** (dropping on a player swaps, dropping
+  elsewhere positions). It looks like it saves a button, but overlapping
+  players is a real thing you do while positioning — stacking a blocker
+  behind the net, say — and every one of those drags would become a swap.
+- **Remembering the mode** — see above.
+
+Every older section that drags or nudges expecting Move (§35, §39, §53) now
+switches to Move first, with a comment saying so; the harness itself still
+boots the app the way people get it. `§62` covers opening in Swap, the
+toggle, drag-to-swap across all rotations, the one undo step, positions
+staying with the spot, a missed drop, tap-to-swap, the keyboard, and Move
+still positioning. `§63` covers a bench swap, a pick not surviving a rebuild,
+and the button's place on the Undo/Reset row.
+
+## v0.50 — temporary subs (2026-10-27)
+
+Another tester request: someone can't make it, a fill-in plays their spot for
+the night, and the starter is back next week. Making a whole new lineup for
+that works, and is more effort than the situation deserves.
+
+### Hold a player
+
+**Hold a player for 0.6s** and the browser asks *"Who's coming in for Sam?"*.
+Type a name and the fill-in takes Sam's exact place: same role, same rotation,
+same serving order, same hand-placed positions. A small **SUB** pill sits on
+the circle's top edge so it's obvious the lineup is temporary. **Hold them
+again** and it asks to bring Sam back. Cancel or a blank name does nothing.
+
+Right-click, the Menu key, or Shift+F10 on a focused player opens the same
+thing, so a mouse and a keyboard both have a way in. All of it fires the
+browser's `contextmenu` event, which is also blocked from showing the phone's
+own menu, and iOS's callout is switched off on the circles.
+
+`prompt()` and `confirm()` rather than a menu drawn on the court. The app
+already names lineups with `prompt()`, and a popover would be one more thing
+to fit beside a circle on a 320px phone.
+
+### A hold can't fight a drag or a tap
+
+The timer starts on `pointerdown` and is cancelled the moment the finger moves
+`DRAG_MIN` or lifts, so a drag or a tap never trips it. When it does fire, the
+drag is let go *before* the prompt opens: `prompt()` blocks the page, the
+`pointerup` can be lost while it's up, and a circle would otherwise be left
+stuck mid-drag. On Android a long press fires both the timer and
+`contextmenu`; whichever comes first cancels the other. This is v0.29's
+lesson — a long press is its own gesture — applied deliberately this time.
+
+### A typed name, not a bench player
+
+Alec's call. A one-night fill-in shouldn't churn the roster, and bringing in
+someone already on the roster's bench is what Swap does.
+
+### What it touches
+
+- **`subs` on each lineup**: player id → name. Optional with a default, like
+  `roleOverrides` in v0.8, so storage stays version 2. Normalised on load:
+  only ids the lineup has, only non-empty strings, cut to the roster's
+  14-character name limit.
+- **`displayName()`** returns the sub when there is one, so the circle, the
+  status line ("Jordan sets"), the quiz and the image export all name who is
+  actually playing. The roster panel still shows the starter, dimmed and in
+  italics, with "Jordan is in" on hover.
+- **It's saved**, so a phone locking or refreshing mid-match doesn't lose it.
+  Subbing in or out is one undo step.
+- **A swap carries the sub** with the roster spot it covers — the fill-in is
+  playing Sam's place in the order.
+- **A new system clears subs.** It brings new player ids, and some repeat
+  across systems (`S1`, `OH1`), so a leftover sub would attach to whoever
+  inherited the id. Removing a player drops their sub.
+
+### Not doing
+
+- **Share links don't carry subs.** "Share team" shares the team, not
+  tonight's fill-ins. `shareUrl()` leaves the field out.
+- **Bringing a bench player in as a sub.** That's Swap.
+- **Sub counts or league substitution limits.** Leagues disagree, the same
+  reason the app says nothing about scoring a missing server.
+- **A hint that the long press exists.** Nothing on screen says so; testers
+  will need telling. Worth revisiting if nobody finds it.
+
+`§64` covers the hold, the prompt, the spot staying the same in every
+rotation, undo, saving, the status line, a cancelled or blank answer, a move
+or lift cancelling the hold, the stray `pointerup`, a swap carrying the sub,
+share links, subbing back in, `contextmenu`, a system change, the quiz, and
+normalising bad data.
+
 ## Tests
 
 ```
-node test/migration.js    # 781 checks — storage, migration, roles, formations,
+node test/migration.js    # 854 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

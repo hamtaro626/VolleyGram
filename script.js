@@ -195,6 +195,14 @@ const SWIPE_MIN = 45;
 // drag -- see endDrag() for why that distinction matters.
 const DRAG_MIN = 3;
 
+// How long a player has to be held, without moving, to bring up the sub prompt
+// (v0.50). Long enough that a slow tap never trips it; short enough that it
+// doesn't feel broken. Moving DRAG_MIN cancels it, so it can't fight a drag.
+const LONG_PRESS_MS = 600;
+
+// The roster's own name limit, which a sub's name shares.
+const MAX_PLAYER_NAME = 14;
+
 // The bench strip sits below the court. 112% is its middle -- see .bench in
 // style.css, which draws it from 104% to 120%.
 const BENCH_Y = 112;
@@ -373,6 +381,7 @@ function newLineup(name) {
     // you've dragged; anything absent is generated.
     layouts: emptyLayouts(),
     roleOverrides: {},  // rotation -> { player id -> role }
+    subs: {},           // player id -> name of whoever is in for them (v0.50)
     passers: DEFAULT_PASSERS,
     defenseSystem: 'perimeter',
     defenseSide: 'right',
@@ -512,8 +521,19 @@ function zoneOccupied(zone, rotation = currentRotation) {
   return saved.roster.some((_, index) => slotFor(index, rotation) === zone);
 }
 
+// Who is actually playing in this roster spot: a sub when there is one
+// (v0.50), otherwise the player. Everything that names someone on court -- the
+// circle, the status line, the quiz, the image export -- reads it from here.
 function displayName(player) {
+  return subFor(player) || starterName(player);
+}
+
+function starterName(player) {
   return player.name || player.fallback;
+}
+
+function subFor(player) {
+  return (saved.subs && saved.subs[player.id]) || '';
 }
 
 // The role a player is filling in a given rotation. A per-rotation override
@@ -886,10 +906,27 @@ function normaliseLineup(raw, fallbackName) {
     // than a version bump -- an extra optional field breaks nothing.
     roleOverrides: raw.roleOverrides && typeof raw.roleOverrides === 'object'
       ? raw.roleOverrides : {},
+    // Added in v0.50, optional with a default, so still storage version 2.
+    subs: normaliseSubs(raw.subs, roster),
     passers: PASSER_COUNTS.includes(raw.passers) ? raw.passers : DEFAULT_PASSERS,
     defenseSystem: DEFENSE_SPOTS[raw.defenseSystem] ? raw.defenseSystem : 'perimeter',
     defenseSide: raw.defenseSide === 'left' ? 'left' : 'right',
   };
+}
+
+// Temporary subs: player id -> the name of whoever is in for them. Only names
+// for players this lineup actually has, only non-empty strings, and no longer
+// than a roster name -- it arrives from storage, which can be hand-edited.
+function normaliseSubs(raw, roster) {
+  const subs = {};
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return subs;
+  roster.forEach((player) => {
+    const name = raw[player.id];
+    if (typeof name !== 'string') return;
+    const trimmed = name.trim().slice(0, MAX_PLAYER_NAME);
+    if (trimmed) subs[player.id] = trimmed;
+  });
+  return subs;
 }
 
 // One rotation's dragged positions: player id -> {x, y}. These are only ever
@@ -1001,6 +1038,15 @@ const NUDGE_KEYS = {
 };
 
 function nudgePlayer(event, playerId) {
+  // Swap mode positions nothing, so the arrows go back to changing rotation and
+  // Enter or Space picks the player instead.
+  if (swapMode) {
+    if ((event.key === 'Enter' || event.key === ' ') && !quiz) {
+      event.preventDefault();
+      pickForSwap(playerId);
+    }
+    return;
+  }
   const delta = NUDGE_KEYS[event.key];
   if (!delta || quiz) return;
   event.preventDefault();
@@ -1035,6 +1081,7 @@ function buildPlayers() {
     el.dataset.playerId = player.id;
     el.innerHTML = '<span class="name"></span><span class="label"></span>'
       + '<span class="serve-tag">Server</span>'
+      + '<span class="sub-tag">Sub</span>'
       + '<span class="overlap-tag">Overlap</span>';
     el.addEventListener('pointerdown', startDrag);
     el.addEventListener('pointermove', onDrag);
@@ -1048,6 +1095,14 @@ function buildPlayers() {
     el.addEventListener('keydown', (event) => nudgePlayer(event, player.id));
     el.addEventListener('blur', () => { if (nudgedId === player.id) nudgedId = null; });
     el.addEventListener('pointercancel', endDrag);
+    // Right-click, the Menu key, or Shift+F10 on a focused player: the same
+    // sub prompt a long press opens. Also keeps a phone's own long-press menu
+    // from appearing over the court.
+    el.addEventListener('contextmenu', (event) => {
+      event.preventDefault();
+      if (quiz) return;
+      openSubPrompt(player.id);
+    });
     court.appendChild(el);
     playerElements[player.id] = el;
   });
@@ -1165,7 +1220,13 @@ function buildRosterRows() {
     nameInput.type = 'text';
     nameInput.value = player.name;
     nameInput.placeholder = player.fallback;
-    nameInput.maxLength = 14;
+    nameInput.maxLength = MAX_PLAYER_NAME;
+    // Subbed out: the roster still holds the starter, so their name stays, but
+    // the field says who is on court in their place.
+    if (subFor(player)) {
+      row.classList.add('subbed-out');
+      nameInput.title = `Out tonight — ${subFor(player)} is in. Hold them on the court to sub back in.`;
+    }
     // One snapshot when you start editing, not one per keystroke.
     nameInput.addEventListener('focus', pushHistory);
     nameInput.addEventListener('input', () => {
@@ -1344,6 +1405,10 @@ function applySystem(key) {
   changeLineup(() => {
     const previous = saved.roster;
     saved.system = key;
+    // A new system is a new set of player ids, and some of them (S1, OH1)
+    // repeat across systems -- a sub left behind would attach to whoever
+    // inherits the id. Start the night's subs over instead.
+    saved.subs = {};
     saved.roster = [
       ...rosterFromSystem(key).map((player, index) => ({
         ...player,
@@ -1401,6 +1466,8 @@ function changeLineup(mutate) {
   pushHistory();
   mutate();
   saved.layouts = emptyLayouts();
+  // A sub for someone who has been removed is in for nobody.
+  saved.subs = normaliseSubs(saved.subs, saved.roster);
   if (currentRotation > rotationCount()) currentRotation = 1;
   save();
   rebuild();
@@ -1525,6 +1592,9 @@ function applyRosterOrder(order) {
 function rebuild(intro = false) {
   // Drop the animation first, or the rebuilt circles slide in from the corner.
   court.classList.remove('animate');
+  // A pick from a lineup that's being replaced means nothing in the new one.
+  swapPicked = null;
+  swapTarget = null;
   buildPlayers();
   buildRotationButtons();
   buildRosterRows();
@@ -1762,14 +1832,20 @@ function render() {
     if (slot === SERVE_SLOT) el.classList.add('serving');
     if (setterIds.has(player.id)) el.classList.add('is-setter');
     if (problems[player.id]) el.classList.add('illegal');
+    // Re-applied here because the className line above wipes it.
+    if (swapPicked === player.id) el.classList.add('swap-picked');
+    if (subFor(player)) el.classList.add('subbed');
 
     el.querySelector('.name').textContent = displayName(player);
     el.querySelector('.label').textContent = roleBadge(role);
 
     const prefix = roleBadge(role) ? `${ROLE_LABELS[role]}, ` : '';
+    const who = subFor(player)
+      ? `${displayName(player)} (sub for ${starterName(player)})`
+      : displayName(player);
     el.title = slot === null
-      ? `${displayName(player)} — ${prefix}off court`
-      : `${displayName(player)} — ${prefix}zone ${slot}${slot === SERVE_SLOT ? ', serving' : ''}`;
+      ? `${who} — ${prefix}off court`
+      : `${who} — ${prefix}zone ${slot}${slot === SERVE_SLOT ? ', serving' : ''}`;
     // Which rule, on the player it applies to -- a red ring alone doesn't say
     // what's wrong or which way to drag.
     if (problems[player.id]) el.title += ` — ${problems[player.id].join('; ')}`;
@@ -1887,10 +1963,239 @@ let dragMoved = false;
 // the order they were created, so the same ones are always buried.
 let topZ = 1;
 
+// --- Temporary subs ---------------------------------------------------
+//
+// v0.50. Someone can't make it, a fill-in takes their spot for the night, and
+// the starter comes back next week. The fill-in takes the starter's exact place
+// -- role, rotation, serving order, hand-placed positions -- because nothing
+// about the roster changes: the spot just shows a different name, with a SUB
+// pill so it's obvious the lineup is temporary.
+//
+// Hold a player to sub them out; hold a subbed player to bring the starter back.
+// prompt() and confirm() rather than a menu drawn on the court: the app already
+// names lineups with prompt(), and a popover would be one more thing to fit on
+// a 320px phone.
+
+let longPressTimer = null;
+
+function startLongPress(id) {
+  cancelLongPress();
+  if (quiz) return;
+  longPressTimer = setTimeout(() => {
+    longPressTimer = null;
+    openSubPrompt(id);
+  }, LONG_PRESS_MS);
+}
+
+// Let go of any drag *before* a prompt opens. prompt() blocks the page, and the
+// pointerup that would have ended the drag can be lost while it's up -- leaving
+// a circle stuck mid-drag. With dragTarget cleared, a late pointerup finds
+// nothing to do.
+function releaseDrag() {
+  cancelLongPress();
+  if (!dragTarget) return;
+  dragTarget.classList.remove('dragging');
+  dragTarget = null;
+  dragFrom = null;
+  dragMoved = false;
+}
+
+function cancelLongPress() {
+  if (longPressTimer === null) return;
+  clearTimeout(longPressTimer);
+  longPressTimer = null;
+}
+
+function openSubPrompt(id) {
+  // Both ways in -- the timer and contextmenu -- come through here, and on
+  // Android a long press fires both. Whichever is first cancels the other.
+  releaseDrag();
+  const player = saved.roster.find((p) => p.id === id);
+  if (!player) return;
+  swapPicked = null;
+
+  if (subFor(player)) {
+    if (confirm(`Bring ${starterName(player)} back in for ${subFor(player)}?`)) subIn(id);
+    else render();
+    return;
+  }
+
+  const answer = prompt(`Who's coming in for ${starterName(player)}?`, '');
+  const name = typeof answer === 'string' ? answer.trim().slice(0, MAX_PLAYER_NAME) : '';
+  if (name) subOut(id, name);
+  else render();
+}
+
+function subOut(id, name) {
+  pushHistory();
+  if (!saved.subs) saved.subs = {};
+  saved.subs[id] = name;
+  save();
+  buildRosterRows();
+  render();
+}
+
+function subIn(id) {
+  if (!saved.subs || !saved.subs[id]) return;
+  pushHistory();
+  delete saved.subs[id];
+  save();
+  buildRosterRows();
+  render();
+}
+
+// --- Swap mode --------------------------------------------------------
+//
+// v0.49. A normal drag *positions* a player: it writes where they stand in this
+// one rotation and formation. Swap mode is for building the team instead. Drop
+// one player on another and they trade places in the lineup -- and the lineup is
+// the serving order, so they trade places in every rotation, not just this one.
+//
+// A mode rather than a gesture (a long press, say), because the two drags look
+// identical under a finger and do very different things: one edits one
+// diagram, the other rewrites all of them. A mode says which up front.
+//
+// Swap is the default: switching players by dragging was the testers' most
+// common request, so it is what a drag does the moment the app opens. Move,
+// for positioning, is one tap away on the Drag button.
+//
+// Not stored. Every open starts in Swap, so nobody comes back to a mode they
+// forgot they left on.
+
+let swapMode = true;
+let swapPicked = null;  // tap-to-swap: the first player tapped, by id
+let swapTarget = null;  // whoever a swap drag is hovering over right now
+
+// The player a dragged circle is sitting on, or null. "On" means centres closer
+// than most of a circle's width, so brushing a neighbour doesn't count but
+// covering them does. Nearest wins when two are in reach.
+function swapTargetUnder(el) {
+  const courtRect = court.getBoundingClientRect();
+  const reach = el.getBoundingClientRect().width * 0.7;
+  const x = (parseFloat(el.style.left) / 100) * courtRect.width;
+  const y = (parseFloat(el.style.top) / 100) * courtRect.height;
+  const layout = positionsFor(currentFormation, currentRotation);
+
+  let best = null;
+  let bestDistance = reach;
+  saved.roster.forEach((player) => {
+    if (player.id === el.dataset.playerId) return;
+    const spot = layout[player.id];
+    const distance = Math.hypot(
+      (spot.x / 100) * courtRect.width - x,
+      (spot.y / 100) * courtRect.height - y,
+    );
+    if (distance < bestDistance) {
+      best = player.id;
+      bestDistance = distance;
+    }
+  });
+  return best;
+}
+
+function markSwapTarget(id) {
+  if (swapTarget === id) return;
+  if (swapTarget && playerElements[swapTarget]) {
+    playerElements[swapTarget].classList.remove('swap-target');
+  }
+  swapTarget = id;
+  if (id && playerElements[id]) playerElements[id].classList.add('swap-target');
+}
+
+// Trades two players' places in the roster, and so in the serving order.
+//
+// Dragged positions stay with the *spot*, not the person. After the swap, A
+// stands exactly where B stood in every rotation, so B's hand-placed positions
+// are the right ones for A. Wiping them -- which is what a roster reorder does,
+// via changeLineup() -- would throw away an evening's positioning for one swap.
+//
+// Per-rotation role overrides stay with the person: they describe what that
+// player does, not where they stand.
+function swapPlayers(a, b) {
+  const i = saved.roster.findIndex((player) => player.id === a);
+  const j = saved.roster.findIndex((player) => player.id === b);
+  if (i === -1 || j === -1 || i === j) return false;
+
+  pushHistory();
+  [saved.roster[i], saved.roster[j]] = [saved.roster[j], saved.roster[i]];
+
+  Object.values(saved.layouts).forEach((byRotation) => {
+    Object.values(byRotation || {}).forEach((bucket) => {
+      if (!bucket) return;
+      const fromA = bucket[a];
+      const fromB = bucket[b];
+      delete bucket[a];
+      delete bucket[b];
+      if (fromB) bucket[a] = fromB;
+      if (fromA) bucket[b] = fromA;
+    });
+  });
+
+  save();
+  // Not rebuild(): the circles are keyed by id and all still exist, so a
+  // render() lets the two of them slide past each other instead of popping.
+  buildRosterRows();
+  render();
+  return true;
+}
+
+// Tap one player, then another, and they swap. Tapping the same one again lets
+// go. This is also the keyboard's way in (Enter or Space on a focused player),
+// since a drag-only control is unusable without a pointer.
+function pickForSwap(id) {
+  if (swapPicked === null) {
+    swapPicked = id;
+  } else if (swapPicked === id) {
+    swapPicked = null;
+  } else {
+    const first = swapPicked;
+    swapPicked = null;
+    if (swapPlayers(first, id)) return;
+  }
+  render();
+}
+
+function setSwapMode(on) {
+  swapMode = on;
+  swapPicked = null;
+  markSwapTarget(null);
+  document.body.classList.toggle('swapping', on);
+  syncDragModeButton();
+  render();
+}
+
+function syncDragModeButton() {
+  dragModeButton.textContent = `Drag: ${swapMode ? 'Swap' : 'Move'}`;
+  dragModeButton.setAttribute('aria-pressed', String(swapMode));
+}
+
+// The end of a drag in swap mode. Nothing here writes a position: the circle
+// either lands in its new spot via the swap, or goes back to where it was.
+function finishSwapDrag() {
+  const el = dragTarget;
+  const moved = dragMoved;
+  const target = moved ? swapTargetUnder(el) : null;
+
+  el.classList.remove('dragging');
+  dragTarget = null;
+  dragFrom = null;
+  dragMoved = false;
+  markSwapTarget(null);
+
+  if (!moved) {
+    pickForSwap(el.dataset.playerId);
+    return;
+  }
+
+  swapPicked = null;
+  if (!target || !swapPlayers(el.dataset.playerId, target)) render();
+}
+
 function startDrag(event) {
   dragTarget = event.currentTarget;
   dragFrom = { x: event.clientX, y: event.clientY };
   dragMoved = false;
+  startLongPress(dragTarget.dataset.playerId);
 
   const rect = dragTarget.getBoundingClientRect();
 
@@ -1915,8 +2220,11 @@ function onDrag(event) {
   if (!dragMoved) {
     if (Math.hypot(event.clientX - dragFrom.x, event.clientY - dragFrom.y) < DRAG_MIN) return;
     dragMoved = true;
+    // A drag is not a hold.
+    cancelLongPress();
     // Pushed here rather than on pointerdown, so a tap costs no undo step.
-    pushHistory();
+    // A swap drag pushes its own, and only if it lands on someone.
+    if (!swapMode) pushHistory();
   }
 
   const courtRect = court.getBoundingClientRect();
@@ -1926,10 +2234,17 @@ function onDrag(event) {
   const lowestY = rosterSize() > COURT_SPOTS ? MAX_DRAG_Y : 100;
   dragTarget.style.left = `${clamp(x, 0, 100)}%`;
   dragTarget.style.top = `${clamp(y, 0, lowestY)}%`;
+
+  if (swapMode) markSwapTarget(swapTargetUnder(dragTarget));
 }
 
 function endDrag() {
+  cancelLongPress();
   if (!dragTarget) return;
+  if (swapMode) {
+    finishSwapDrag();
+    return;
+  }
 
   // A tap leaves no trace. The circle is still sitting on its *generated*
   // position, and writing that into the layout would pin it there for good --
@@ -2002,6 +2317,7 @@ function buildZoneTargets() {
 
 function startQuiz() {
   quizScore = { asked: 0, correct: 0, streak: 0, best: 0 };
+  swapPicked = null;
   // Questions are about base zones, so make sure that's what's on screen.
   currentFormation = 'base';
   document.body.classList.add('quizzing');
@@ -2759,8 +3075,12 @@ function decodeLineup(encoded) {
 
 // The payload rides in the hash rather than a query string, which means it's
 // never sent to GitHub's servers -- the fragment stays in the browser.
+//
+// Subs are left out (v0.50). "Share team" shares the team, not whoever filled
+// in tonight.
 function shareUrl(lineup = saved) {
-  return `${location.origin}${location.pathname}#g=${encodeLineup(lineup)}`;
+  const { subs, ...team } = lineup;
+  return `${location.origin}${location.pathname}#g=${encodeLineup(team)}`;
 }
 
 // Opening a shared link *adds* a VolleyGram. It must never overwrite what the
@@ -2918,6 +3238,9 @@ document.getElementById('exportImage').addEventListener('click', exportImage);
 
 document.getElementById('shareLink').addEventListener('click', shareCurrent);
 document.getElementById('startQuiz').addEventListener('click', startQuiz);
+
+const dragModeButton = document.getElementById('dragMode');
+dragModeButton.addEventListener('click', () => setSwapMode(!swapMode));
 document.getElementById('endQuiz').addEventListener('click', endQuiz);
 document.getElementById('quizNext').addEventListener('click', nextQuizQuestion);
 
@@ -3098,6 +3421,8 @@ document.getElementById('version').textContent = `v${APP_VERSION}`;
 load();
 importFromUrl();
 syncLabelsButton();
+syncDragModeButton();
+document.body.classList.toggle('swapping', swapMode);
 syncRosterButton();
 syncMenuButtons();
 syncUndoButton();

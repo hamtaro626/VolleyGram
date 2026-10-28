@@ -15,6 +15,11 @@ Built to use on mobile devices courtside
   (perimeter, or rotation / 6-up), computed from who's on court
 - **Drag players anywhere**; positions save per rotation, so all six are
   independent diagrams
+- **Swap players by dragging** — the default: drag one player onto another (or
+  tap two) and they trade places in the lineup, in every rotation. **Drag:
+  Move** beside Undo switches to positioning
+- **Temporary subs** — hold a player, type who's filling in, and they take that
+  exact spot until you hold again to bring the starter back
 - **Overlap-legality checking** — flags FIVB 7.4 violations at the moment of
   serve (base formation only, on purpose)
 - **Quiz mode** — tap the zone where a player belongs
@@ -51,9 +56,9 @@ dev/
   preview.html  the real app in live iframes at real device widths, for the
                 layout questions a stubbed DOM cannot answer
 test/
-  migration.js  781 checks: storage, migration, roles, formations, quiz,
-                sharing, dragging, short-handed rosters, playing surface,
-                scoreboard
+  migration.js  854 checks: storage, migration, roles, formations, quiz,
+                sharing, dragging, swapping, subs, short-handed rosters, playing
+                surface, scoreboard
   contrast.js   contrast, hue separation, every role against all three court
                 surfaces, and the scoreboard team colours — all parsed out
                 of style.css
@@ -89,7 +94,7 @@ scrolling, dragging a player still need a real device.
 ## Tests
 
 ```sh
-node test/migration.js    # 746 checks across 59 groups
+node test/migration.js    # 854 checks across 64 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
@@ -175,7 +180,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.48. Working title, actively developed, no issues or PRs open yet.
+v0.50. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 
