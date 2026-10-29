@@ -373,8 +373,8 @@ body.quiz-hide-players .player.serving {
   touch-action: none;
   user-select: none;
   -webkit-user-select: none;
-  /* A long press opens the sub prompt (v0.50), so iOS mustn't put its own
-     callout on top of it. */
+  /* A long press asks about sitting the player out (v0.51), so iOS mustn't
+     put its own callout on top of it. */
   -webkit-touch-callout: none;
 }
 
@@ -507,37 +507,6 @@ body.hide-labels .player .label {
 
 .player.illegal .overlap-tag {
   display: block;
-}
-
-/* A temporary sub (v0.50). Same spot as the overlap badge, in the Server pill's
-   neutral colours -- it's information, not a problem -- which each surface
-   already sets to read against itself. When both apply, the overlap flag wins the spot:
-   it's the one that needs fixing, and the title still says who's subbed. */
-.player .sub-tag {
-  display: none;
-  position: absolute;
-  left: 50%;
-  top: -0.4rem;
-  transform: translateX(-50%);
-  padding: 0.14rem 0.32rem;
-  border-radius: 999px;
-  background: var(--pill-bg);
-  color: var(--pill-fg);
-  font-size: 0.48rem;
-  font-weight: 700;
-  letter-spacing: 0.07em;
-  line-height: 1;
-  text-transform: uppercase;
-  white-space: nowrap;
-  z-index: 5;
-}
-
-.player.subbed .sub-tag {
-  display: block;
-}
-
-.player.subbed.illegal .sub-tag {
-  display: none;
 }
 
 /* Keyboard focus on a player. An outline, which deliberately displaces the
@@ -1175,7 +1144,11 @@ button.glyph {
    pushes the controls off screen on a phone. */
 .roster-row {
   display: grid;
-  grid-template-columns: 1.3rem 0.9rem minmax(0, 1fr) auto 1.4rem;
+  /* The name keeps a floor (v0.51): the Out button took about 2.5rem from
+     this row, and at 320px it came straight out of the name, leaving a box a
+     letter wide. Now the role select gives way first, down to the width the
+     name had before v0.51. */
+  grid-template-columns: 1.3rem 0.9rem minmax(4rem, 1fr) minmax(0, auto) auto 1.4rem;
   align-items: center;
   gap: 0.35rem;
   background: #232833;
@@ -1191,12 +1164,6 @@ button.glyph {
 
 /* Lifted and faded while it's being moved, so it reads as detached from the
    list it's being dropped back into. */
-/* Subbed out for the night: the starter's name stays, dimmed and italic. */
-.roster-row.subbed-out input[type="text"] {
-  font-style: italic;
-  opacity: 0.6;
-}
-
 .roster-row.row-dragging {
   opacity: 0.85;
   box-shadow: 0 4px 14px rgba(0, 0, 0, 0.45);
@@ -1241,6 +1208,40 @@ button.glyph {
 
 .roster button.icon.remove {
   font-size: 1.1rem;
+}
+
+/* Sitting out, v0.51. A small word rather than a glyph -- there's no symbol
+   for "on the team, not playing" that reads at a glance. Filled when pressed,
+   the same as the active formation tab. */
+.roster-row select {
+  width: 100%;
+  /* Narrower side padding, so a squeezed select still shows the role. */
+  padding-left: 0.3rem;
+  padding-right: 0.15rem;
+}
+
+.roster button.icon.sit {
+  padding: 0.3rem 0.35rem;
+  border: 1px solid #3a4152;
+  border-radius: 999px;
+  font-size: 0.7rem;
+}
+
+.roster button.icon.sit[aria-pressed="true"] {
+  background: #f2f4f8;
+  border-color: #f2f4f8;
+  color: #16181d;
+}
+
+/* The rest of a sitting-out row fades, so who's playing still reads first. */
+.roster-row.sitting-out .swatch,
+.roster-row.sitting-out input[type="text"],
+.roster-row.sitting-out select {
+  opacity: 0.45;
+}
+
+.roster-row.sitting-out input[type="text"] {
+  font-style: italic;
 }
 
 .roster button.icon:hover:not(:disabled) {

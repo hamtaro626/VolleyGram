@@ -18,8 +18,9 @@ Built to use on mobile devices courtside
 - **Swap players by dragging** — the default: drag one player onto another (or
   tap two) and they trade places in the lineup, in every rotation. **Drag:
   Move** beside Undo switches to positioning
-- **Temporary subs** — hold a player, type who's filling in, and they take that
-  exact spot until you hold again to bring the starter back
+- **Sit a player out** — hold them on the court, or press Out on their roster
+  row: they stay on the team but leave the rotation, which recomputes without
+  them
 - **Overlap-legality checking** — flags FIVB 7.4 violations at the moment of
   serve (base formation only, on purpose)
 - **Quiz mode** — tap the zone where a player belongs
@@ -27,7 +28,7 @@ Built to use on mobile devices courtside
   configurable sub entry zone; the roster order is the serving order
 - **Short-handed play** — field five players and the empty zone rotates with you,
   including the rotation where nobody is left to serve
-- **Multiple saved lineups**, plus 40-deep undo
+- **Multiple saved lineups**, made from the name picker, plus 40-deep undo
 - **Export to image**, single rotation or all six, optional transparent
   background
 - **Share links** that carry the whole diagram in the URL — no server involved
@@ -56,8 +57,8 @@ dev/
   preview.html  the real app in live iframes at real device widths, for the
                 layout questions a stubbed DOM cannot answer
 test/
-  migration.js  854 checks: storage, migration, roles, formations, quiz,
-                sharing, dragging, swapping, subs, short-handed rosters, playing
+  migration.js  868 checks: storage, migration, roles, formations, quiz,
+                sharing, dragging, swapping, sitting out, short-handed rosters, playing
                 surface, scoreboard
   contrast.js   contrast, hue separation, every role against all three court
                 surfaces, and the scoreboard team colours — all parsed out
@@ -94,7 +95,7 @@ scrolling, dragging a player still need a real device.
 ## Tests
 
 ```sh
-node test/migration.js    # 854 checks across 64 groups
+node test/migration.js    # 868 checks across 65 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
@@ -180,7 +181,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.50. Working title, actively developed, no issues or PRs open yet.
+v0.51. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

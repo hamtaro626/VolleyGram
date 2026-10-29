@@ -2722,7 +2722,7 @@ staying with the spot, a missed drop, tap-to-swap, the keyboard, and Move
 still positioning. `§63` covers a bench swap, a pick not surviving a rebuild,
 and the button's place on the Undo/Reset row.
 
-## v0.50 — temporary subs (2026-10-27)
+## v0.50 — temporary subs (2026-10-27), replaced in v0.51
 
 Another tester request: someone can't make it, a fill-in plays their spot for
 the night, and the starter is back next week. Making a whole new lineup for
@@ -2794,10 +2794,100 @@ or lift cancelling the hold, the stray `pointerup`, a swap carrying the sub,
 share links, subbing back in, `contextmenu`, a system change, the quiz, and
 normalising bad data.
 
+## v0.51 — sitting out, and new teams from the name picker (2026-10-28)
+
+### v0.50's subs were the wrong feature
+
+Alec had asked for a "sub" and v0.50 built a typed-in fill-in who took a
+player's exact spot. What was actually wanted: **bench a player** so they're
+still on the team but don't play. v0.50 was live for a day; its subs are gone,
+and a save carrying the old `subs` field loads without it.
+
+### Sitting out
+
+- **Hold a player on the court** (or right-click, or Shift+F10) and it asks
+  *"Sit Middle 1 out?"*. The long-press plumbing is v0.50's, unchanged: the
+  timer, the 3px cancel, letting go of the drag before the dialog opens.
+- **Or press Out on their roster row.** Pressed means sitting out; press it
+  again to bring them back. Once someone is out they have no circle, so the
+  roster is how they come back.
+- A sitting-out row fades, the name in italics, so who's playing still reads
+  first.
+
+They stay on the team: same name, same role, same roster row. They leave the
+**rotation**, which recomputes as if they'd stayed home: the serving order
+closes up around them, seven players with one out rotate as six, six with one
+out play short-handed (v0.20). Bring them back and the order is what it was.
+
+### How: `playing()`
+
+One function, the roster minus anyone out, and every piece of rotation maths
+now runs over it: `slotFor()`'s index, `rosterSize()`, the bench, formations,
+overlap, the setter, the quiz, the export, the swap target. The roster panel
+is the one place that still walks `saved.roster`, because it's where you see
+and edit everybody. Editing limits (twelve players, numbering a new one, the
+reorder bounds) count the whole roster.
+
+`out: true` is stored on the player, and only when true, so a full team's save
+and share link carry nothing extra. Storage stays version 2.
+
+### Things it had to get right
+
+- **Never fewer than two playing.** The Out button disables and a hold says
+  why. A hand-edited save that breaks this brings everyone back.
+- **Dragged positions are cleared**, through `changeLineup()` like adding or
+  removing someone, because the serving order shifts and the positions were
+  chosen for the old one. Undo restores them.
+- **Undo had to learn about it.** Undo redraws without rebuilding the circles
+  when "the same players are still there", and checked only ids and roles. Undo
+  a sit-out and the player coming back had no circle to draw. It compares
+  `out` too now.
+- **Share links carry who's out**, unlike v0.50's subs: the dragged positions
+  in the link were made for the rotation without them, so the diagram only
+  matches if the recipient sees the same rotation.
+- **Someone sitting out can always be removed** from the team; the rotation
+  doesn't count them.
+
+### New team and Duplicate in the name picker
+
+The VolleyGram Name dropdown ends with a rule and two actions: **+ New team…**
+and **Duplicate this team…**. They run the same `addLineup()` and
+`duplicateLineup()` as the roster panel's buttons, which stay where they are.
+After either, the picker is redrawn: it shows the new team, or, if the name
+prompt was cancelled, goes back to the current team rather than sitting on
+"+ New team…".
+
+It turned up a real bug. Lineup ids were `L` plus the millisecond, and New
+followed quickly by Duplicate could land in the same millisecond, so the copy
+silently replaced the team just made. `newLineupId()` adds to the id until
+it's unused.
+
+### The roster row at 320px
+
+The Out button took about 2.5rem from each row, and at 320px it came straight
+out of the name: a box one letter wide. The name now keeps a 4rem floor (what
+it had before) and the role select gives way first, with tighter side padding
+so a squeezed select still shows most of the role. Checked in headless Chrome
+at 320 and 390.
+
+### Not doing
+
+- **Showing someone sitting out on the court.** The off-court strip belongs
+  to players in the rotation waiting their turn; putting someone who isn't
+  playing there would say they are.
+- **Remembering positions across a sit-out.** It would mean a second set of
+  dragged positions per arrangement. Undo covers a mistake.
+- **Removing the roster panel's New lineup and Duplicate.** Both ways work.
+
+`§64` covers sitting out (hold, roster button, the serving order closing up,
+no circle, undo both ways, the stray pointerup, the two-player floor, the
+quiz, share links, storage and the v0.50 shape). `§65` covers the picker's
+actions, a cancelled name, and the same-millisecond id.
+
 ## Tests
 
 ```
-node test/migration.js    # 854 checks — storage, migration, roles, formations,
+node test/migration.js    # 868 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

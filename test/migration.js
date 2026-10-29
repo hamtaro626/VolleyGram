@@ -157,7 +157,7 @@ function boot(seedJson, seedHash, extraContext) {
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
       closeNewGame, closeMore, syncMenuButtons, introSpot, playIntro,
       formatElapsed, renderTimes, swapPlayers, pickForSwap, setSwapMode,
-      subOut, subIn, openSubPrompt, normaliseSubs, applySystem };
+      setSittingOut, askSitOut, playing, applySystem, syncLineupSelect };
     globalThis.__swap = () => ({ swapMode, swapPicked });
     globalThis.__intro = () => ({ HUDDLE: INTRO_HUDDLE_MS, SPIN: INTRO_SPIN_MS,
       TURNS: INTRO_TURNS, RADIUS: INTRO_RADIUS, GATHER: INTRO_GATHER_MS });
@@ -3425,164 +3425,225 @@ console.log('\n63. Swap mode brings someone off the bench');
     /\.player\.swap-picked,\s*\n\.player\.swap-target\s*\{[^}]*outline:/.test(css));
 }
 
-console.log('\n64. Temporary subs');
+console.log('\n64. Sitting a player out');
 {
   // setTimeout is captured rather than stubbed to nothing, so the test decides
-  // when a long press has lasted long enough. prompt and confirm answer
-  // whatever the test sets next.
+  // when a long press has lasted long enough. confirm answers whatever the
+  // test sets next.
   const timers = [];
-  let promptAnswer = null;
   let confirmAnswer = true;
   const asked = [];
   const app = boot(JSON.stringify({ system: '4-2', roster: null, entrySlot: 1 }), undefined, {
     setTimeout: (fn, ms) => { timers.push({ fn, ms, live: true }); return timers.length; },
     clearTimeout: (id) => { if (timers[id - 1]) timers[id - 1].live = false; },
-    prompt: (q) => { asked.push(q); return promptAnswer; },
     confirm: (q) => { asked.push(q); return confirmAnswer; },
+    alert: (q) => { asked.push(q); },
   });
   const pending = () => timers.filter((t) => t.live && t.ms === 600);
   const fire = () => pending().forEach((t) => { t.live = false; t.fn(); });
   const saved = () => app.peek().saved;
-  const zoneOf = (id, r) => app.call.slotFor(saved().roster.findIndex((p) => p.id === id), r);
+  const ids = (list) => list.map((p) => p.id).join(' ');
   const down = (el) => app.call.startDrag({ currentTarget: el, clientX: 150, clientY: 150, pointerId: 1 });
-  const s1 = app.players().S1;
-  const zonesBefore = [1, 2, 3, 4, 5, 6].map((r) => zoneOf('S1', r));
+  // Which rotation a player serves in: the one that puts them in zone 1.
+  const servesIn = (id) => {
+    const index = app.call.playing().findIndex((p) => p.id === id);
+    return [1, 2, 3, 4, 5, 6].find((r) => app.call.slotFor(index, r) === 1);
+  };
+  const rowFor = (id) => app.document.getElementById('rosterRows').children
+    .find((row) => row.dataset.playerId === id);
+  check('with everyone in, Outside 1 serves third', servesIn('OH1') === 3);
 
-  // Hold, then type a name.
+  // Hold, confirm.
   const undos = app.stacks().undos;
-  promptAnswer = '  Jordan  ';
-  down(s1);
+  down(app.players().MB1);
   check('holding a player starts a 600ms timer', pending().length === 1, String(pending().length));
   fire();
-  check('which asks who is coming in', /Who's coming in for Setter 1\?/.test(asked[asked.length - 1]),
-    asked[asked.length - 1]);
-  check('the sub is recorded, trimmed', saved().subs.S1 === 'Jordan', JSON.stringify(saved().subs));
-  check('and named on the court', app.players().S1.classList.contains('subbed'));
-  check('the title says who they are in for',
-    /^Jordan \(sub for Setter 1\)/.test(app.players().S1.title), app.players().S1.title);
-  check('the roster still holds the starter', saved().roster[0].name === '');
-  check('the sub takes the exact same spot in every rotation',
-    JSON.stringify([1, 2, 3, 4, 5, 6].map((r) => zoneOf('S1', r))) === JSON.stringify(zonesBefore));
-  check('subbing is one undo step', app.stacks().undos === undos + 1);
+  check('which asks about sitting them out',
+    /^Sit Middle 1 out\?/.test(asked[asked.length - 1]), asked[asked.length - 1]);
+  const mb1 = saved().roster.find((p) => p.id === 'MB1');
+  check('they are marked out', mb1.out === true);
+  check('and still on the team, in the same roster row',
+    saved().roster.length === 6 && saved().roster[1].id === 'MB1', ids(saved().roster));
+  check('but not in the rotation', ids(app.call.playing()) === 'S1 OH1 S2 MB2 OH2',
+    ids(app.call.playing()));
+  check('so five play, short-handed, and the rotation still has six steps',
+    app.call.rosterSize() === 5 && app.call.rotationCount() === 6);
+  check('the serving order closes up around them: Outside 1 now serves second',
+    servesIn('OH1') === 2, String(servesIn('OH1')));
+  check('they have no circle on the court', !app.players().MB1);
+  check('sitting out is one undo step', app.stacks().undos === undos + 1);
   check('and it is saved', (() => {
     const stored = JSON.parse(app.memory['volleyball-rotations-v1']);
-    return stored.lineups[stored.activeId].subs.S1 === 'Jordan';
+    return stored.lineups[stored.activeId].roster[1].out === true;
   })());
-  // In a 4-2 the front-row setter sets, so look at a rotation where S1 is front.
-  const front = [1, 2, 3, 4, 5, 6].find((r) => [2, 3, 4].includes(zoneOf('S1', r)));
-  app.call.setRotation(front);
-  check('the status line names who is actually setting', /Jordan \(zone/.test(app.status()), app.status());
-  app.call.setRotation(1);
 
-  // The lost pointerup after the prompt does nothing.
-  const swapsBefore = saved().roster.map((p) => p.id).join(' ');
+  // The lost pointerup after the confirm does nothing.
   app.call.endDrag();
   check('the pointerup after a hold neither picks nor swaps',
-    app.swap().swapPicked === null && saved().roster.map((p) => p.id).join(' ') === swapsBefore);
-  check('and no circle is left dragging', !app.players().S1.classList.contains('dragging'));
+    app.swap().swapPicked === null && ids(saved().roster) === 'S1 MB1 OH1 S2 MB2 OH2');
 
-  // Cancel and blank do nothing.
-  for (const answer of [null, '   ']) {
-    const before = app.stacks().undos;
-    promptAnswer = answer;
-    down(app.players().MB1);
-    fire();
-    app.call.endDrag();
-    check(`answering ${answer === null ? 'Cancel' : 'blank'} changes nothing`,
-      !saved().subs.MB1 && app.stacks().undos === before);
-  }
+  // The roster panel shows them, pressed, and brings them back.
+  app.call.buildRosterRows();
+  const rows = app.document.getElementById('rosterRows').children;
+  const sitButton = (row) => row.children[4];
+  check('their roster row is marked as sitting out', rows[1].classList.contains('sitting-out'));
+  check('and its Out button is pressed', sitButton(rows[1]).attrs['aria-pressed'] === 'true',
+    JSON.stringify(sitButton(rows[1]).attrs));
+  check('everyone else’s is not', sitButton(rows[0]).attrs['aria-pressed'] === 'false');
+  sitButton(rows[1]).dispatch('click');
+  check('pressing it puts them back', !saved().roster[1].out && app.call.rosterSize() === 6);
+  check('and they have a circle again', Boolean(app.players().MB1));
+  check('in the same spot in the serving order',
+    servesIn('MB1') === 2 && servesIn('OH1') === 3, `${servesIn('MB1')} ${servesIn('OH1')}`);
+  app.call.undo();
+  check('undo sits them back out', saved().roster[1].out === true);
+  app.call.undo();
+  check('and undo again puts them back, with a circle',
+    !saved().roster[1].out && Boolean(app.players().MB1));
 
-  // Moving cancels the hold; lifting cancels it too.
+  // Declining changes nothing.
+  confirmAnswer = false;
+  const before = app.stacks().undos;
+  down(app.players().OH1);
+  fire();
+  app.call.endDrag();
+  check('declining changes nothing', !saved().roster[2].out && app.stacks().undos === before);
+  confirmAnswer = true;
+
+  // Moving or lifting cancels the hold. In Move, so the drag positions rather
+  // than swapping and the roster order below stays put.
+  app.call.setSwapMode(false);
   down(app.players().OH1);
   app.call.onDrag({ clientX: 160, clientY: 150 });
   check('moving 3px cancels the hold', pending().length === 0);
   app.call.endDrag();
+  app.call.setSwapMode(true);
   down(app.players().OH1);
   app.call.endDrag();
   check('lifting cancels it too', pending().length === 0);
   check('and a tap still picks in Swap mode', app.swap().swapPicked === 'OH1');
   app.call.pickForSwap('OH1');
 
-  // A swap carries the sub with the roster spot.
-  app.call.swapPlayers('S1', 'MB1');
-  check('a swap carries the sub with the player it covers',
-    saved().subs.S1 === 'Jordan' && saved().roster[1].id === 'S1');
-  app.call.undo();
-
-  // Share links leave subs out.
-  const link = app.call.shareUrl();
-  const shared = app.call.decodeLineup(link.split('#g=')[1]);
-  check('a share link carries no subs', !('subs' in shared), Object.keys(shared).join(','));
-
-  // Hold a subbed player to bring the starter back.
-  confirmAnswer = false;
-  down(app.players().S1);
-  fire();
-  check('declining the sub-back keeps the sub', saved().subs.S1 === 'Jordan');
-  confirmAnswer = true;
-  down(app.players().S1);
-  fire();
-  check('which asks to bring the starter back',
-    /Bring Setter 1 back in for Jordan\?/.test(asked[asked.length - 1]), asked[asked.length - 1]);
-  check('confirming brings them back', !saved().subs.S1
-    && !app.players().S1.classList.contains('subbed'));
-  app.call.endDrag();
-
-  // Right-click, Menu key or Shift+F10.
-  promptAnswer = 'Casey';
+  // Right-click, the Menu key or Shift+F10.
   let prevented = false;
   app.players().OH2.dispatch('contextmenu', { preventDefault() { prevented = true; } });
-  check('contextmenu opens the same prompt', saved().subs.OH2 === 'Casey');
+  check('contextmenu asks the same question',
+    saved().roster.find((p) => p.id === 'OH2').out === true, ids(saved().roster) + ' / ' + asked[asked.length - 1]);
   check('and keeps the browser menu away', prevented);
 
-  // Undo takes it back.
-  app.call.undo();
-  check('undo takes a sub back', !saved().subs.OH2);
-
-  // A new system brings new player ids, some reused (S1, OH1), so the subs
-  // start over rather than attach to whoever inherits an id.
-  app.call.subOut('MB2', 'Riley');
-  app.call.applySystem('5-1');
-  check('changing system clears the subs', JSON.stringify(saved().subs) === '{}',
-    JSON.stringify(saved().subs));
-  app.call.subOut(saved().roster[1].id, 'Riley');
-  app.call.setSwapMode(false);
+  // The quiz never asks about someone sitting out.
   app.call.startQuiz();
-  down(app.players()[saved().roster[1].id]);
+  let askedOut = false;
+  for (let i = 0; i < 60; i += 1) {
+    app.call.nextQuizQuestion();
+    const { quiz } = app.quiz();
+    if (app.call.playing()[quiz.index].id === 'OH2') askedOut = true;
+  }
+  check('the quiz never asks about someone sitting out', !askedOut);
+  down(app.players().S1);
   check('nothing is held during a quiz', pending().length === 0);
   app.call.endDrag();
   app.call.endQuiz();
 
-  // Normalising what storage hands back.
-  const roster = saved().roster;
-  const norm = app.call.normaliseSubs;
-  check('missing subs become none', JSON.stringify(norm(undefined, roster)) === '{}');
-  check('an array is not a subs map', JSON.stringify(norm(['x'], roster)) === '{}');
-  check('a sub for nobody on the roster is dropped',
-    JSON.stringify(norm({ ZZ9: 'Ghost', S1: 'Jo' }, roster)) === '{"S1":"Jo"}');
-  check('empty and non-string names are dropped',
-    JSON.stringify(norm({ S1: '  ', MB1: 7, OH1: 'Ok' }, roster)) === '{"OH1":"Ok"}');
-  check('a long name is cut to the roster limit',
-    norm({ S1: 'A'.repeat(40) }, roster).S1.length === 14);
-  const loaded = boot(JSON.stringify({ system: '4-2', roster: null, subs: { S1: 'Jo', nope: 'x' } }));
-  check('an old-shape save keeps a valid sub and drops the rest',
-    JSON.stringify(loaded.peek().saved.subs) === '{"S1":"Jo"}',
-    JSON.stringify(loaded.peek().saved.subs));
-  check('a fresh lineup has no subs', JSON.stringify(boot().peek().saved.subs) === '{}');
+  // A share link carries who's out, so the diagram it opens matches.
+  const link = app.call.shareUrl();
+  const shared = app.call.decodeLineup(link.split('#g=')[1]);
+  check('a share link carries who is sitting out',
+    shared.roster.find((p) => p.id === 'OH2').out === true);
+
+  // Never fewer than MIN_PLAYERS in the rotation.
+  ['S1', 'OH1', 'S2'].forEach((id) => app.call.setSittingOut(id, true));
+  check('down to two playing', app.call.rosterSize() === 2, String(app.call.rosterSize()));
+  check('the last two cannot sit out', app.call.setSittingOut('MB2', true) === false
+    && app.call.rosterSize() === 2);
+  asked.length = 0;
+  down(app.players().MB2);
+  fire();
+  app.call.endDrag();
+  check('and a hold says why instead of asking',
+    /At least 2 players/.test(asked[0] || ''), asked[0]);
+  app.call.buildRosterRows();
+  check('their Out buttons are disabled',
+    sitButton(rowFor('MB2')).disabled === true && sitButton(rowFor('S1')).disabled === false);
+  // The last child is the remove button, or an empty placeholder span.
+  const removable = (id) => /\bremove\b/.test(rowFor(id).children[5].className);
+  check('someone sitting out can still be removed from the team',
+    removable('S1') && !removable('MB2'), `${removable('S1')} ${removable('MB2')}`);
+
+  // Storage.
+  const loaded = boot(JSON.stringify({ system: '4-2', roster: [
+    { id: 'A', role: 'S', name: 'A', out: true }, { id: 'B', role: 'OH', name: 'B', out: 'yes' },
+    { id: 'C', role: 'MB', name: 'C' }, { id: 'D', role: 'OH', name: 'D' },
+  ] }));
+  const lr = loaded.peek().saved.roster;
+  check('a saved sit-out survives a reload', lr[0].out === true);
+  check('only a real true counts', !('out' in lr[1]), JSON.stringify(lr[1]));
+  check('and a full team carries no out field at all', !('out' in lr[2]));
+  const allOut = boot(JSON.stringify({ system: '4-2', roster: [
+    { id: 'A', role: 'S', out: true }, { id: 'B', role: 'OH', out: true },
+    { id: 'C', role: 'MB', out: true },
+  ] }));
+  check('a hand-edited save with nearly everyone out brings them all back',
+    allOut.call.rosterSize() === 3, String(allOut.call.rosterSize()));
+  const v050 = boot(JSON.stringify({ system: '4-2', roster: null, subs: { S1: 'Jordan' } }));
+  check('a v0.50 save with typed-in subs loads, without them',
+    !('subs' in v050.peek().saved) && v050.call.rosterSize() === 6);
 }
 
 {
   const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')
     .replace(/\/\*[\s\S]*?\*\//g, '');
   const js = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
-  check('every player carries a sub pill',
-    /<span class="sub-tag">Sub<\/span>/.test(js));
-  check('shown only on a subbed player',
-    /\.player\.subbed \.sub-tag\s*\{[^}]*display:\s*block/.test(css));
-  check('and giving way to the overlap flag',
-    /\.player\.subbed\.illegal \.sub-tag\s*\{[^}]*display:\s*none/.test(css));
+  check('the v0.50 sub pill is gone, markup and CSS',
+    !/sub-tag/.test(js) && !/sub-tag|subbed/.test(css));
+  check('a pressed Out button is filled',
+    /\.roster button\.icon\.sit\[aria-pressed="true"\]\s*\{[^}]*background:/.test(css));
+  check('the roster row has a column for it',
+    /\.roster-row\s*\{[^}]*grid-template-columns:\s*1\.3rem 0\.9rem minmax\(4rem, 1fr\) minmax\(0, auto\) auto 1\.4rem/.test(css));
   check('iOS shows no callout on a long press',
     /\.player\s*\{[^}]*-webkit-touch-callout:\s*none/.test(css));
+}
+
+console.log('\n65. New and duplicate team from the name picker');
+{
+  let answer = 'Tuesday league';
+  const app = boot(undefined, undefined, { prompt: () => answer });
+  const picker = app.document.getElementById('lineup');
+  const store = () => app.peek().store;
+  const values = () => picker.children.map((o) => o.value);
+  const labels = () => picker.children.map((o) => o.textContent);
+
+  check('the picker ends with New team and Duplicate',
+    JSON.stringify(labels().slice(-2)) === JSON.stringify(['+ New team…', 'Duplicate this team…']),
+    JSON.stringify(labels()));
+  check('behind a rule that cannot be picked', picker.children[picker.children.length - 3].disabled === true);
+  check('and the team itself is still the selected option',
+    picker.children.find((o) => o.selected).value === store().activeId);
+
+  const pick = (value) => { picker.value = value; picker.dispatch('change'); };
+  pick('__new__');
+  check('+ New team makes a team and switches to it',
+    Object.keys(store().lineups).length === 2 && app.peek().saved.name === 'Tuesday league',
+    app.peek().saved.name);
+  check('and the picker shows it',
+    picker.children.find((o) => o.selected).textContent === 'Tuesday league');
+
+  pick('__duplicate__');
+  check('Duplicate copies the team you are on',
+    Object.keys(store().lineups).length === 3 && app.peek().saved.name === 'Tuesday league copy',
+    app.peek().saved.name);
+
+  answer = null;
+  const activeBefore = store().activeId;
+  pick('__new__');
+  check('cancelling the name makes nothing',
+    Object.keys(store().lineups).length === 3 && store().activeId === activeBefore);
+  check('and the picker goes back to the current team rather than the action',
+    picker.children.find((o) => o.selected).value === activeBefore);
+
+  const first = values()[0];
+  pick(first);
+  check('picking a team still switches to it', store().activeId === first);
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

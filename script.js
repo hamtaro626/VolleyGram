@@ -195,12 +195,12 @@ const SWIPE_MIN = 45;
 // drag -- see endDrag() for why that distinction matters.
 const DRAG_MIN = 3;
 
-// How long a player has to be held, without moving, to bring up the sub prompt
-// (v0.50). Long enough that a slow tap never trips it; short enough that it
+// How long a player has to be held, without moving, to ask about sitting them
+// out (v0.50, v0.51). Long enough that a slow tap never trips it; short enough that it
 // doesn't feel broken. Moving DRAG_MIN cancels it, so it can't fight a drag.
 const LONG_PRESS_MS = 600;
 
-// The roster's own name limit, which a sub's name shares.
+// The roster's name limit.
 const MAX_PLAYER_NAME = 14;
 
 // The bench strip sits below the court. 112% is its middle -- see .bench in
@@ -381,7 +381,6 @@ function newLineup(name) {
     // you've dragged; anything absent is generated.
     layouts: emptyLayouts(),
     roleOverrides: {},  // rotation -> { player id -> role }
-    subs: {},           // player id -> name of whoever is in for them (v0.50)
     passers: DEFAULT_PASSERS,
     defenseSystem: 'perimeter',
     defenseSide: 'right',
@@ -443,8 +442,24 @@ function mod(n, m) {
   return ((n % m) + m) % m;
 }
 
+// Everyone in the rotation: the roster minus anyone sitting out (v0.51).
+//
+// Every piece of rotation maths -- slotFor(), the bench, short-handed play, the
+// quiz, the export -- runs over this list, and an index into it is what
+// slotFor() means by rosterIndex. Someone sitting out simply isn't in the
+// serving order, which is the whole point: the lineup rotates as if they had
+// stayed home, and they're still on the roster for next week.
+//
+// The roster panel is the one place that still walks saved.roster itself,
+// because it's where you see and edit everybody, in or out.
+function playing() {
+  return saved.roster.filter((player) => !player.out);
+}
+
+// How many are in the rotation. Editing limits -- the twelve-player cap, the
+// position a new player is numbered from -- count the whole roster instead.
 function rosterSize() {
-  return saved.roster.length;
+  return playing().length;
 }
 
 // How many players are actually standing on the court. Short of a full six,
@@ -518,22 +533,11 @@ function slotFor(rosterIndex, rotation) {
 // roster; short-handed, exactly (COURT_SPOTS - rosterSize) zones answer false,
 // and which ones changes every rotation as the hole travels.
 function zoneOccupied(zone, rotation = currentRotation) {
-  return saved.roster.some((_, index) => slotFor(index, rotation) === zone);
+  return playing().some((_, index) => slotFor(index, rotation) === zone);
 }
 
-// Who is actually playing in this roster spot: a sub when there is one
-// (v0.50), otherwise the player. Everything that names someone on court -- the
-// circle, the status line, the quiz, the image export -- reads it from here.
 function displayName(player) {
-  return subFor(player) || starterName(player);
-}
-
-function starterName(player) {
   return player.name || player.fallback;
-}
-
-function subFor(player) {
-  return (saved.subs && saved.subs[player.id]) || '';
 }
 
 // The role a player is filling in a given rotation. A per-rotation override
@@ -699,7 +703,7 @@ function defaultLayout(formation, rotation) {
   const layout = {};
   const onCourt = [];
 
-  saved.roster.forEach((player, index) => {
+  playing().forEach((player, index) => {
     const slot = slotFor(index, rotation);
     if (slot === null) {
       layout[player.id] = benchPosition(index, rotation);
@@ -736,7 +740,7 @@ function overlapViolations(rotation = currentRotation) {
   const layout = positionsFor('base', rotation);
   const byZone = {};
 
-  saved.roster.forEach((player, index) => {
+  playing().forEach((player, index) => {
     const zone = slotFor(index, rotation);
     if (zone !== null) byZone[zone] = { id: player.id, ...layout[player.id] };
   });
@@ -803,7 +807,8 @@ function undo() {
   const samePlayers =
     saved.roster.length === before.roster.length &&
     saved.roster.every((player, index) =>
-      player.id === before.roster[index].id && player.role === before.roster[index].role);
+      player.id === before.roster[index].id && player.role === before.roster[index].role
+      && !player.out === !before.roster[index].out);
 
   if (samePlayers) {
     buildRosterRows();
@@ -878,6 +883,9 @@ function normaliseLineup(raw, fallbackName) {
       name: typeof player.name === 'string' ? player.name : '',
       // Saves before v0.4 predate `fallback`, so derive one from the role.
       fallback: player.fallback || `${ROLE_LABELS[player.role] || 'Player'} ${index + 1}`,
+      // v0.51. Only written when true, so a full team's save and share link
+      // carry nothing extra.
+      ...(player.out === true ? { out: true } : {}),
     }));
 
   // Short-handed is a real thing you might be saving on purpose, so a roster of
@@ -888,6 +896,13 @@ function normaliseLineup(raw, fallbackName) {
   // Before v0.20 this reset anything under six, which silently threw away the
   // names of a five-player team.
   if (roster.length < MIN_PLAYERS) roster = rosterFromSystem(system);
+
+  // Sitting out can never leave fewer than MIN_PLAYERS in the rotation -- the
+  // app refuses to do it, so a save that says so was edited by hand. Everyone
+  // comes back rather than the rotation maths running over nobody.
+  if (roster.filter((player) => !player.out).length < MIN_PLAYERS) {
+    roster = roster.map(({ out, ...player }) => player);
+  }
 
   return {
     name: raw.name || fallbackName,
@@ -906,27 +921,13 @@ function normaliseLineup(raw, fallbackName) {
     // than a version bump -- an extra optional field breaks nothing.
     roleOverrides: raw.roleOverrides && typeof raw.roleOverrides === 'object'
       ? raw.roleOverrides : {},
-    // Added in v0.50, optional with a default, so still storage version 2.
-    subs: normaliseSubs(raw.subs, roster),
+    // v0.50 had a `subs` field here, a typed-in fill-in per player. v0.51
+    // replaced it with sitting out, and an old one is simply not carried over:
+    // it was a day old and only ever a temporary name.
     passers: PASSER_COUNTS.includes(raw.passers) ? raw.passers : DEFAULT_PASSERS,
     defenseSystem: DEFENSE_SPOTS[raw.defenseSystem] ? raw.defenseSystem : 'perimeter',
     defenseSide: raw.defenseSide === 'left' ? 'left' : 'right',
   };
-}
-
-// Temporary subs: player id -> the name of whoever is in for them. Only names
-// for players this lineup actually has, only non-empty strings, and no longer
-// than a roster name -- it arrives from storage, which can be hand-edited.
-function normaliseSubs(raw, roster) {
-  const subs = {};
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return subs;
-  roster.forEach((player) => {
-    const name = raw[player.id];
-    if (typeof name !== 'string') return;
-    const trimmed = name.trim().slice(0, MAX_PLAYER_NAME);
-    if (trimmed) subs[player.id] = trimmed;
-  });
-  return subs;
 }
 
 // One rotation's dragged positions: player id -> {x, y}. These are only ever
@@ -1075,13 +1076,13 @@ function buildPlayers() {
   Object.values(playerElements).forEach((el) => el.remove());
   Object.keys(playerElements).forEach((id) => delete playerElements[id]);
 
-  saved.roster.forEach((player) => {
+  // Nobody sitting out gets a circle: they aren't on the court or the bench.
+  playing().forEach((player) => {
     const el = document.createElement('div');
     el.className = `player role-${player.role}`;
     el.dataset.playerId = player.id;
     el.innerHTML = '<span class="name"></span><span class="label"></span>'
       + '<span class="serve-tag">Server</span>'
-      + '<span class="sub-tag">Sub</span>'
       + '<span class="overlap-tag">Overlap</span>';
     el.addEventListener('pointerdown', startDrag);
     el.addEventListener('pointermove', onDrag);
@@ -1096,12 +1097,12 @@ function buildPlayers() {
     el.addEventListener('blur', () => { if (nudgedId === player.id) nudgedId = null; });
     el.addEventListener('pointercancel', endDrag);
     // Right-click, the Menu key, or Shift+F10 on a focused player: the same
-    // sub prompt a long press opens. Also keeps a phone's own long-press menu
+    // sit-out question a long press asks. Also keeps a phone's own long-press menu
     // from appearing over the court.
     el.addEventListener('contextmenu', (event) => {
       event.preventDefault();
       if (quiz) return;
-      openSubPrompt(player.id);
+      askSitOut(player.id);
     });
     court.appendChild(el);
     playerElements[player.id] = el;
@@ -1221,12 +1222,7 @@ function buildRosterRows() {
     nameInput.value = player.name;
     nameInput.placeholder = player.fallback;
     nameInput.maxLength = MAX_PLAYER_NAME;
-    // Subbed out: the roster still holds the starter, so their name stays, but
-    // the field says who is on court in their place.
-    if (subFor(player)) {
-      row.classList.add('subbed-out');
-      nameInput.title = `Out tonight — ${subFor(player)} is in. Hold them on the court to sub back in.`;
-    }
+    if (player.out) row.classList.add('sitting-out');
     // One snapshot when you start editing, not one per keystroke.
     nameInput.addEventListener('focus', pushHistory);
     nameInput.addEventListener('input', () => {
@@ -1284,12 +1280,25 @@ function buildRosterRows() {
       }
     });
 
-    row.append(handle, swatch, nameInput, roleSelect);
+    // Sitting out (v0.51): on the team, out of the rotation. Pressed means
+    // out. Refused when it would leave fewer than MIN_PLAYERS playing.
+    const sitButton = document.createElement('button');
+    sitButton.className = 'icon sit';
+    sitButton.textContent = 'Out';
+    sitButton.setAttribute('aria-pressed', String(Boolean(player.out)));
+    sitButton.title = player.out
+      ? `${displayName(player)} is sitting out. Press to put them back in the rotation.`
+      : `Sit ${displayName(player)} out: they stay on the team but leave the rotation.`;
+    sitButton.disabled = !player.out && rosterSize() <= MIN_PLAYERS;
+    sitButton.addEventListener('click', () => setSittingOut(player.id, !player.out));
+
+    row.append(handle, swatch, nameInput, roleSelect, sitButton);
 
     // Anyone can go as long as MIN_PLAYERS survive. Removing from the first six
     // is how you get a short-handed lineup in the first place -- before v0.20
     // those rows had no remove button at all.
-    if (rosterSize() > MIN_PLAYERS) {
+    // Someone sitting out can always go -- the rotation doesn't count them.
+    if (player.out || rosterSize() > MIN_PLAYERS) {
       row.append(iconButton('icon remove', '×', `Remove ${displayName(player)}`,
         () => changeLineup(() => { saved.roster.splice(index, 1); })));
     } else {
@@ -1299,7 +1308,7 @@ function buildRosterRows() {
     rosterRows.appendChild(row);
   });
 
-  document.getElementById('addPlayer').disabled = rosterSize() >= MAX_PLAYERS;
+  document.getElementById('addPlayer').disabled = saved.roster.length >= MAX_PLAYERS;
 
   const clearButton = document.getElementById('clearRoleOverrides');
   const overrides = overrideCount();
@@ -1308,6 +1317,11 @@ function buildRosterRows() {
     ? 'No per-rotation roles set'
     : `Clear ${overrides} per-rotation role${overrides === 1 ? '' : 's'}`;
 }
+
+// Option values for the two actions in the team picker. Lineup ids are
+// 'first' or L<timestamp>, so these can never collide with one.
+const NEW_TEAM_OPTION = '__new__';
+const DUPLICATE_TEAM_OPTION = '__duplicate__';
 
 function syncLineupSelect() {
   lineupSelect.replaceChildren();
@@ -1318,6 +1332,21 @@ function syncLineupSelect() {
     option.selected = id === store.activeId;
     lineupSelect.appendChild(option);
   });
+
+  // v0.51: making a team from the place you pick one. A disabled rule keeps
+  // the two actions from reading as teams called "+ New team".
+  const rule = document.createElement('option');
+  rule.disabled = true;
+  rule.textContent = '──────────';
+  lineupSelect.appendChild(rule);
+  [[NEW_TEAM_OPTION, '+ New team…'], [DUPLICATE_TEAM_OPTION, 'Duplicate this team…']]
+    .forEach(([value, label]) => {
+      const option = document.createElement('option');
+      option.value = value;
+      option.textContent = label;
+      lineupSelect.appendChild(option);
+    });
+
   // Never let someone delete their way down to no lineups at all.
   document.getElementById('deleteLineup').disabled = Object.keys(store.lineups).length <= 1;
 }
@@ -1341,11 +1370,20 @@ function useLineup(id) {
   rebuild();
 }
 
+// A timestamp, made unique. Two teams made in the same millisecond -- New then
+// Duplicate from the picker, quickly enough -- used to share an id, and the
+// second quietly replaced the first.
+function newLineupId() {
+  let id = `L${Date.now()}`;
+  while (store.lineups[id]) id += 'x';
+  return id;
+}
+
 function addLineup() {
   const name = (prompt('Name for the new lineup?', 'New team') || '').trim();
   if (!name) return;
   pushHistory();
-  const id = `L${Date.now()}`;
+  const id = newLineupId();
   store.lineups[id] = newLineup(name);
   store.activeId = id;
   saved = store.lineups[id];
@@ -1356,7 +1394,7 @@ function addLineup() {
 
 function duplicateLineup() {
   pushHistory();
-  const id = `L${Date.now()}`;
+  const id = newLineupId();
   const copy = structuredClone(saved);
   copy.name = `${saved.name} copy`;
   store.lineups[id] = copy;
@@ -1405,10 +1443,6 @@ function applySystem(key) {
   changeLineup(() => {
     const previous = saved.roster;
     saved.system = key;
-    // A new system is a new set of player ids, and some of them (S1, OH1)
-    // repeat across systems -- a sub left behind would attach to whoever
-    // inherits the id. Start the night's subs over instead.
-    saved.subs = {};
     saved.roster = [
       ...rosterFromSystem(key).map((player, index) => ({
         ...player,
@@ -1466,8 +1500,6 @@ function changeLineup(mutate) {
   pushHistory();
   mutate();
   saved.layouts = emptyLayouts();
-  // A sub for someone who has been removed is in for nobody.
-  saved.subs = normaliseSubs(saved.subs, saved.roster);
   if (currentRotation > rotationCount()) currentRotation = 1;
   save();
   rebuild();
@@ -1475,7 +1507,7 @@ function changeLineup(mutate) {
 
 function movePlayer(index, delta) {
   const target = index + delta;
-  if (target < 0 || target >= rosterSize()) return;
+  if (target < 0 || target >= saved.roster.length) return;
   changeLineup(() => {
     const [player] = saved.roster.splice(index, 1);
     saved.roster.splice(target, 0, player);
@@ -1813,7 +1845,7 @@ function render() {
     ids.forEach((id) => { (problems[id] = problems[id] || []).push(message); });
   });
 
-  saved.roster.forEach((player, index) => {
+  playing().forEach((player, index) => {
     const el = playerElements[player.id];
     const position = layout[player.id];
     const slot = slotFor(index, currentRotation);
@@ -1834,18 +1866,14 @@ function render() {
     if (problems[player.id]) el.classList.add('illegal');
     // Re-applied here because the className line above wipes it.
     if (swapPicked === player.id) el.classList.add('swap-picked');
-    if (subFor(player)) el.classList.add('subbed');
 
     el.querySelector('.name').textContent = displayName(player);
     el.querySelector('.label').textContent = roleBadge(role);
 
     const prefix = roleBadge(role) ? `${ROLE_LABELS[role]}, ` : '';
-    const who = subFor(player)
-      ? `${displayName(player)} (sub for ${starterName(player)})`
-      : displayName(player);
     el.title = slot === null
-      ? `${who} — ${prefix}off court`
-      : `${who} — ${prefix}zone ${slot}${slot === SERVE_SLOT ? ', serving' : ''}`;
+      ? `${displayName(player)} — ${prefix}off court`
+      : `${displayName(player)} — ${prefix}zone ${slot}${slot === SERVE_SLOT ? ', serving' : ''}`;
     // Which rule, on the player it applies to -- a red ring alone doesn't say
     // what's wrong or which way to drag.
     if (problems[player.id]) el.title += ` — ${problems[player.id].join('; ')}`;
@@ -1881,7 +1909,7 @@ function settersThisRotation(rotation) {
   const { setsFrom } = SYSTEMS[saved.system];
   if (!setsFrom) return [];
 
-  return saved.roster
+  return playing()
     .map((player, index) => ({ player, slot: slotFor(index, rotation) }))
     .filter(({ player, slot }) => {
       if (slot === null || roleFor(player, rotation) !== 'S') return false;
@@ -1963,18 +1991,17 @@ let dragMoved = false;
 // the order they were created, so the same ones are always buried.
 let topZ = 1;
 
-// --- Temporary subs ---------------------------------------------------
+// --- Sitting out ------------------------------------------------------
 //
-// v0.50. Someone can't make it, a fill-in takes their spot for the night, and
-// the starter comes back next week. The fill-in takes the starter's exact place
-// -- role, rotation, serving order, hand-placed positions -- because nothing
-// about the roster changes: the spot just shows a different name, with a SUB
-// pill so it's obvious the lineup is temporary.
+// v0.51, replacing v0.50's typed-in subs. Someone can't make it tonight: they
+// stay on the team -- name, role, place in the roster -- but leave the
+// rotation, which recomputes as if they'd stayed home. Put them back and the
+// serving order is what it was.
 //
-// Hold a player to sub them out; hold a subbed player to bring the starter back.
-// prompt() and confirm() rather than a menu drawn on the court: the app already
-// names lineups with prompt(), and a popover would be one more thing to fit on
-// a 320px phone.
+// Hold a player on the court to sit them out, or press Out on their roster row.
+// Once out they have no circle, so the roster row is how they come back.
+// confirm() rather than a menu drawn on the court: a popover would be one more
+// thing to fit beside a circle on a 320px phone.
 
 let longPressTimer = null;
 
@@ -1983,7 +2010,7 @@ function startLongPress(id) {
   if (quiz) return;
   longPressTimer = setTimeout(() => {
     longPressTimer = null;
-    openSubPrompt(id);
+    askSitOut(id);
   }, LONG_PRESS_MS);
 }
 
@@ -2006,42 +2033,40 @@ function cancelLongPress() {
   longPressTimer = null;
 }
 
-function openSubPrompt(id) {
+// The question a long press (or right-click) asks.
+function askSitOut(id) {
   // Both ways in -- the timer and contextmenu -- come through here, and on
   // Android a long press fires both. Whichever is first cancels the other.
   releaseDrag();
   const player = saved.roster.find((p) => p.id === id);
-  if (!player) return;
+  if (!player || player.out) return;
   swapPicked = null;
 
-  if (subFor(player)) {
-    if (confirm(`Bring ${starterName(player)} back in for ${subFor(player)}?`)) subIn(id);
-    else render();
+  if (rosterSize() <= MIN_PLAYERS) {
+    alert(`At least ${MIN_PLAYERS} players have to stay in the rotation.`);
+    render();
     return;
   }
-
-  const answer = prompt(`Who's coming in for ${starterName(player)}?`, '');
-  const name = typeof answer === 'string' ? answer.trim().slice(0, MAX_PLAYER_NAME) : '';
-  if (name) subOut(id, name);
-  else render();
+  if (confirm(`Sit ${displayName(player)} out? They stay on the team, out of the rotation. Bring them back from the roster.`)) {
+    setSittingOut(id, true);
+  } else {
+    render();
+  }
 }
 
-function subOut(id, name) {
-  pushHistory();
-  if (!saved.subs) saved.subs = {};
-  saved.subs[id] = name;
-  save();
-  buildRosterRows();
-  render();
-}
-
-function subIn(id) {
-  if (!saved.subs || !saved.subs[id]) return;
-  pushHistory();
-  delete saved.subs[id];
-  save();
-  buildRosterRows();
-  render();
+// Through changeLineup(), like adding or removing someone, because it is the
+// same kind of change to the rotation: the serving order shifts, so every
+// dragged position -- chosen for the old arrangement -- is cleared. Undo
+// brings them back.
+function setSittingOut(id, out) {
+  const player = saved.roster.find((p) => p.id === id);
+  if (!player || Boolean(player.out) === out) return false;
+  if (out && rosterSize() <= MIN_PLAYERS) return false;
+  changeLineup(() => {
+    if (out) player.out = true;
+    else delete player.out;
+  });
+  return true;
 }
 
 // --- Swap mode --------------------------------------------------------
@@ -2078,7 +2103,7 @@ function swapTargetUnder(el) {
 
   let best = null;
   let bestDistance = reach;
-  saved.roster.forEach((player) => {
+  playing().forEach((player) => {
     if (player.id === el.dataset.playerId) return;
     const spot = layout[player.id];
     const distance = Math.hypot(
@@ -2339,7 +2364,7 @@ function nextQuizQuestion() {
   // The server stays visible as an anchor, so there's something to reason from
   // rather than recalling six positions cold. That also means they can't be the
   // subject of the question -- the answer would be sitting right there.
-  const candidates = saved.roster
+  const candidates = playing()
     .map((_, index) => index)
     .filter((index) => {
       const slot = slotFor(index, rotation);
@@ -2371,7 +2396,7 @@ function answerQuiz(zone) {
 function renderQuiz() {
   if (!quiz) return;
 
-  const player = saved.roster[quiz.index];
+  const player = playing()[quiz.index];
   const answered = quiz.chosen !== null;
 
   quizQuestion.textContent =
@@ -2832,7 +2857,7 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
   const setterIds = new Set(settersThisRotation(rotation).map((e) => e.player.id));
   const radius = (EDGE * courtGeom('--player-size')) / 2;
 
-  saved.roster.forEach((player, index) => {
+  playing().forEach((player, index) => {
     const position = layout[player.id];
     const role = roleFor(player, rotation);
     const { fill, text } = roleColours(role);
@@ -3075,12 +3100,8 @@ function decodeLineup(encoded) {
 
 // The payload rides in the hash rather than a query string, which means it's
 // never sent to GitHub's servers -- the fragment stays in the browser.
-//
-// Subs are left out (v0.50). "Share team" shares the team, not whoever filled
-// in tonight.
 function shareUrl(lineup = saved) {
-  const { subs, ...team } = lineup;
-  return `${location.origin}${location.pathname}#g=${encodeLineup(team)}`;
+  return `${location.origin}${location.pathname}#g=${encodeLineup(lineup)}`;
 }
 
 // Opening a shared link *adds* a VolleyGram. It must never overwrite what the
@@ -3092,7 +3113,7 @@ function importFromUrl() {
   let imported = false;
   try {
     const lineup = normaliseLineup(decodeLineup(match[1]), 'Shared VolleyGram');
-    const id = `L${Date.now()}`;
+    const id = newLineupId();
     store.lineups[id] = lineup;
     store.activeId = id;
     saved = lineup;
@@ -3173,7 +3194,7 @@ document.getElementById('reset').addEventListener('click', () => {
 });
 
 document.getElementById('addPlayer').addEventListener('click', () => changeLineup(() => {
-  const n = rosterSize() + 1;
+  const n = saved.roster.length + 1;
   // Unset rather than a guess -- you haven't said what they play yet.
   saved.roster.push({ id: `P${Date.now()}`, role: 'NONE', name: '', fallback: `Player ${n}` });
 }));
@@ -3196,7 +3217,21 @@ surfaceSelect.addEventListener('change', () => {
 
 
 systemSelect.addEventListener('change', () => applySystem(systemSelect.value));
-lineupSelect.addEventListener('change', () => useLineup(lineupSelect.value));
+// Picking an action runs it, then the picker is redrawn: on success it shows
+// the new team, and on a cancelled name prompt it goes back to the current one
+// rather than sitting on "+ New team…".
+function onLineupPicked() {
+  const value = lineupSelect.value;
+  if (value === NEW_TEAM_OPTION) addLineup();
+  else if (value === DUPLICATE_TEAM_OPTION) duplicateLineup();
+  else {
+    useLineup(value);
+    return;
+  }
+  syncLineupSelect();
+}
+
+lineupSelect.addEventListener('change', onLineupPicked);
 
 document.getElementById('newLineup').addEventListener('click', addLineup);
 document.getElementById('duplicateLineup').addEventListener('click', duplicateLineup);
