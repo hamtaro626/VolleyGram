@@ -60,7 +60,7 @@ dev/
   preview.html  the real app in live iframes at real device widths, for the
                 layout questions a stubbed DOM cannot answer
 test/
-  migration.js  897 checks: storage, migration, roles, formations, quiz,
+  migration.js  910 checks: storage, migration, roles, formations, quiz,
                 sharing, dragging, swapping, sitting out, short-handed rosters, playing
                 surface, scoreboard
   contrast.js   contrast, hue separation, every role against all three court
@@ -98,7 +98,7 @@ scrolling, dragging a player still need a real device.
 ## Tests
 
 ```sh
-node test/migration.js    # 897 checks across 67 groups
+node test/migration.js    # 910 checks across 68 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
@@ -184,7 +184,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.52. Working title, actively developed, no issues or PRs open yet.
+v0.53. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

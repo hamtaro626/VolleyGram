@@ -2951,10 +2951,72 @@ next, the wrap, two on the bench, none with six, the pill, and the export.
 version, opening, Escape, Done, the arrows, and the lit state across a reload
 and a new release.
 
+## v0.53 — share links stop losing the team (2026-11-02)
+
+### The report
+
+"When the team URL is shared, almost nothing is actually shared. It basically
+just sends a new instance of the VolleyGram page."
+
+### What was ruled out
+
+The app side works. A link built the way `shareUrl()` builds it, with seven
+names, a 5-1 and grass, was opened against the **live site in a fresh
+headless Chrome profile**, and all seven names came up on the court. Encoding,
+decoding and importing were all fine, so the team was being lost **before the
+page ever saw it**: somewhere between the share sheet and the person tapping.
+
+### The likely cause: `og:url`
+
+`index.html` declared
+`<meta property="og:url" content="https://hamtaro626.github.io/VolleyGram/">`,
+added in v0.46 with the other link-preview tags. `og:url` tells a link preview
+"this page's real address is…", and several chat apps use it as the address
+the preview opens when tapped. For a share link that's exactly wrong: the real
+address is the one carrying `#g=…`. Tap the preview, get the bare page, an
+empty VolleyGram. That matches the report word for word.
+
+It's removed. A crawler with no `og:url` uses the address it was given, which
+for a share link is the whole link. Nothing else in the preview changes: the
+title, description and image don't depend on it.
+
+**This is the most likely cause, not a confirmed one.** Which app the report
+came from isn't known, and none of these can be driven from here. If links
+still arrive empty, the app it happened in is the next thing to find out.
+
+Previews already sitting in old messages may have stored the old `og:url` and
+keep opening the bare page. The What's new entry says to ask for the link
+again.
+
+### Saying what happened
+
+An arriving link used to change the page silently. Now a notice above the
+court says **Added "Tuesday Crew" from a shared link**, and that your own teams
+are still in the VolleyGram Name list. Opening someone else's team swaps what's
+on screen, and the second half answers "where did mine go?".
+
+A link that can't be read (cut short by a chat app, mangled on the way) used to
+land on an ordinary page with only a console warning, which looks identical to
+sharing not working. It now says the link couldn't be read and to ask for it
+again, in red, and changes nothing.
+
+### Not doing
+
+- **Moving the team from `#g=` into `?g=`.** A query string would be sent to
+  GitHub's servers with every open, which v0.15 avoided on purpose, and it
+  wouldn't have helped: `og:url` overrode either.
+- **Putting the link in the share text as well as the url.** It would show the
+  link twice in Messages to work around share targets that drop the url, and
+  there's no evidence any of them did.
+
+`§68` covers no `og:url` or canonical link, a link from one phone arriving on
+another (names, system, a dragged position, the receiver's own team kept), the
+notice, dismissing it, a cut-off link, and an ordinary open saying nothing.
+
 ## Tests
 
 ```
-node test/migration.js    # 897 checks — storage, migration, roles, formations,
+node test/migration.js    # 910 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

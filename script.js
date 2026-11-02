@@ -3139,8 +3139,15 @@ function importFromUrl() {
     currentRotation = 1;
     save();
     imported = true;
+    showImportNotice(`Added “${lineup.name}” from a shared link. Your own teams `
+      + 'are still in the VolleyGram Name list.');
   } catch (error) {
     console.warn('Could not read that share link:', error);
+    // Said out loud since v0.53. A link a chat app cut short used to land on
+    // an ordinary page with no sign anything had been lost, which looks
+    // exactly like sharing not working.
+    showImportNotice('That share link couldn’t be read — it may have been cut '
+      + 'short on the way. Ask for it to be sent again.', true);
   }
 
   // Drop the hash either way, so a refresh doesn't import a second copy and a
@@ -3150,6 +3157,13 @@ function importFromUrl() {
     window.history.replaceState(null, '', location.pathname + location.search);
   }
   return imported;
+}
+
+function showImportNotice(message, failed = false) {
+  const notice = document.getElementById('importNotice');
+  document.getElementById('importNoticeText').textContent = message;
+  notice.classList.toggle('failed', failed);
+  notice.hidden = false;
 }
 
 async function shareCurrent() {
@@ -3191,6 +3205,10 @@ function flashShareButton(message) {
 }
 
 // --- Controls ---------------------------------------------------------
+
+document.getElementById('dismissImportNotice').addEventListener('click', () => {
+  document.getElementById('importNotice').hidden = true;
+});
 
 document.getElementById('prev').addEventListener('click', () => step(-1));
 document.getElementById('next').addEventListener('click', () => step(1));

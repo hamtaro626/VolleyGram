@@ -17,24 +17,28 @@
        purpose rather than arrived at by accident. The maskable one is a
        separate file because Android crops to a circle of 80% diameter, which
        would take the ends off a wordmark drawn to the edges. -->
-  <link rel="icon" href="assets/favicon-32.png?v=0.52" sizes="32x32" type="image/png">
-  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.52">
-  <link rel="manifest" href="manifest.webmanifest?v=0.52">
+  <link rel="icon" href="assets/favicon-32.png?v=0.53" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.53">
+  <link rel="manifest" href="manifest.webmanifest?v=0.53">
 
   <!-- Link previews. The share feature sends URLs to team-mates by text, so
        these are what a chat app draws in the bubble. og:image has to be
-       absolute -- a crawler has no page to resolve a relative path against. -->
+       absolute -- a crawler has no page to resolve a relative path against.
+
+       No og:url, on purpose (v0.53). It names a page's "real" address, and a
+       share link's real address is the one carrying the team after #g=. With
+       the bare home page declared here, chat apps that send you to og:url when
+       you tap the preview opened an empty VolleyGram instead of the team. -->
   <meta property="og:type" content="website">
   <meta property="og:title" content="VolleyGram">
   <meta property="og:description" content="A volleyball rotation reference. See where everyone stands in every rotation.">
-  <meta property="og:url" content="https://hamtaro626.github.io/VolleyGram/">
-  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.52">
+  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.53">
   <meta name="twitter:card" content="summary_large_image">
   <!-- The ?v= query is cache busting. A browser caches by URL, so changing the
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.52">
+  <link rel="stylesheet" href="style.css?v=0.53">
 </head>
 <body>
   <main>
@@ -56,7 +60,7 @@
     <h1 class="masthead">
       <button type="button" id="replayIntro" class="title-replay"
         title="Replay the intro" aria-label="VolleyGram. Replay the intro."
-        ><img class="logo" src="assets/logo.webp?v=0.52" width="179" height="200"
+        ><img class="logo" src="assets/logo.webp?v=0.53" width="179" height="200"
           alt="VolleyGram"></button>
       <span class="tagline">A Volleyball Rotation Reference</span>
     </h1>
@@ -70,6 +74,14 @@
       <span>Rotation System</span>
       <select id="system"><!-- filled by script.js --></select>
     </label>
+
+    <!-- What happened to a share link you just opened (v0.53). Shown once, on
+         arrival, and dismissed by hand: someone opening a link from a chat
+         needs to know it worked, and that their own teams are still here. -->
+    <div class="notice" id="importNotice" role="status" hidden>
+      <p id="importNoticeText"></p>
+      <button id="dismissImportNotice" aria-label="Dismiss">&times;</button>
+    </div>
 
     <div class="court" id="court">
       <div class="net"></div>
@@ -314,6 +326,13 @@
       <button id="closeChangelog">Done</button>
     </div>
     <ol class="cl-list">
+      <li data-version="0.53">
+        <h3>v0.53</h3>
+        <ul>
+          <li><strong>Fixed: shared team links.</strong> In some chat apps, tapping the link preview opened an empty VolleyGram instead of the team. If a link you were sent before opened an empty page, ask for it to be sent again.</li>
+          <li>Opening a shared link now says what it added, or that the link was cut short on the way.</li>
+        </ul>
+      </li>
       <li data-version="0.52">
         <h3>v0.52</h3>
         <ul>
@@ -474,6 +493,6 @@
        button: it floats over the page, so it must never swallow a tap. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.52"></script>
+  <script src="script.js?v=0.53"></script>
 </body>
 </html>

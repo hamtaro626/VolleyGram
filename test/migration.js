@@ -3772,5 +3772,63 @@ console.log('\n67. What’s new');
     upgraded.document.getElementById('openChangelog').classList.contains('unseen'));
 }
 
+console.log('\n68. A shared link arrives');
+{
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  // og:url names the page's "real" address. Pointing it at the bare home page
+  // told chat apps that a share link's real address was one with no team in it.
+  check('no og:url, so a preview can’t send people to the bare page',
+    !/property="og:url"/.test(html));
+  check('and no canonical link doing the same',
+    !/rel="canonical"/.test(html));
+
+  // Sender builds a link from a team with names, a system and a dragged spot.
+  const sender = boot(JSON.stringify({ name: 'Tuesday Crew', system: '5-1', roster: [
+    ['Jen', 'S'], ['Matt', 'OH'], ['Taylor', 'MB'], ['Evi', 'OPP'], ['Cammi', 'OH'], ['Alec', 'MB'],
+  ].map(([name, role], i) => ({ id: `P${i}`, role, name })) }));
+  sender.call.setSwapMode(false);
+  const el = sender.players().P0;
+  sender.call.startDrag({ currentTarget: el, clientX: 150, clientY: 150, pointerId: 1 });
+  sender.call.onDrag({ clientX: 120, clientY: 180 });
+  sender.call.endDrag();
+  const link = sender.call.shareUrl();
+  const hash = `#${link.split('#')[1]}`;
+
+  // Receiver already has a team of their own.
+  const own = JSON.stringify({ version: 2, activeId: 'mine',
+    lineups: { mine: { name: 'My own', system: '4-2', roster: null } } });
+  const receiver = boot(own, hash);
+  const got = receiver.peek().saved;
+  check('the receiver lands on the shared team', got.name === 'Tuesday Crew', got.name);
+  check('with its names', got.roster.map((p) => p.name).join(' ') === 'Jen Matt Taylor Evi Cammi Alec');
+  check('its system', got.system === '5-1');
+  check('and the position that was dragged',
+    JSON.stringify(got.layouts.base['1'].P0) === JSON.stringify(sender.peek().saved.layouts.base['1'].P0),
+    JSON.stringify(got.layouts.base['1']));
+  check('their own team is still there', receiver.peek().store.lineups.mine.name === 'My own');
+  const notice = receiver.document.getElementById('importNotice');
+  check('and a notice says what was added', notice.hidden === false
+    && /Added “Tuesday Crew” from a shared link/.test(
+      receiver.document.getElementById('importNoticeText').textContent),
+    receiver.document.getElementById('importNoticeText').textContent);
+  check('not as a failure', !notice.classList.contains('failed'));
+  receiver.document.getElementById('dismissImportNotice').dispatch('click');
+  check('it dismisses', notice.hidden === true);
+
+  // A link cut short on the way.
+  const cut = boot(own, hash.slice(0, 40));
+  const cutNotice = cut.document.getElementById('importNotice');
+  check('a cut-off link says so instead of failing silently',
+    cutNotice.hidden === false && cutNotice.classList.contains('failed'),
+    cut.document.getElementById('importNoticeText').textContent);
+  check('and changes nothing', cut.peek().store.activeId === 'mine'
+    && Object.keys(cut.peek().store.lineups).length === 1);
+
+  // An ordinary open says nothing.
+  const plain = boot(own);
+  check('an ordinary open shows no notice',
+    plain.document.getElementById('importNotice').hidden === true);
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
