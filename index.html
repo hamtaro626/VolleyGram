@@ -17,9 +17,9 @@
        purpose rather than arrived at by accident. The maskable one is a
        separate file because Android crops to a circle of 80% diameter, which
        would take the ends off a wordmark drawn to the edges. -->
-  <link rel="icon" href="assets/favicon-32.png?v=0.54" sizes="32x32" type="image/png">
-  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.54">
-  <link rel="manifest" href="manifest.webmanifest?v=0.54">
+  <link rel="icon" href="assets/favicon-32.png?v=0.55" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.55">
+  <link rel="manifest" href="manifest.webmanifest?v=0.55">
 
   <!-- Link previews. The share feature sends URLs to team-mates by text, so
        these are what a chat app draws in the bubble. og:image has to be
@@ -32,13 +32,13 @@
   <meta property="og:type" content="website">
   <meta property="og:title" content="VolleyGram">
   <meta property="og:description" content="A volleyball rotation reference. See where everyone stands in every rotation.">
-  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.54">
+  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.55">
   <meta name="twitter:card" content="summary_large_image">
   <!-- The ?v= query is cache busting. A browser caches by URL, so changing the
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.54">
+  <link rel="stylesheet" href="style.css?v=0.55">
 </head>
 <body>
   <main>
@@ -60,7 +60,7 @@
     <h1 class="masthead">
       <button type="button" id="replayIntro" class="title-replay"
         title="Replay the intro" aria-label="VolleyGram. Replay the intro."
-        ><img class="logo" src="assets/logo.webp?v=0.54" width="179" height="200"
+        ><img class="logo" src="assets/logo.webp?v=0.55" width="179" height="200"
           alt="VolleyGram"></button>
       <span class="tagline">A Volleyball Rotation Reference</span>
     </h1>
@@ -245,11 +245,14 @@
       </div>
     </section>
 
-    <!-- The way into What's new (v0.52). The very end of the page, after the
-         roster and the quiz, so it never sits between controls. Below Hold to
-         reset all is safe in both directions: a stray tap can't reset anything,
-         because reset needs a 1.5s hold. -->
-    <button class="whats-new" id="openChangelog" aria-controls="changelog">What's new</button>
+    <!-- The ways into What's new (v0.52) and Add to Home Screen (v0.55). The
+         very end of the page, after the roster and the quiz, so they never sit
+         between controls. Below Hold to reset all is safe in both directions: a
+         stray tap can't reset anything, because reset needs a 1.5s hold. -->
+    <div class="page-links">
+      <button class="page-link" id="openChangelog" aria-controls="changelog">What's new</button>
+      <button class="page-link" id="openInstall" aria-controls="install">Add to Home Screen</button>
+    </div>
   </main>
 
   <!-- The scoreboard, outside <main> because it replaces the whole page rather
@@ -319,13 +322,20 @@
        and coaches, not for whoever maintains this -- SPEC.md is that. The top
        entry must match the version in the ?v= URLs; test/migration.js §67
        checks it, so a release can't ship without saying what it changed. -->
-  <section class="changelog" id="changelog" hidden
+  <section class="sheet changelog" id="changelog" hidden
     role="dialog" aria-modal="true" aria-labelledby="changelogTitle">
     <div class="cl-head">
       <h2 id="changelogTitle">What's new</h2>
       <button id="closeChangelog">Done</button>
     </div>
     <ol class="cl-list">
+      <li data-version="0.55">
+        <h3>v0.55</h3>
+        <ul>
+          <li><strong>Works with no signal.</strong> Once you've opened VolleyGram, it keeps working when the gym wifi doesn't.</li>
+          <li><strong>Add to Home Screen</strong>, at the bottom of the app, shows how to put VolleyGram on your phone like any other app.</li>
+        </ul>
+      </li>
       <li data-version="0.54">
         <h3>v0.54</h3>
         <ul>
@@ -495,11 +505,64 @@
     </ol>
   </section>
 
+  <!-- Add to Home Screen (v0.55). The same kind of full-screen page as What's
+       new. The steps are the browsers' own, so they're written out rather than
+       automated -- except on Android and desktop Chrome, which offer an
+       Install button of their own (beforeinstallprompt) that script.js shows
+       when it's there. script.js also puts your own phone's steps first. -->
+  <section class="sheet install" id="install" hidden
+    role="dialog" aria-modal="true" aria-labelledby="installTitle">
+    <div class="cl-head">
+      <h2 id="installTitle">Add to Home Screen</h2>
+      <button id="closeInstall">Done</button>
+    </div>
+
+    <p class="in-lead">From your home screen, VolleyGram opens full screen with
+      its own icon, like any other app &mdash; and once it's there, it works
+      with no signal.</p>
+
+    <p class="in-done" id="installedNote" hidden>You're already using
+      VolleyGram from your home screen.</p>
+
+    <button class="in-now" id="installNow" hidden>Install VolleyGram</button>
+
+    <div class="in-platforms" id="installPlatforms">
+      <section class="in-platform" data-platform="ios">
+        <h3>iPhone or iPad</h3>
+        <ol>
+          <li>Open this page in <strong>Safari</strong>.</li>
+          <li>Tap the <strong>Share</strong> button: the square with an arrow
+            pointing up, at the bottom of the screen on an iPhone and the top on
+            an iPad.</li>
+          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong>.</li>
+        </ol>
+        <p class="in-note">On an iPhone, the home-screen VolleyGram keeps its own
+          teams, separate from the ones in Safari. Add it first, then build your
+          teams there.</p>
+      </section>
+
+      <section class="in-platform" data-platform="android">
+        <h3>Android</h3>
+        <ol>
+          <li>Open this page in <strong>Chrome</strong>.</li>
+          <li>Tap the <strong>&#8942;</strong> menu, top right.</li>
+          <li>Tap <strong>Add to Home screen</strong> or <strong>Install
+            app</strong>.</li>
+          <li>Tap <strong>Install</strong>.</li>
+        </ol>
+      </section>
+    </div>
+
+    <p class="in-note">Updates arrive by themselves whenever you open it with a
+      signal. Your teams stay on your phone either way.</p>
+  </section>
+
   <!-- Which build you're actually looking at. Fixed in the corner so checking it
        never means scrolling, and filled by script.js from its own URL. Not a
        button: it floats over the page, so it must never swallow a tap. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.54"></script>
+  <script src="script.js?v=0.55"></script>
 </body>
 </html>

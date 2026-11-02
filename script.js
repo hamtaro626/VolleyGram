@@ -3385,8 +3385,8 @@ document.addEventListener('keydown', (event) => {
   // arrows would change the rotation invisibly, and the scoreboard's own
   // rotation line would go stale, since step() doesn't redraw the scoreboard.
   if (!scorePanel.hidden) return;
-  // Same while reading What's new: the court is hidden behind it.
-  if (!changelogPanel.hidden) return;
+  // Same while reading What's new or Add to Home Screen: the court is hidden.
+  if (openSheet) return;
   if (event.key === 'ArrowLeft') {
     step(-1);
     event.preventDefault();
@@ -3477,19 +3477,38 @@ function syncChangelogButton() {
   changelogButton.setAttribute('aria-expanded', String(!changelogPanel.hidden));
 }
 
-// Where the page was scrolled to when What's new opened. The panel takes the
-// page's place rather than floating over it, so it inherits the scroll: open it
-// from the bottom of the page and it opened on its own last entry instead of
-// the newest (v0.54). So it starts at the top, and Done puts you back where
-// you were.
-let scrollBeforeChangelog = 0;
+// --- Full-screen pages: What's new and Add to Home Screen --------------
+//
+// Both take the page's place rather than floating over it, so they inherit its
+// scroll: open one from the bottom of the page and it opened on its own last
+// lines (v0.54). So each starts at the top, and Done or Escape puts the page
+// back where it was.
 
-function openChangelog() {
+let openSheet = null;
+let scrollBeforeSheet = 0;
+
+function showSheet(panel) {
   if (quiz) endQuiz();
-  scrollBeforeChangelog = window.scrollY || 0;
-  changelogPanel.hidden = false;
+  if (openSheet) openSheet.hidden = true;
+  else scrollBeforeSheet = window.scrollY || 0;
+  openSheet = panel;
+  panel.hidden = false;
   document.body.classList.add('reading');
   if (window.scrollTo) window.scrollTo(0, 0);
+}
+
+function hideSheet() {
+  if (!openSheet) return;
+  openSheet.hidden = true;
+  openSheet = null;
+  document.body.classList.remove('reading');
+  if (window.scrollTo) window.scrollTo(0, scrollBeforeSheet);
+  syncChangelogButton();
+  syncInstallButton();
+}
+
+function openChangelog() {
+  showSheet(changelogPanel);
   if (store.changelogSeen !== APP_VERSION) {
     store.changelogSeen = APP_VERSION;
     save();
@@ -3497,18 +3516,102 @@ function openChangelog() {
   syncChangelogButton();
 }
 
+// Kept by name: the Done button and the tests both call it.
 function closeChangelog() {
-  changelogPanel.hidden = true;
-  document.body.classList.remove('reading');
-  if (window.scrollTo) window.scrollTo(0, scrollBeforeChangelog);
-  syncChangelogButton();
+  hideSheet();
 }
 
 changelogButton.addEventListener('click', openChangelog);
-document.getElementById('closeChangelog').addEventListener('click', closeChangelog);
+document.getElementById('closeChangelog').addEventListener('click', hideSheet);
 document.addEventListener('keydown', (event) => {
-  if (event.key === 'Escape' && !changelogPanel.hidden) closeChangelog();
+  if (event.key === 'Escape' && openSheet) hideSheet();
 });
+
+// --- Add to Home Screen (v0.55) ---------------------------------------
+//
+// Mostly instructions, because adding a web page to a home screen is the
+// browser's job, done from the browser's own menu. Three things are worked out
+// here:
+//
+// - Already installed: say so, and drop the button that leads here.
+// - Android and desktop Chrome offer to install a site themselves, through
+//   beforeinstallprompt. When that's been offered, a one-tap Install button
+//   appears. It's not preventDefault()ed, so Chrome's own prompt still shows as
+//   it normally would; this is a second way to the same thing.
+// - Which phone this is, so its steps come first.
+
+const installPanel = document.getElementById('install');
+const installButton = document.getElementById('openInstall');
+const installNowButton = document.getElementById('installNow');
+let installOffer = null;
+
+function isInstalled() {
+  // navigator.standalone is iOS's own name for the same thing.
+  return Boolean((window.matchMedia && window.matchMedia('(display-mode: standalone)').matches)
+    || navigator.standalone === true);
+}
+
+function phonePlatform() {
+  const ua = navigator.userAgent || '';
+  // iPads have reported themselves as a Mac since iPadOS 13; a Mac with a
+  // touch screen is the tell.
+  if (/iPhone|iPad|iPod/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1)) {
+    return 'ios';
+  }
+  if (/Android/.test(ua)) return 'android';
+  return null;
+}
+
+function syncInstallButton() {
+  const installed = isInstalled();
+  installButton.hidden = installed;
+  installButton.setAttribute('aria-expanded', String(!installPanel.hidden));
+  document.getElementById('installedNote').hidden = !installed;
+  installNowButton.hidden = installed || !installOffer;
+}
+
+function orderInstallSteps() {
+  const platform = phonePlatform();
+  const list = document.getElementById('installPlatforms');
+  [...list.children].forEach((section) => {
+    section.classList.toggle('yours', section.dataset.platform === platform);
+  });
+  const yours = [...list.children].find((section) => section.dataset.platform === platform);
+  if (yours && list.firstChild !== yours) list.insertBefore(yours, list.firstChild);
+}
+
+function openInstall() {
+  showSheet(installPanel);
+  syncInstallButton();
+}
+
+window.addEventListener('beforeinstallprompt', (event) => {
+  installOffer = event;
+  syncInstallButton();
+});
+
+window.addEventListener('appinstalled', () => {
+  installOffer = null;
+  syncInstallButton();
+});
+
+installNowButton.addEventListener('click', async () => {
+  if (!installOffer) return;
+  const offer = installOffer;
+  // One use each: the browser won't prompt twice from the same event. Hidden
+  // straight away, so a second tap while the prompt opens does nothing.
+  installOffer = null;
+  syncInstallButton();
+  try {
+    await offer.prompt();
+  } catch (error) {
+    console.warn('Install prompt failed:', error);
+  }
+  syncInstallButton();
+});
+
+installButton.addEventListener('click', openInstall);
+document.getElementById('closeInstall').addEventListener('click', hideSheet);
 
 document.getElementById('openScoreboard').addEventListener('click', openScoreboard);
 document.getElementById('closeScoreboard').addEventListener('click', closeScoreboard);
@@ -3551,6 +3654,8 @@ document.getElementById('version').textContent = `v${APP_VERSION}`;
 syncLabelsButton();
 syncDragModeButton();
 syncChangelogButton();
+syncInstallButton();
+orderInstallSteps();
 document.body.classList.toggle('swapping', swapMode);
 syncRosterButton();
 syncMenuButtons();
@@ -3572,3 +3677,15 @@ renderScoreboard();
 // upgraded on the spot instead of sitting in its old shape until the first
 // edit. Without this a stale shape can survive indefinitely.
 save();
+
+// Offline support (v0.55): sw.js keeps a copy of the app on the phone. Only
+// over http(s) -- a file:// page can't have a service worker -- and only in
+// browsers that have them. A failure to register just means no offline copy;
+// the app itself is unaffected.
+if ('serviceWorker' in navigator && /^https?:$/.test(location.protocol || '')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch((error) => {
+      console.warn('Offline support unavailable:', error);
+    });
+  });
+}

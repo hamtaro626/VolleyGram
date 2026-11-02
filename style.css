@@ -781,16 +781,16 @@ body.reading > .version {
   display: none;
 }
 
-/* --- What's new (v0.52) ------------------------------------------------ */
+/* --- Full-screen pages: What's new (v0.52), Add to Home Screen (v0.55) - */
 
-/* Takes over the page like the scoreboard, but it's for reading, so it
-   scrolls and keeps a comfortable line length rather than sizing off vmin. */
-.changelog {
+/* Take over the page like the scoreboard, but they're for reading, so they
+   scroll and keep a comfortable line length rather than sizing off vmin. */
+.sheet {
   max-width: 34rem;
   margin: 0 auto;
 }
 
-.changelog[hidden] {
+.sheet[hidden] {
   display: none;
 }
 
@@ -855,6 +855,79 @@ body.reading > .version {
 
 .cl-list ul li + li {
   margin-top: 0.3rem;
+}
+
+/* Add to Home Screen (v0.55). */
+.install p {
+  color: #c9cfdc;
+  line-height: 1.45;
+}
+
+.in-lead {
+  margin: 0 0 1rem;
+}
+
+.in-done {
+  padding: 0.6rem 0.8rem;
+  border: 1px solid #3a4152;
+  border-radius: 8px;
+  background: #232833;
+}
+
+.in-done[hidden],
+.in-now[hidden] {
+  display: none;
+}
+
+/* Only there when the browser offers to install it directly. Filled, like
+   an active tab, because it's the one-tap way to do the whole page. */
+.in-now {
+  display: block;
+  width: 100%;
+  margin-bottom: 1rem;
+  background: #f2f4f8;
+  border-color: #f2f4f8;
+  color: #16181d;
+}
+
+.in-platform {
+  padding: 0.9rem 0;
+  border-top: 1px solid #3a4152;
+}
+
+.in-platform h3 {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+}
+
+/* Your own phone's steps come first, and say so. */
+.in-platform.yours h3::after {
+  content: 'Your phone';
+  margin-left: 0.5rem;
+  padding: 0.12rem 0.45rem;
+  border-radius: 999px;
+  background: #f2f4f8;
+  color: #16181d;
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  vertical-align: 0.1rem;
+}
+
+.in-platform ol {
+  margin: 0;
+  padding-left: 1.3rem;
+  color: #c9cfdc;
+  line-height: 1.45;
+}
+
+.in-platform ol li + li {
+  margin-top: 0.35rem;
+}
+
+.in-note {
+  font-size: 0.85rem;
 }
 
 .scoreboard {
@@ -1176,12 +1249,19 @@ body.reading > .version {
   pointer-events: none;
 }
 
-/* What's new, v0.52: the last thing on the page. Quiet -- a text button, not
-   a card -- because it's read once per release, not used courtside. */
-.whats-new {
-  display: block;
-  margin: 1rem auto 0;
-  padding: 0.6rem 1rem;
+/* What's new and Add to Home Screen: the last things on the page. Quiet --
+   text buttons, not cards -- because they're read once, not used courtside.
+   Side by side, wrapping onto two lines if a narrow phone needs it. */
+.page-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.25rem 0.5rem;
+  margin-top: 1rem;
+}
+
+.page-link {
+  padding: 0.6rem 0.9rem;
   border: 0;
   background: none;
   font-size: 0.85rem;
@@ -1189,15 +1269,19 @@ body.reading > .version {
   color: #8e97ad;
 }
 
+.page-link[hidden] {
+  display: none;
+}
+
 /* There's a release you haven't read about. Lit, with a dot, until you do. */
-.whats-new.unseen {
+.page-link.unseen {
   color: #f2f4f8;
   border: 1px solid #3a4152;
   background: #232833;
   border-radius: 999px;
 }
 
-.whats-new.unseen::before {
+.page-link.unseen::before {
   content: '';
   display: inline-block;
   width: 0.5rem;

@@ -138,6 +138,18 @@ function boot(seedJson, seedHash, extraContext) {
     },
   };
   context.window = context;
+  // window events, since v0.55 listens for beforeinstallprompt, appinstalled
+  // and load. The same shape as the stub document's.
+  context.windowListeners = {};
+  context.addEventListener = (type, fn) => {
+    (context.windowListeners[type] = context.windowListeners[type] || []).push(fn);
+  };
+  context.removeEventListener = (type, fn) => {
+    context.windowListeners[type] = (context.windowListeners[type] || []).filter((f) => f !== fn);
+  };
+  context.dispatchWindow = (type, event) => {
+    (context.windowListeners[type] || []).forEach((fn) => fn(event || {}));
+  };
   if (extraContext) Object.assign(context, extraContext);
 
   const source = fs.readFileSync(SCRIPT, 'utf8');
@@ -160,7 +172,8 @@ function boot(seedJson, seedHash, extraContext) {
       closeNewGame, closeMore, syncMenuButtons, introSpot, playIntro,
       formatElapsed, renderTimes, swapPlayers, pickForSwap, setSwapMode,
       setSittingOut, askSitOut, playing, applySystem, syncLineupSelect,
-      isNextIn, openChangelog, closeChangelog, step };
+      isNextIn, openChangelog, closeChangelog, step, openInstall, hideSheet,
+      phonePlatform, isInstalled };
     globalThis.__swap = () => ({ swapMode, swapPicked });
     globalThis.__intro = () => ({ HUDDLE: INTRO_HUDDLE_MS, SPIN: INTRO_SPIN_MS,
       TURNS: INTRO_TURNS, RADIUS: INTRO_RADIUS, GATHER: INTRO_GATHER_MS });
@@ -184,6 +197,9 @@ function boot(seedJson, seedHash, extraContext) {
 const mod6 = (n, m) => ((n % m) + m) % m;
 
 let failures = 0;
+// Checks that have to wait on a promise -- the service worker's -- register
+// here, and the verdict waits for them.
+const pendingChecks = [];
 function check(label, condition, detail) {
   if (condition) {
     console.log(`  ok   ${label}`);
@@ -3727,10 +3743,10 @@ console.log('\n67. What’s new');
   const served = (html.match(/script\.js\?v=([\w.]+)/) || [])[1];
   check('the top entry is the version being served', versions[0] === served,
     `${versions[0]} vs ${served}`);
-  check('the panel starts closed', /<section class="changelog" id="changelog" hidden/.test(html));
+  check('the panel starts closed', /<section class="sheet changelog" id="changelog" hidden/.test(html));
   check('the corner marker still lets taps through', /<p class="version" id="version">/.test(html));
-  check('What\u2019s new is the last thing in the page',
-    /id="openChangelog"[^>]*>What's new<\/button>\s*<\/main>/.test(html));
+  check('What\u2019s new and Add to Home Screen are the last thing in the page',
+    /<div class="page-links">\s*<button[^>]*id="openChangelog"[^>]*>What's new<\/button>\s*<button[^>]*id="openInstall"[^>]*>Add to Home Screen<\/button>\s*<\/div>\s*<\/main>/.test(html));
 
   // Behaviour. Booted with no script URL, the version is 'dev'.
   const app = boot();
@@ -3855,5 +3871,180 @@ console.log('\n69. Next in fades with the bench, and What’s new opens at the t
   check('so does Escape', scrolls[scrolls.length - 1] === 1400, JSON.stringify(scrolls));
 }
 
+console.log('\n70. Offline: the service worker');
+{
+  const root = path.join(__dirname, '..');
+  const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
+  const swSource = fs.readFileSync(path.join(root, 'sw.js'), 'utf8');
+  const served = (html.match(/script\.js\?v=([\w.]+)/) || [])[1];
+  const version = (swSource.match(/const VERSION = '([\w.]+)'/) || [])[1];
+  check('sw.js names the version index.html serves', version === served, `${version} vs ${served}`);
+
+  // Run sw.js against stubs, so the checks below are about the real list and
+  // the real fetch handler rather than a regex over the source.
+  const handlers = {};
+  const store = new Map();
+  const timers = [];
+  let network = () => Promise.reject(new Error('offline'));
+  const cacheApi = {
+    open: async () => ({
+      addAll: async (urls) => { urls.forEach((u) => store.set(u, `cached:${u}`)); },
+      put: async (req, res) => { store.set(typeof req === 'string' ? req : req.key, res); },
+    }),
+    match: async (req) => store.get(typeof req === 'string' ? req : req.key),
+    keys: async () => [],
+    delete: async () => true,
+  };
+  const sw = {
+    self: { addEventListener: (type, fn) => { handlers[type] = fn; }, location: { origin: 'https://x.test' },
+      skipWaiting: () => {}, clients: { claim: () => {} } },
+    caches: cacheApi,
+    fetch: (req) => network(req),
+    setTimeout: (fn, ms) => { timers.push({ fn, ms }); },
+    URL,
+    Promise,
+  };
+  vm.runInNewContext(swSource, sw, { filename: 'sw.js' });
+  const shell = vm.runInNewContext('SHELL', sw);
+
+  // Every file index.html loads with a ?v= that the app needs offline.
+  const needed = [...html.matchAll(/(?:href|src)="([^"]+\?v=[\w.]+)"/g)].map((m) => m[1])
+    .filter((u) => !/og\.png/.test(u));
+  const missing = needed.filter((u) => !shell.includes(u));
+  check('every versioned file the page loads is in the offline copy', missing.length === 0,
+    missing.join(', '));
+  const onDisk = shell.filter((u) => u !== './').map((u) => u.split('?')[0])
+    .filter((f) => !fs.existsSync(path.join(root, f)));
+  check('and every file in it exists, or the whole install fails', onDisk.length === 0,
+    onDisk.join(', '));
+  const manifest = JSON.parse(fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8'));
+  const icons = manifest.icons.map((i) => i.src).filter((src) => !shell.includes(src));
+  check('the home-screen icons are in it too', icons.length === 0, icons.join(', '));
+
+  // Install fills the cache.
+  let installed;
+  handlers.install({ waitUntil: (p) => { installed = p; } });
+  const run = async () => {
+    await installed;
+    console.log('\n70b. Offline: the service worker, running (finishes after the rest)');
+    check('installing caches the app', store.has('index.html') && store.has(`script.js?v=${version}`));
+
+    const respond = async (key, mode = 'navigate') => {
+      let answer;
+      handlers.fetch({ request: { method: 'GET', url: `https://x.test/VolleyGram/${key}`, key, mode },
+        respondWith: (p) => { answer = p; } });
+      return answer;
+    };
+
+    // Offline: the page and its files come from the cache.
+    network = () => Promise.reject(new Error('offline'));
+    check('offline, the page still loads', (await respond('index.html')) === 'cached:index.html');
+    check('a share link’s page load falls back to the app',
+      (await respond('?something')) === 'cached:index.html');
+    check('a missing image is not answered with the page',
+      (await respond('nope.png', 'no-cors')) === undefined);
+
+    // Online: the network answers, and refreshes the copy.
+    network = () => Promise.resolve({ ok: true, clone: () => 'fresh-copy', body: 'fresh' });
+    const fresh = await respond('index.html');
+    check('online, the network answers', fresh && fresh.body === 'fresh');
+    await new Promise((r) => setImmediate(r));
+    check('and the offline copy is refreshed', store.get('index.html') === 'fresh-copy');
+
+    // Barely-there wifi: after the wait, the cached copy answers.
+    network = () => new Promise(() => {});
+    timers.length = 0;
+    const pending = respond(`style.css?v=${version}`, 'no-cors');
+    await new Promise((r) => setImmediate(r));
+    check('a slow network gets a 3 second wait', timers.length === 1 && timers[0].ms === 3000,
+      JSON.stringify(timers.map((x) => x.ms)));
+    timers[0].fn();
+    check('then the cached copy answers', (await (await pending)) === `cached:style.css?v=${version}`);
+
+    // Other sites are left alone.
+    let touched = false;
+    handlers.fetch({ request: { method: 'GET', url: 'https://elsewhere.test/x.js', key: 'x', mode: 'no-cors' },
+      respondWith: () => { touched = true; } });
+    check('requests to other sites are not intercepted', !touched);
+  };
+  pendingChecks.push(run());
+
+  // Registration.
+  const js = fs.readFileSync(path.join(root, 'script.js'), 'utf8');
+  check('the page registers it', /navigator\.serviceWorker\.register\('sw\.js'\)/.test(js));
+  const registered = [];
+  const hosted = boot(undefined, undefined, {
+    navigator: { serviceWorker: { register: (u) => { registered.push(u); return Promise.resolve(); } } },
+    location: { origin: 'https://x.test', pathname: '/VolleyGram/', search: '', hash: '', protocol: 'https:' },
+  });
+  hosted.dispatchWindow('load');
+  check('once the page has loaded, over https', JSON.stringify(registered) === '["sw.js"]',
+    JSON.stringify(registered));
+  const local = [];
+  const fileApp = boot(undefined, undefined, {
+    navigator: { serviceWorker: { register: (u) => { local.push(u); return Promise.resolve(); } } },
+    location: { origin: 'null', pathname: '/x/index.html', search: '', hash: '', protocol: 'file:' },
+  });
+  fileApp.dispatchWindow('load');
+  check('and not off a file:// URL, where it can’t work', local.length === 0);
+}
+
+console.log('\n71. Add to Home Screen');
+{
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  check('the page starts closed', /<section class="sheet install" id="install" hidden/.test(html));
+  check('it has iPhone steps', /data-platform="ios"[\s\S]*Add to Home Screen/.test(html));
+  check('and Android steps', /data-platform="android"[\s\S]*Install\s+app/.test(html));
+  check('and warns that an iPhone keeps home-screen teams separate',
+    /keeps its own\s+teams, separate from the ones in Safari/.test(html));
+
+  const scrolls = [];
+  const app = boot(undefined, undefined, { scrollY: 900, scrollTo: (x, y) => scrolls.push(y) });
+  const el = (id) => app.document.getElementById(id);
+  check('the button shows when not installed', el('openInstall').hidden === false);
+  check('no Install button until the browser offers one', el('installNow').hidden === true);
+  el('openInstall').dispatch('click');
+  check('it opens', el('install').hidden === false && app.document.body.classList.contains('reading'));
+  check('at the top', scrolls[scrolls.length - 1] === 0);
+  el('openChangelog').dispatch('click');
+  check('opening What’s new from here swaps pages', el('install').hidden === true
+    && el('changelog').hidden === false);
+  app.document.dispatch('keydown', { key: 'Escape', target: {} });
+  check('and closing goes back to where the page was, not to the top', scrolls[scrolls.length - 1] === 900
+    && el('changelog').hidden === true && !app.document.body.classList.contains('reading'),
+    JSON.stringify(scrolls));
+
+  // The browser offers to install.
+  let prompted = 0;
+  app.dispatchWindow('beforeinstallprompt', { prompt: async () => { prompted += 1; } });
+  check('when the browser offers, an Install button appears', el('installNow').hidden === false);
+  el('installNow').dispatch('click');
+  check('which asks the browser', prompted === 1);
+  check('once', el('installNow').hidden === true);
+  app.dispatchWindow('beforeinstallprompt', { prompt: async () => {} });
+  app.dispatchWindow('appinstalled');
+  check('and installing removes it', el('installNow').hidden === true);
+
+  // Already on the home screen.
+  const standalone = boot(undefined, undefined, {
+    matchMedia: (q) => ({ matches: /display-mode: standalone/.test(q) }),
+  });
+  check('from the home screen, the button that leads here goes',
+    standalone.document.getElementById('openInstall').hidden === true);
+  check('and the page says so', standalone.document.getElementById('installedNote').hidden === false);
+  const ios = boot(undefined, undefined, { navigator: { standalone: true } });
+  check('iOS’s own standalone flag counts too', ios.document.getElementById('openInstall').hidden === true);
+
+  // Your own phone first.
+  const platformOf = (ua, touch = 0) => boot(undefined, undefined,
+    { navigator: { userAgent: ua, maxTouchPoints: touch } }).call.phonePlatform();
+  check('an iPhone is iOS', platformOf('Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X)') === 'ios');
+  check('an iPad calling itself a Mac is iOS', platformOf('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)', 5) === 'ios');
+  check('a real Mac is neither', platformOf('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)', 0) === null);
+  check('Android is Android', platformOf('Mozilla/5.0 (Linux; Android 14; Pixel 8)') === 'android');
+}
+
+Promise.all(pendingChecks).then(() => {
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
+});

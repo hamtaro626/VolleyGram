@@ -3036,10 +3036,94 @@ top, and Done or Escape puts the page back where it was.
 
 `§69` covers the opacity rule and the scroll on open, Done and Escape.
 
+## v0.55 — works offline, and how to put it on a home screen (2026-11-02)
+
+The question was whether to put VolleyGram in the app stores. Not yet: $99 a
+year for Apple, review delays on every update in an app that ships several
+times a week, and a real chance of rejection under Apple's guideline 4.2 for
+"a website in a wrapper". Most of what a store app gives is available without
+one, and two pieces of that were missing. Friends have since said other
+players want to use it, which is the "anyone else wants it" signal. The order
+from here is home screen first, Google Play (a Trusted Web Activity, $25 once,
+updates stay instant) if people outside the circle take to it, and Apple last.
+
+### Offline: `sw.js`
+
+The app had a manifest but no service worker, so it needed signal every time
+it opened. Gyms are where signal goes to die.
+
+**Network first, cache as the fallback**, the same choice iScribe and laditdah
+made and for the same reason: a cache-first worker serves yesterday's code
+until the cache name changes, and this app ships often. Online phones get
+current files; offline ones get the copy from last time.
+
+**With one difference: a 3-second wait.** Gym wifi is more often "barely on"
+than "off", and a fetch that hangs for a minute is worse than last time's copy.
+After `NETWORK_WAIT_MS` the cache answers. The network still finishes behind
+it and refreshes the copy for next time.
+
+- **The list is checked against the page.** `VERSION` in `sw.js` has to match
+  the `?v=` in `index.html`, and every versioned file the page loads has to be
+  in `SHELL` at that version. Every file in `SHELL` has to exist, because
+  `cache.addAll` is all-or-nothing and one 404 loses offline entirely. The
+  home-screen icons from the manifest are in it too.
+- **Share links work offline.** The `#g=…` never reaches the worker, so a
+  page load answers with the app, which reads the hash itself. A missing image
+  is *not* answered with the page.
+- **Only this site's own files** are handled; anything else goes straight to
+  the network.
+- **Registered only over http(s).** `file://` can't have a service worker, and
+  the README still promises the app runs off the filesystem; there it simply
+  skips it.
+
+`§70` runs the real `sw.js` against stubbed `caches`, `fetch` and timers:
+install, offline, a share link, a missing image, online refresh, the slow
+network and other sites. Its async half prints after §71, as `70b`. The
+harness's final verdict now waits for it. Checked for real, too: loaded over
+localhost, stopped the server, reloaded, and all six players came up. A control
+copy without `sw.js`, put through the same thing, failed to load.
+
+### Add to Home Screen
+
+A second link beside What's new at the end of the page opens a full-screen
+page with the steps for **iPhone or iPad** (Safari → Share → Add to Home
+Screen → Add) and **Android** (Chrome → ⋮ → Add to Home screen or Install app →
+Install). It's the same kind of page as What's new, and the two now share one
+open/close: the scroll reset from v0.54, Escape, and the arrow-key guard. Both
+are `.sheet`s.
+
+- **Your phone's steps come first**, marked *Your phone*. That's read off the
+  user agent, including an iPad that calls itself a Mac (touch points give it
+  away).
+- **One-tap Install where the browser offers it.** Android and desktop Chrome
+  fire `beforeinstallprompt`. When they do, an Install button appears at the
+  top, used once, then gone. The event isn't `preventDefault()`ed, so Chrome's
+  own prompt still shows as usual.
+- **Already installed**, the link at the bottom goes and the page says so.
+  That's read from `display-mode: standalone`, or iOS's `navigator.standalone`.
+- **It says the uncomfortable thing about iPhones.** A home-screen web app on
+  iOS keeps its own storage, separate from Safari's, so teams built in Safari
+  don't appear in it. The page says to add it first and build teams there.
+
+The test stub's `window` learned events (`addEventListener` and a
+`dispatchWindow` for tests) for `beforeinstallprompt`, `appinstalled` and `load`.
+
+### Not doing (yet)
+
+- **Getting a share link into the home-screen app on an iPhone.** Links from
+  Messages open in Safari, not the installed app, and with separate storage the
+  team lands in Safari. The fix would be an "Import a team" box in the app that
+  takes a pasted link. Worth doing if people install it and then share.
+- **The app stores.** See above.
+
+`§71` covers the page: closed at start, both platforms' steps, the iPhone
+warning, opening at the top, swapping to What's new and back, the Install
+button's whole life, standalone both ways, and platform detection.
+
 ## Tests
 
 ```
-node test/migration.js    # 914 checks — storage, migration, roles, formations,
+node test/migration.js    # 951 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

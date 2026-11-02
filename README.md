@@ -21,6 +21,8 @@ Built to use on mobile devices courtside
 - **Next in** — with seven or more, a badge on whoever comes off the bench next,
   on screen and in saved images
 - **What's new** — a page in the app listing every release, newest first
+- **Works offline** once opened, and **Add to Home Screen** shows how to install
+  it on iPhone and Android, with a one-tap Install where the browser offers one
 - **Sit a player out** — hold them on the court, or press Out on their roster
   row: they stay on the team but leave the rotation, which recomputes without
   them
@@ -51,6 +53,8 @@ style.css       ~18 KB
 script.js       ~119 KB, all application logic
 manifest.webmanifest
                 makes it installable to a home screen
+sw.js           the service worker: keeps a copy on the phone so the app
+                works with no signal (v0.55)
 assets/         the logo, derived from a 2000×2000 master kept outside the
                 repo. logo.webp (24 KB) is the only one on the critical
                 path; the icons are fetched by the OS, the preview by
@@ -60,7 +64,7 @@ dev/
   preview.html  the real app in live iframes at real device widths, for the
                 layout questions a stubbed DOM cannot answer
 test/
-  migration.js  914 checks: storage, migration, roles, formations, quiz,
+  migration.js  951 checks: storage, migration, roles, formations, quiz,
                 sharing, dragging, swapping, sitting out, short-handed rosters, playing
                 surface, scoreboard
   contrast.js   contrast, hue separation, every role against all three court
@@ -71,7 +75,8 @@ test/
 ## Running it
 
 Open `index.html` in a browser. That's genuinely it — there's no fetch and there
-are no ES modules, so `file://` works.
+are no ES modules, so `file://` works. Offline support doesn't: a service worker
+needs `http(s)://`, so off the filesystem the app simply skips it.
 
 If you'd rather serve it (closer to production, and share links behave the same):
 
@@ -98,7 +103,7 @@ scrolling, dragging a player still need a real device.
 ## Tests
 
 ```sh
-node test/migration.js    # 914 checks across 69 groups
+node test/migration.js    # 951 checks across 71 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
@@ -161,6 +166,11 @@ artwork — and they must all move together. Browsers cache by URL, so without a
 bump phones keep serving the old file. `APP_VERSION` is derived from the
 script's own `?v=`, which is why the corner marker reads `dev` on `file://`.
 
+**Two more places move with it.** `VERSION` at the top of `sw.js`, which names
+the offline copy and the files in it, and a new top entry in What's new (the
+`<li data-version>` list in `index.html`). `migration.js` fails if either is
+behind.
+
 **No NUL bytes in source.** `migration.js` asserts this. One slipped in during
 v0.10 from a mis-written escape — it ran fine but made the file binary to `grep`,
 `git diff`, and editor search.
@@ -184,7 +194,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.54. Working title, actively developed, no issues or PRs open yet.
+v0.55. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 
