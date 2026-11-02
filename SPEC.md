@@ -2884,10 +2884,77 @@ no circle, undo both ways, the stray pointerup, the two-player floor, the
 quiz, share links, storage and the v0.50 shape). `§65` covers the picker's
 actions, a cancelled name, and the same-millisecond id.
 
+## v0.52 — What's new, and a Next in badge (2026-11-02)
+
+### What's new
+
+A page in the app that says what changed, **newest first**, written for the
+people using it rather than for whoever maintains it. That's what this file is
+for. A **What's new in v0.52** button at the very end of the page opens it,
+full screen like the scoreboard; Done or Escape closes it, and the arrow keys
+don't change rotation behind it.
+
+Until you've opened the current version's entry the button is lit, with a dot.
+`store.changelogSeen` remembers the last version opened. It's a display fact
+rather than a team fact, so it sits at the top level beside `showLabels`, and
+storage stays version 2. Off a `file://` URL the version is `dev` and nothing
+is lit.
+
+**The entries are static markup in `index.html`**, not generated from this
+file. This file explains *why*, at length, and much of it would mean nothing
+to a player. Old versions are grouped (v0.26 – v0.32 and so on) and the
+internal ones (the device shelf, test changes) left out.
+
+**A release has to say what it changed.** `§67` checks that the entries run
+newest first and that **the top one matches the `?v=` being served**. Bump the
+version without adding an entry and the suite fails.
+
+**It isn't the version marker.** The first build made the corner `v0.52` the
+button, since it's where people already look for the version. But the marker
+floats over the page. Since v0.18 it has been `pointer-events: none` so it can
+never swallow a tap, and as a button it sat on the rotation numbers mid-scroll
+and took theirs. It's back to being a label. The button lives after the roster
+and the quiz, so it never sits between controls. Below Hold to reset all is
+safe both ways, because a stray tap can't reset anything without the 1.5s hold.
+
+### Next in
+
+With seven or more playing, whoever comes off the bench next rotation gets a
+**Next in** pill, in the Server pill's spot and colours. Nobody is ever both:
+one is in zone 1, the other is off court. Testers said a screenshot didn't show
+who was up without counting around the ring.
+
+`isNextIn()` asks `slotFor()` directly: off court this rotation, on court the
+next, wrapping from the last rotation to the first. That way it can't disagree
+with what pressing **>** actually shows. With two or more on the bench, only the
+one at the front of the queue qualifies. With six or fewer there's no bench,
+so nobody does.
+
+It's drawn in saved images too, because sharing an image is the case that
+prompted it. In the export it's drawn at full strength after the faded bench
+circle. On screen, opacity covers the whole circle, pill included, so the
+next-in circle is less faded than the rest of the bench (0.85 rather than 0.45).
+
+### Not doing (yet)
+
+- **The off-court strip on the right side.** Asked for as an alternative to
+  the badge, and the badge answers the same question: who's next, readable
+  from a screenshot. A right-hand bench is a bigger change. The court would
+  have to narrow to make room at phone width, and the bench geometry
+  (`benchPosition()`, `BENCH_Y`, the drag limits, the export's canvas size, the
+  swap target maths) is all built around a strip underneath. Worth doing if the
+  badge turns out not to be enough.
+
+`§66` covers Next in: exactly one each rotation, always off court, on court
+next, the wrap, two on the bench, none with six, the pill, and the export.
+`§67` covers What's new: newest first, the top entry matching the served
+version, opening, Escape, Done, the arrows, and the lit state across a reload
+and a new release.
+
 ## Tests
 
 ```
-node test/migration.js    # 868 checks — storage, migration, roles, formations,
+node test/migration.js    # 897 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

@@ -83,6 +83,8 @@ function boot(seedJson, seedHash, extraContext) {
 
   const byId = {};
   const document = {
+    // A test can serve the script from a real URL, so APP_VERSION isn't 'dev'.
+    currentScript: (extraContext && extraContext.currentScript) || null,
     body: stubElement('body'),
     getElementById(id) {
       if (!byId[id]) byId[id] = stubElement();
@@ -157,7 +159,8 @@ function boot(seedJson, seedHash, extraContext) {
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
       closeNewGame, closeMore, syncMenuButtons, introSpot, playIntro,
       formatElapsed, renderTimes, swapPlayers, pickForSwap, setSwapMode,
-      setSittingOut, askSitOut, playing, applySystem, syncLineupSelect };
+      setSittingOut, askSitOut, playing, applySystem, syncLineupSelect,
+      isNextIn, openChangelog, closeChangelog, step };
     globalThis.__swap = () => ({ swapMode, swapPicked });
     globalThis.__intro = () => ({ HUDDLE: INTRO_HUDDLE_MS, SPIN: INTRO_SPIN_MS,
       TURNS: INTRO_TURNS, RADIUS: INTRO_RADIUS, GATHER: INTRO_GATHER_MS });
@@ -3644,6 +3647,129 @@ console.log('\n65. New and duplicate team from the name picker');
   const first = values()[0];
   pick(first);
   check('picking a team still switches to it', store().activeId === first);
+}
+
+console.log('\n66. Next in');
+{
+  // Seven players, subs entering at zone 1: one sits out every rotation.
+  const seven = JSON.stringify({ system: '4-2', entrySlot: 1, roster: [
+    'S1', 'MB1', 'OH1', 'S2', 'MB2', 'OH2', 'X7',
+  ].map((id) => ({ id, role: 'OH', name: id })) });
+  const app = boot(seven);
+  const tagged = () => Object.entries(app.players())
+    .filter(([, el]) => el.classList.contains('next-in')).map(([id]) => id);
+  const indexOf = (id) => app.call.playing().findIndex((p) => p.id === id);
+
+  let everyRotation = true;
+  let neverOnCourt = true;
+  let comesOn = true;
+  for (let r = 1; r <= app.call.rotationCount(); r += 1) {
+    app.call.setRotation(r);
+    const ids = tagged();
+    if (ids.length !== 1) everyRotation = false;
+    ids.forEach((id) => {
+      if (app.call.slotFor(indexOf(id), r) !== null) neverOnCourt = false;
+      const next = (r % app.call.rotationCount()) + 1;
+      if (app.call.slotFor(indexOf(id), next) === null) comesOn = false;
+    });
+  }
+  check('exactly one player is Next in, every rotation', everyRotation);
+  check('always someone off court', neverOnCourt);
+  check('who is on court the next rotation, including the wrap from last to first', comesOn);
+
+  app.call.setRotation(1);
+  const [id] = tagged();
+  check('and the title says so for a screen reader', /off court, next in$/.test(app.players()[id].title),
+    app.players()[id].title);
+  app.call.step(1);
+  check('pressing > puts exactly that player on court',
+    app.call.slotFor(indexOf(id), 2) !== null && !app.players()[id].classList.contains('benched'));
+
+  // Eight players: two on the bench, and only the one at the front of the queue
+  // is next in.
+  const eight = boot(JSON.stringify({ system: '4-2', entrySlot: 1, roster: [
+    'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H',
+  ].map((x) => ({ id: x, role: 'OH', name: x })) }));
+  const benched = Object.values(eight.players()).filter((el) => el.classList.contains('benched'));
+  const next8 = Object.values(eight.players()).filter((el) => el.classList.contains('next-in'));
+  check('with two on the bench, only one is next in', benched.length === 2 && next8.length === 1,
+    `${benched.length} benched, ${next8.length} next in`);
+
+  // Six or fewer: no bench, nobody to tag.
+  const six = boot(JSON.stringify({ system: '4-2', roster: null }));
+  check('with six, nobody is tagged', !Object.values(six.players())
+    .some((el) => el.classList.contains('next-in')));
+
+  // Every player carries the pill; the CSS shows it.
+  const js = fs.readFileSync(path.join(__dirname, '..', 'script.js'), 'utf8');
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  check('every player carries a Next in pill', /<span class="next-tag">Next in<\/span>/.test(js));
+  check('shown only on the next one in', /\.player\.next-in \.next-tag\s*\{[^}]*display:\s*block/.test(css));
+  check('and saved images draw it too', /'NEXT IN'/.test(js) && /isNextIn\(index, rotation\)/.test(js));
+}
+
+console.log('\n67. What’s new');
+{
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const versions = [...html.matchAll(/<li data-version="([\d.]+)">/g)].map((m) => m[1]);
+  const asNumber = (v) => v.split('.').map(Number);
+  const newer = (a, b) => {
+    const [x, y] = [asNumber(a), asNumber(b)];
+    for (let i = 0; i < Math.max(x.length, y.length); i += 1) {
+      if ((x[i] || 0) !== (y[i] || 0)) return (x[i] || 0) > (y[i] || 0);
+    }
+    return false;
+  };
+  check('it has entries', versions.length > 10, String(versions.length));
+  check('newest first, all the way down',
+    versions.every((v, i) => i === 0 || newer(versions[i - 1], v)), versions.join(' '));
+  const served = (html.match(/script\.js\?v=([\w.]+)/) || [])[1];
+  check('the top entry is the version being served', versions[0] === served,
+    `${versions[0]} vs ${served}`);
+  check('the panel starts closed', /<section class="changelog" id="changelog" hidden/.test(html));
+  check('the corner marker still lets taps through', /<p class="version" id="version">/.test(html));
+  check('What\u2019s new is the last thing in the page',
+    /id="openChangelog"[^>]*>What's new<\/button>\s*<\/main>/.test(html));
+
+  // Behaviour. Booted with no script URL, the version is 'dev'.
+  const app = boot();
+  const el = (id) => app.document.getElementById(id);
+  check('off a file:// URL it just says What\u2019s new', el('openChangelog').textContent === "What's new",
+    el('openChangelog').textContent);
+  el('openChangelog').dispatch('click');
+  check('tapping it opens the panel', el('changelog').hidden === false);
+  check('and hides the app behind it', app.document.body.classList.contains('reading'));
+  const before = app.peek().currentRotation;
+  app.document.dispatch('keydown', { key: 'ArrowRight', target: {}, preventDefault() {} });
+  check('arrows do not change rotation behind it', app.peek().currentRotation === before);
+  app.document.dispatch('keydown', { key: 'Escape', target: {} });
+  check('Escape closes it', el('changelog').hidden === true
+    && !app.document.body.classList.contains('reading'));
+  el('openChangelog').dispatch('click');
+  el('closeChangelog').dispatch('click');
+  check('so does Done', el('changelog').hidden === true);
+  check('off a file:// URL there is nothing to announce',
+    !el('openChangelog').classList.contains('unseen'));
+
+  // Served as a real version, it's lit until opened, and stays dark after.
+  const hosted = { currentScript: { src: 'https://x.test/script.js?v=9.9' } };
+  const fresh = boot(undefined, undefined, hosted);
+  const v = fresh.document.getElementById('openChangelog');
+  check('a version you have not read about is lit', v.classList.contains('unseen'),
+    v.textContent);
+  check('and says which', v.textContent === "What's new in v9.9", v.textContent);
+  check('the corner marker still shows the version',
+    fresh.document.getElementById('version').textContent === 'v9.9');
+  v.dispatch('click');
+  check('opening it puts the light out', !v.classList.contains('unseen'));
+  const again = boot(fresh.memory['volleyball-rotations-v1'], undefined, hosted);
+  check('and it stays out after a reload',
+    !again.document.getElementById('openChangelog').classList.contains('unseen'));
+  const upgraded = boot(fresh.memory['volleyball-rotations-v1'], undefined,
+    { currentScript: { src: 'https://x.test/script.js?v=10.0' } });
+  check('until the next version ships',
+    upgraded.document.getElementById('openChangelog').classList.contains('unseen'));
 }
 
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);

@@ -398,6 +398,7 @@ let store = {
   roleScope: 'all',      // whether a role edit hits every rotation or just this one
   transparentExport: false,
   checkOverlap: false,   // flag base positions that break rotational order
+  changelogSeen: '',     // the newest version whose What's new was opened (v0.52)
   // The live match. Top level rather than on a lineup: a score is something
   // happening right now, not a fact about a team, and it would be wrong to
   // carry one into a share link. newMatch() is a function declaration, so it's
@@ -534,6 +535,15 @@ function slotFor(rosterIndex, rotation) {
 // and which ones changes every rotation as the hole travels.
 function zoneOccupied(zone, rotation = currentRotation) {
   return playing().some((_, index) => slotFor(index, rotation) === zone);
+}
+
+// Off court now and on court next rotation: the player who comes off the bench
+// next (v0.52). Asked of slotFor() itself rather than worked out from the entry
+// zone, so it can't disagree with what pressing > will actually show. Nobody
+// qualifies with six or fewer playing -- there's no bench to come off.
+function isNextIn(rosterIndex, rotation) {
+  const next = (rotation % rotationCount()) + 1;
+  return slotFor(rosterIndex, rotation) === null && slotFor(rosterIndex, next) !== null;
 }
 
 function displayName(player) {
@@ -1019,6 +1029,9 @@ function load() {
       transparentExport: parsed.transparentExport === true,
       // Added in v0.19. Defaults off, so an older save needs no version bump.
       checkOverlap: parsed.checkOverlap === true,
+      // Added in v0.52. A display fact, not a team fact, so it sits up here.
+      // Same key order as the default store, so a save round-trips byte for byte.
+      changelogSeen: typeof parsed.changelogSeen === 'string' ? parsed.changelogSeen : '',
       // Added in v0.22, same treatment: absent in every earlier save, so
       // normaliseMatch() hands back a fresh 0-0 rather than a version bump.
       match: normaliseMatch(parsed.match),
@@ -1083,6 +1096,7 @@ function buildPlayers() {
     el.dataset.playerId = player.id;
     el.innerHTML = '<span class="name"></span><span class="label"></span>'
       + '<span class="serve-tag">Server</span>'
+      + '<span class="next-tag">Next in</span>'
       + '<span class="overlap-tag">Overlap</span>';
     el.addEventListener('pointerdown', startDrag);
     el.addEventListener('pointermove', onDrag);
@@ -1860,7 +1874,9 @@ function render() {
     // Rebuilt rather than toggled, because the role -- and so the colour -- can
     // differ from one rotation to the next.
     el.className = `player role-${role}`;
+    const nextIn = isNextIn(index, currentRotation);
     if (slot === null) el.classList.add('benched');
+    if (nextIn) el.classList.add('next-in');
     if (slot === SERVE_SLOT) el.classList.add('serving');
     if (setterIds.has(player.id)) el.classList.add('is-setter');
     if (problems[player.id]) el.classList.add('illegal');
@@ -1872,7 +1888,7 @@ function render() {
 
     const prefix = roleBadge(role) ? `${ROLE_LABELS[role]}, ` : '';
     el.title = slot === null
-      ? `${displayName(player)} — ${prefix}off court`
+      ? `${displayName(player)} — ${prefix}off court${nextIn ? ', next in' : ''}`
       : `${displayName(player)} — ${prefix}zone ${slot}${slot === SERVE_SLOT ? ', serving' : ''}`;
     // Which rule, on the player it applies to -- a red ring alone doesn't say
     // what's wrong or which way to drag.
@@ -2895,11 +2911,16 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
       ctx.fillText(badge, cx, cy + EDGE * 0.023, radius * 1.7);
     }
 
-    // The Server pill, drawn last so it sits on top of the ring and the circle.
-    if (slot === SERVE_SLOT) {
-      const label = 'SERVER';
+    // Full strength from here on: a faded bench player's Next in pill has to
+    // read as clearly as the Server pill does.
+    ctx.globalAlpha = 1;
+
+    // The Server and Next in pills, drawn last so they sit on top of the ring
+    // and the circle. Nobody can be both -- one is in zone 1, the other off court.
+    const tag = slot === SERVE_SLOT ? 'SERVER' : isNextIn(index, rotation) ? 'NEXT IN' : '';
+    if (tag) {
       ctx.font = `700 ${Math.round(EDGE * 0.021)}px -apple-system, system-ui, sans-serif`;
-      const boxWidth = ctx.measureText(label).width + EDGE * 0.026;
+      const boxWidth = ctx.measureText(tag).width + EDGE * 0.026;
       const boxHeight = EDGE * 0.036;
       const boxTop = cy + radius - boxHeight / 2;
 
@@ -2910,10 +2931,8 @@ function drawRotation(ctx, rotation, EDGE, hasBench) {
       ctx.fillStyle = courtInk('--pill-fg');
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(label, cx, boxTop + boxHeight / 2);
+      ctx.fillText(tag, cx, boxTop + boxHeight / 2);
     }
-
-    ctx.globalAlpha = 1;
   });
 
   // The court plus its bench strip, both read from the stylesheet.
@@ -3348,6 +3367,8 @@ document.addEventListener('keydown', (event) => {
   // arrows would change the rotation invisibly, and the scoreboard's own
   // rotation line would go stale, since step() doesn't redraw the scoreboard.
   if (!scorePanel.hidden) return;
+  // Same while reading What's new: the court is hidden behind it.
+  if (!changelogPanel.hidden) return;
   if (event.key === 'ArrowLeft') {
     step(-1);
     event.preventDefault();
@@ -3416,6 +3437,51 @@ function syncRosterButton() {
   rosterButton.setAttribute('aria-expanded', String(open));
 }
 
+// --- What's new (v0.52) ------------------------------------------------
+//
+// The panel is static markup in index.html; all this does is show it, hide
+// it, and remember that you've seen this version's entry. Until you have, the
+// button at the bottom of the page is lit, which is the only way anyone would
+// know there's something new to read.
+//
+// The button is not the version marker in the corner. That was tried: the
+// marker floats over the page, and as a button it sat on top of the rotation
+// numbers mid-scroll and took their taps.
+
+const changelogPanel = document.getElementById('changelog');
+const changelogButton = document.getElementById('openChangelog');
+
+function syncChangelogButton() {
+  // Off a file:// URL the version is 'dev', and there's nothing to announce.
+  const dev = APP_VERSION === 'dev';
+  changelogButton.textContent = dev ? "What's new" : `What's new in v${APP_VERSION}`;
+  changelogButton.classList.toggle('unseen', !dev && store.changelogSeen !== APP_VERSION);
+  changelogButton.setAttribute('aria-expanded', String(!changelogPanel.hidden));
+}
+
+function openChangelog() {
+  if (quiz) endQuiz();
+  changelogPanel.hidden = false;
+  document.body.classList.add('reading');
+  if (store.changelogSeen !== APP_VERSION) {
+    store.changelogSeen = APP_VERSION;
+    save();
+  }
+  syncChangelogButton();
+}
+
+function closeChangelog() {
+  changelogPanel.hidden = true;
+  document.body.classList.remove('reading');
+  syncChangelogButton();
+}
+
+changelogButton.addEventListener('click', openChangelog);
+document.getElementById('closeChangelog').addEventListener('click', closeChangelog);
+document.addEventListener('keydown', (event) => {
+  if (event.key === 'Escape' && !changelogPanel.hidden) closeChangelog();
+});
+
 document.getElementById('openScoreboard').addEventListener('click', openScoreboard);
 document.getElementById('closeScoreboard').addEventListener('click', closeScoreboard);
 // The one control that ends a game, so it asks who won rather than silently
@@ -3451,12 +3517,12 @@ function syncLabelsButton() {
 
 // --- Start it up ------------------------------------------------------
 
-document.getElementById('version').textContent = `v${APP_VERSION}`;
-
 load();
 importFromUrl();
+document.getElementById('version').textContent = `v${APP_VERSION}`;
 syncLabelsButton();
 syncDragModeButton();
+syncChangelogButton();
 document.body.classList.toggle('swapping', swapMode);
 syncRosterButton();
 syncMenuButtons();

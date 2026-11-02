@@ -17,9 +17,9 @@
        purpose rather than arrived at by accident. The maskable one is a
        separate file because Android crops to a circle of 80% diameter, which
        would take the ends off a wordmark drawn to the edges. -->
-  <link rel="icon" href="assets/favicon-32.png?v=0.51" sizes="32x32" type="image/png">
-  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.51">
-  <link rel="manifest" href="manifest.webmanifest?v=0.51">
+  <link rel="icon" href="assets/favicon-32.png?v=0.52" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.52">
+  <link rel="manifest" href="manifest.webmanifest?v=0.52">
 
   <!-- Link previews. The share feature sends URLs to team-mates by text, so
        these are what a chat app draws in the bubble. og:image has to be
@@ -28,13 +28,13 @@
   <meta property="og:title" content="VolleyGram">
   <meta property="og:description" content="A volleyball rotation reference. See where everyone stands in every rotation.">
   <meta property="og:url" content="https://hamtaro626.github.io/VolleyGram/">
-  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.51">
+  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.52">
   <meta name="twitter:card" content="summary_large_image">
   <!-- The ?v= query is cache busting. A browser caches by URL, so changing the
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.51">
+  <link rel="stylesheet" href="style.css?v=0.52">
 </head>
 <body>
   <main>
@@ -56,7 +56,7 @@
     <h1 class="masthead">
       <button type="button" id="replayIntro" class="title-replay"
         title="Replay the intro" aria-label="VolleyGram. Replay the intro."
-        ><img class="logo" src="assets/logo.webp?v=0.51" width="179" height="200"
+        ><img class="logo" src="assets/logo.webp?v=0.52" width="179" height="200"
           alt="VolleyGram"></button>
       <span class="tagline">A Volleyball Rotation Reference</span>
     </h1>
@@ -232,6 +232,12 @@
         <button id="deleteLineup" class="danger">Delete</button>
       </div>
     </section>
+
+    <!-- The way into What's new (v0.52). The very end of the page, after the
+         roster and the quiz, so it never sits between controls. Below Hold to
+         reset all is safe in both directions: a stray tap can't reset anything,
+         because reset needs a 1.5s hold. -->
+    <button class="whats-new" id="openChangelog" aria-controls="changelog">What's new</button>
   </main>
 
   <!-- The scoreboard, outside <main> because it replaces the whole page rather
@@ -295,10 +301,179 @@
     </div>
   </section>
 
+  <!-- What's new, v0.52. Outside <main> because, like the scoreboard, it
+       replaces the page while it's open. Newest first, so the change someone
+       is most likely asking about is the one at the top. Written for players
+       and coaches, not for whoever maintains this -- SPEC.md is that. The top
+       entry must match the version in the ?v= URLs; test/migration.js §67
+       checks it, so a release can't ship without saying what it changed. -->
+  <section class="changelog" id="changelog" hidden
+    role="dialog" aria-modal="true" aria-labelledby="changelogTitle">
+    <div class="cl-head">
+      <h2 id="changelogTitle">What's new</h2>
+      <button id="closeChangelog">Done</button>
+    </div>
+    <ol class="cl-list">
+      <li data-version="0.52">
+        <h3>v0.52</h3>
+        <ul>
+          <li><strong>What's new</strong> &mdash; this page. It's at the bottom of the app, and lights up when there's something you haven't read.</li>
+          <li><strong>&ldquo;Next in&rdquo; badge</strong> on whoever comes off the bench next rotation, on screen and in saved images, so a screenshot says who's up.</li>
+        </ul>
+      </li>
+      <li data-version="0.51">
+        <h3>v0.51</h3>
+        <ul>
+          <li><strong>Sit a player out.</strong> Hold them on the court, or press <em>Out</em> on their roster row. They stay on the team but leave the rotation, which works itself out without them. Press <em>Out</em> again to bring them back.</li>
+          <li><strong>New team</strong> and <strong>Duplicate this team</strong> are now at the bottom of the VolleyGram Name list.</li>
+          <li>Replaces v0.50's typed-in subs.</li>
+        </ul>
+      </li>
+      <li data-version="0.50">
+        <h3>v0.50</h3>
+        <ul>
+          <li>Temporary subs: hold a player and type in a fill-in. Replaced by sitting out in v0.51.</li>
+        </ul>
+      </li>
+      <li data-version="0.49">
+        <h3>v0.49</h3>
+        <ul>
+          <li><strong>Swap players by dragging.</strong> Drag one player onto another, or tap two, and they trade places in the lineup &mdash; in every rotation. This is now what a drag does.</li>
+          <li><strong>Drag: Move</strong>, beside Undo, switches back to positioning players by hand.</li>
+        </ul>
+      </li>
+      <li data-version="0.48">
+        <h3>v0.48</h3>
+        <ul>
+          <li>Scoreboard: a game clock that starts on the first point, and the time of day.</li>
+          <li>A <strong>&minus;1</strong> on each side instead of one Undo, so a point noticed late comes off the right team.</li>
+        </ul>
+      </li>
+      <li data-version="0.42">
+        <h3>v0.42 &ndash; v0.47</h3>
+        <ul>
+          <li>The VolleyGram logo, and app icons for your home screen.</li>
+          <li>The players spin in when the app opens. Tap the logo to watch it again.</li>
+        </ul>
+      </li>
+      <li data-version="0.41">
+        <h3>v0.41</h3>
+        <ul>
+          <li>The court sizes itself to your screen, and names scale with it.</li>
+        </ul>
+      </li>
+      <li data-version="0.40">
+        <h3>v0.33 &ndash; v0.40</h3>
+        <ul>
+          <li>Buttons regrouped by what they do. Sharing and saving images live behind <strong>Share&hellip;</strong>.</li>
+          <li>Overlap problems are flagged on the players themselves.</li>
+          <li>Off-white sand for beach, with court lines you can see on it.</li>
+          <li>Undo no longer rewinds the scoreboard. The screen stays awake while the scoreboard is up.</li>
+          <li>Players can be moved with the arrow keys.</li>
+        </ul>
+      </li>
+      <li data-version="0.31">
+        <h3>v0.26 &ndash; v0.32</h3>
+        <ul>
+          <li>Fixed: reordering the roster could snap back when you changed rotation.</li>
+          <li>Fixed: with seven or more, the player off court was drawn off the edge of the screen.</li>
+          <li>Fixed: double-tapping zoomed the page, and the court blocked scrolling.</li>
+          <li>Holding a button no longer selects its text.</li>
+        </ul>
+      </li>
+      <li data-version="0.25">
+        <h3>v0.23 &ndash; v0.25</h3>
+        <ul>
+          <li>Fixed: with seven or more, the serving order didn't follow the roster. The roster is the serving order.</li>
+          <li><strong>Subs enter at</strong> is back, and defaults to zone 1.</li>
+        </ul>
+      </li>
+      <li data-version="0.22">
+        <h3>v0.22</h3>
+        <ul>
+          <li><strong>Scoreboard</strong>: two teams, big numbers, a record of who won each game.</li>
+        </ul>
+      </li>
+      <li data-version="0.21">
+        <h3>v0.21</h3>
+        <ul>
+          <li>Playing <strong>surface</strong> per team: indoor, grass or beach.</li>
+        </ul>
+      </li>
+      <li data-version="0.20">
+        <h3>v0.20</h3>
+        <ul>
+          <li>Short-handed? Five players still rotate through six zones, and the app tells you when nobody's left to serve.</li>
+        </ul>
+      </li>
+      <li data-version="0.19">
+        <h3>v0.19</h3>
+        <ul>
+          <li>Optional <strong>overlap check</strong>: flags players out of rotational order at the serve.</li>
+        </ul>
+      </li>
+      <li data-version="0.18">
+        <h3>v0.15 &ndash; v0.18</h3>
+        <ul>
+          <li><strong>Share team</strong>: the whole diagram travels in a link. No accounts.</li>
+          <li>Save to Photos on phones that support it.</li>
+          <li>Fixed: tapping a player used to pin them in place.</li>
+          <li>The version number in the corner.</li>
+        </ul>
+      </li>
+      <li data-version="0.14">
+        <h3>v0.13 &ndash; v0.14</h3>
+        <ul>
+          <li>Named <strong>VolleyGram</strong>.</li>
+          <li>Formation tabs right under the court. The ring now marks whoever is setting.</li>
+        </ul>
+      </li>
+      <li data-version="0.12">
+        <h3>v0.12</h3>
+        <ul>
+          <li><strong>Quiz Mode</strong>: tap the zone where a player belongs.</li>
+          <li>Images with a transparent background.</li>
+        </ul>
+      </li>
+      <li data-version="0.11">
+        <h3>v0.11</h3>
+        <ul>
+          <li><strong>Serve receive</strong> and <strong>Defense</strong> formations, worked out from who's on court.</li>
+        </ul>
+      </li>
+      <li data-version="0.10">
+        <h3>v0.9 &ndash; v0.10</h3>
+        <ul>
+          <li>Zone numbers on the court. Swipe to change rotation.</li>
+          <li>Reorder the roster by dragging. A <em>Server</em> label on zone 1.</li>
+          <li>Save all rotations as one image.</li>
+        </ul>
+      </li>
+      <li data-version="0.8">
+        <h3>v0.5 &ndash; v0.8</h3>
+        <ul>
+          <li><strong>5-1</strong> and <strong>6-2</strong> systems, plus Simple with no roles.</li>
+          <li>More than one saved team.</li>
+          <li>Roles that change for a single rotation.</li>
+          <li>Save as image.</li>
+        </ul>
+      </li>
+      <li data-version="0.4">
+        <h3>v0.1 &ndash; v0.4</h3>
+        <ul>
+          <li>The court, six players, and rotations 1 to 6.</li>
+          <li>Drag players; each rotation remembers its own diagram.</li>
+          <li>Real names, colours by role, up to 12 players, and Undo.</li>
+        </ul>
+      </li>
+    </ol>
+  </section>
+
   <!-- Which build you're actually looking at. Fixed in the corner so checking it
-       never means scrolling, and filled by script.js from its own URL. -->
+       never means scrolling, and filled by script.js from its own URL. Not a
+       button: it floats over the page, so it must never swallow a tap. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.51"></script>
+  <script src="script.js?v=0.52"></script>
 </body>
 </html>
