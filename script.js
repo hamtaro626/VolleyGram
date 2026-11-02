@@ -3477,10 +3477,19 @@ function syncChangelogButton() {
   changelogButton.setAttribute('aria-expanded', String(!changelogPanel.hidden));
 }
 
+// Where the page was scrolled to when What's new opened. The panel takes the
+// page's place rather than floating over it, so it inherits the scroll: open it
+// from the bottom of the page and it opened on its own last entry instead of
+// the newest (v0.54). So it starts at the top, and Done puts you back where
+// you were.
+let scrollBeforeChangelog = 0;
+
 function openChangelog() {
   if (quiz) endQuiz();
+  scrollBeforeChangelog = window.scrollY || 0;
   changelogPanel.hidden = false;
   document.body.classList.add('reading');
+  if (window.scrollTo) window.scrollTo(0, 0);
   if (store.changelogSeen !== APP_VERSION) {
     store.changelogSeen = APP_VERSION;
     save();
@@ -3491,6 +3500,7 @@ function openChangelog() {
 function closeChangelog() {
   changelogPanel.hidden = true;
   document.body.classList.remove('reading');
+  if (window.scrollTo) window.scrollTo(0, scrollBeforeChangelog);
   syncChangelogButton();
 }
 

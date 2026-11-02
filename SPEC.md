@@ -2933,7 +2933,8 @@ so nobody does.
 It's drawn in saved images too, because sharing an image is the case that
 prompted it. In the export it's drawn at full strength after the faded bench
 circle. On screen, opacity covers the whole circle, pill included, so the
-next-in circle is less faded than the rest of the bench (0.85 rather than 0.45).
+next-in circle was less faded than the rest of the bench (0.85 rather than
+0.45). v0.54 put that back.
 
 ### Not doing (yet)
 
@@ -3013,10 +3014,32 @@ again, in red, and changes nothing.
 another (names, system, a dragged position, the receiver's own team kept), the
 notice, dismissing it, a cut-off link, and an ordinary open saying nothing.
 
+## v0.54 — the next one in fades again, and What's new opens at the top (2026-11-02)
+
+### Next in, faded like the bench
+
+v0.52 lifted the next player in to 0.85 opacity so their pill would read,
+since opacity on the circle fades the pill with it. In use it made them look
+like they were already on court, which is worse than a fainter pill. They're
+back to the bench's 0.45 with everyone else off court, still labelled.
+
+Saved images are unchanged: the canvas draws the pill after the faded circle,
+at full strength, so an image keeps a crisp label on a faded player. The
+screen can't, without giving the pill its own element outside the circle.
+
+### What's new opened scrolled down
+
+The panel takes the page's place rather than floating over it like the
+scoreboard, so it kept the page's scroll position. Opened from the button at
+the bottom, it opened on its own oldest entries. Opening now scrolls to the
+top, and Done or Escape puts the page back where it was.
+
+`§69` covers the opacity rule and the scroll on open, Done and Escape.
+
 ## Tests
 
 ```
-node test/migration.js    # 910 checks — storage, migration, roles, formations,
+node test/migration.js    # 914 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,

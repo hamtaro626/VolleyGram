@@ -486,7 +486,9 @@ body.hide-labels .player .label {
 
 /* Off court now, on court next rotation (v0.52). The Server pill's spot and
    colours -- nobody is ever both, one is in zone 1 and the other is off court
-   -- so a screenshot shows who's up without anyone counting around the ring. */
+   -- so a screenshot shows who's up without anyone counting around the ring.
+   Faded with the rest of the bench (v0.54): v0.52 lifted the next one in to
+   0.85 so the pill would read, and it made them look like they were on court. */
 .player .next-tag {
   display: none;
   position: absolute;
@@ -509,11 +511,6 @@ body.hide-labels .player .label {
   display: block;
 }
 
-/* Less faded than the rest of the bench, so the pill reads. Opacity applies to
-   the whole circle, pill included, so this is the only way to lift it. */
-.player.benched.next-in {
-  opacity: 0.85;
-}
 
 /* The overlap flag, as a badge rather than a sentence under the court. Sits
    opposite the Server pill so a player who is both does not stack them, and

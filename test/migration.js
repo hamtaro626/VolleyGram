@@ -3830,5 +3830,30 @@ console.log('\n68. A shared link arrives');
     plain.document.getElementById('importNotice').hidden === true);
 }
 
+console.log('\n69. Next in fades with the bench, and What’s new opens at the top');
+{
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '');
+  check('the next one in is not lifted out of the bench fade',
+    !/\.player\.benched\.next-in\s*\{[^}]*opacity/.test(css)
+    && !/\.player\.next-in\s*\{[^}]*opacity/.test(css));
+
+  const scrolls = [];
+  const app = boot(undefined, undefined, {
+    scrollY: 1400,
+    scrollTo: (x, y) => { scrolls.push(y); },
+  });
+  const el = (id) => app.document.getElementById(id);
+  el('openChangelog').dispatch('click');
+  check('opening What’s new scrolls to the top', scrolls[scrolls.length - 1] === 0,
+    JSON.stringify(scrolls));
+  el('closeChangelog').dispatch('click');
+  check('Done puts you back where you were', scrolls[scrolls.length - 1] === 1400,
+    JSON.stringify(scrolls));
+  el('openChangelog').dispatch('click');
+  app.document.dispatch('keydown', { key: 'Escape', target: {} });
+  check('so does Escape', scrolls[scrolls.length - 1] === 1400, JSON.stringify(scrolls));
+}
+
 console.log(failures === 0 ? '\nALL PASS' : `\n${failures} FAILURE(S)`);
 process.exit(failures === 0 ? 0 : 1);
