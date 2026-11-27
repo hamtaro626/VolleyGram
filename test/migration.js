@@ -10,7 +10,9 @@ function stubElement(tag = 'div') {
   const el = {
     tagName: tag,
     children: [],
-    style: {},
+    // setProperty writes the custom property onto the object itself, so a test
+    // can read court.style['--tilt'] back.
+    style: { setProperty(name, value) { this[name] = String(value); } },
     dataset: {},
     textContent: '',
     innerHTML: '',
@@ -171,6 +173,7 @@ function boot(seedJson, seedHash, extraContext) {
       renderScoreboard, openScoreboard, closeScoreboard, openNewGame,
       closeNewGame, closeMore, syncMenuButtons, introSpot, playIntro,
       formatElapsed, renderTimes, swapPlayers, pickForSwap, setSwapMode,
+      setDragMode, viewFit, unproject,
       setSittingOut, askSitOut, playing, applySystem, syncLineupSelect,
       isNextIn, openChangelog, closeChangelog, step, openInstall, hideSheet,
       phonePlatform, isInstalled };
@@ -2121,10 +2124,13 @@ console.log('\n49. The control rows');
   check('compact, so three labels fit a 320px phone',
     find('openScoreboard').classes === 'compact', find('openScoreboard').classes);
 
-  check('Labels and the share drawer share the next row',
+  // v0.57 put the 3D switch between them: both are ways of looking.
+  check('Labels, 3D and the share drawer share the next row',
     JSON.stringify(find('toggleLabels').ids)
-      === JSON.stringify(['toggleLabels', 'toggleShare']),
+      === JSON.stringify(['toggleLabels', 'toggle3d', 'toggleShare']),
     JSON.stringify(find('toggleLabels').ids));
+  check('compact, so all three fit a 320px phone', find('toggleLabels').classes === 'compact',
+    find('toggleLabels').classes);
 
   check('Share holds the link and both exports on one row',
     JSON.stringify(find('shareLink').ids)
@@ -4281,6 +4287,207 @@ console.log('\n72. Referee: the whistle and the cheat sheet');
   check('a drifting thumb can’t turn a held whistle into a scroll',
     /\.ref-whistle\s*\{[^}]*touch-action:\s*none/.test(css)
     && /\.sb-whistle\s*\{[^}]*touch-action:\s*none/.test(css));
+}
+
+console.log('\n73. The 3D view');
+{
+  const app = boot();
+  const el = (id) => app.document.getElementById(id);
+  const court = el('court');
+  const angle = (name) => court.style[`--${name}`];
+  // A finger on empty court; closest() finds no player.
+  const at = (x, y) => ({ clientX: x, clientY: y, pointerId: 1, target: { closest: () => null } });
+
+  check('it starts flat', app.peek().store.threeD === false && !court.classList.contains('three-d'));
+  check('and the button says so', el('toggle3d').textContent === '3D: off'
+    && el('toggle3d').attrs['aria-pressed'] === 'false');
+  check('with no Recenter button', el('recenterView').hidden === true);
+  check('flat, Drag cycles Swap and Move only', el('dragMode').textContent === 'Drag: Swap');
+  el('dragMode').dispatch('click');
+  el('dragMode').dispatch('click');
+  check('and comes back round to Swap', el('dragMode').textContent === 'Drag: Swap',
+    el('dragMode').textContent);
+  app.call.setDragMode('turn');
+  check('Turn can’t be chosen flat', el('dragMode').textContent === 'Drag: Swap');
+
+  el('toggle3d').dispatch('click');
+  check('3D on tilts the court', court.classList.contains('three-d'));
+  check('the button follows', el('toggle3d').textContent === '3D: on'
+    && el('toggle3d').attrs['aria-pressed'] === 'true');
+  check('and Drag switches to Turn', el('dragMode').textContent === 'Drag: Turn'
+    && app.swap().swapMode === false, el('dragMode').textContent);
+  check('it starts straight on, leaning back 50 degrees',
+    angle('tilt') === '50deg' && angle('orbit') === '0deg', `${angle('tilt')} ${angle('orbit')}`);
+  check('Recenter is there, but has nothing to do yet',
+    el('recenterView').hidden === false && el('recenterView').classList.contains('idle'));
+  check('the eye sits back in court widths', /^\d+px$/.test(angle('depth')), angle('depth'));
+  const saved = JSON.parse(app.memory['volleyball-rotations-v1']);
+  check('and it is remembered', saved.threeD === true);
+  const reopened = boot(app.memory['volleyball-rotations-v1']);
+  check('next time too, in Drag: Turn', reopened.peek().store.threeD === true
+    && reopened.document.getElementById('dragMode').textContent === 'Drag: Turn');
+
+  // Turning. The stub court has no width, so a swipe is measured against 360px:
+  // a full width is half a turn.
+  const rotation = app.peek().currentRotation;
+  court.dispatch('pointerdown', at(100, 100));
+  check('a press on the court starts a turn', court.classList.contains('turning'));
+  court.dispatch('pointermove', at(190, 100));
+  check('a swipe right a quarter-width turns it 45 degrees', angle('orbit') === '-45deg',
+    angle('orbit'));
+  check('Recenter doesn’t change mid-turn', el('recenterView').classList.contains('idle'));
+  court.dispatch('pointermove', at(100, 100));
+  court.dispatch('pointermove', at(190, 100));
+  check('so it doesn’t flicker passing straight-on', el('recenterView').classList.contains('idle'));
+  court.dispatch('pointermove', at(100, 40));
+  check('a swipe up leans it further back', angle('tilt') === '60deg' && angle('orbit') === '0deg',
+    `${angle('tilt')} ${angle('orbit')}`);
+  court.dispatch('pointermove', at(-260, 100));
+  check('a full width turns it right round, to behind the other baseline',
+    angle('orbit') === '180deg', angle('orbit'));
+  court.dispatch('pointermove', at(-350, 100));
+  // 225 degrees round reads as 135 the other way.
+  check('and keeps going, folded into -180..180', angle('orbit') === '-135deg', angle('orbit'));
+  court.dispatch('pointermove', at(100, 900));
+  check('the lean stops at 30', angle('tilt') === '30deg', angle('tilt'));
+  court.dispatch('pointermove', at(100, -900));
+  check('and 60', angle('tilt') === '60deg', angle('tilt'));
+  court.dispatch('pointermove', at(10, 100));
+  court.dispatch('pointerup', at(10, 100));
+  check('letting go keeps the angle', angle('orbit') === '45deg'
+    && !court.classList.contains('turning'), angle('orbit'));
+  check('and only now does Recenter light up', !el('recenterView').classList.contains('idle'));
+  check('a sideways swipe in 3D turns the view, not the rotation',
+    app.peek().currentRotation === rotation, String(app.peek().currentRotation));
+  court.dispatch('pointermove', at(0, 0));
+  check('moving after letting go does nothing', angle('orbit') === '45deg');
+
+  // The fit: a turned court's corners stay inside the page.
+  const fit = app.call.viewFit;
+  check('straight on, it fills 82% of the width', Math.abs(fit(50, 0) * 0.5 * (2.4 / (2.4 - 0.5 * Math.sin(50 * Math.PI / 180))) - 0.41) < 1e-9,
+    String(fit(50, 0)));
+  check('turned, it shrinks', fit(50, 45) < fit(50, 0) && fit(50, 30) < fit(50, 0));
+  check('side-on, it needs less than at 45', fit(50, 90) > fit(50, 45));
+  check('half a turn round is the same size as straight on',
+    Math.abs(fit(50, 180) - fit(50, 0)) < 1e-9);
+  check('and it never grows past the laid-out size', [0, 30, 45, 90, 135, 180]
+    .every((o) => [30, 45, 60].every((t) => fit(t, o) <= 1 && fit(t, o) > 0.4)));
+
+  court.dispatch('pointerdown', at(0, 0));
+  court.dispatch('pointercancel', {});
+  check('a cancelled press ends the turn', !court.classList.contains('turning'));
+  court.dispatch('pointerdown', { ...at(0, 0), button: 2 });
+  check('a right-click doesn’t start one', !court.classList.contains('turning'));
+  let prevented = false;
+  court.dispatch('pointerdown', { ...at(0, 0), pointerType: 'mouse', preventDefault() { prevented = true; } });
+  court.dispatch('pointerup', at(0, 0));
+  check('a mouse press doesn’t start selecting text', prevented);
+  prevented = false;
+  court.dispatch('pointerdown', { ...at(0, 0), pointerType: 'touch', preventDefault() { prevented = true; } });
+  court.dispatch('pointerup', at(0, 0));
+  check('but a finger’s press is left alone', !prevented);
+
+  el('recenterView').dispatch('click');
+  check('Recenter puts it back straight on', angle('tilt') === '50deg' && angle('orbit') === '0deg'
+    && el('recenterView').classList.contains('idle'));
+
+  // Drag modes in 3D. Read mid-press: in Swap a drag snaps back on release
+  // anyway, so only the press itself shows whether a drag began.
+  const player = app.players()[Object.keys(app.players())[0]];
+  const onPlayer = { clientX: 0, clientY: 0, pointerId: 1, target: { closest: () => player } };
+  app.call.startDrag({ currentTarget: player, clientX: 0, clientY: 0, pointerId: 1 });
+  check('in Turn, pressing a player doesn’t pick them up', !player.classList.contains('dragging'));
+  app.call.endDrag();
+  court.dispatch('pointerdown', onPlayer);
+  check('it turns the view instead', court.classList.contains('turning'));
+  court.dispatch('pointerup', onPlayer);
+  el('dragMode').dispatch('click');
+  check('Drag goes Turn, Swap', el('dragMode').textContent === 'Drag: Swap', el('dragMode').textContent);
+  app.call.startDrag({ currentTarget: player, clientX: 0, clientY: 0, pointerId: 1 });
+  check('in Swap, a player can be dragged in 3D', player.classList.contains('dragging'));
+  court.dispatch('pointerdown', onPlayer);
+  check('and that press doesn’t also turn the view', !court.classList.contains('turning'));
+  app.call.endDrag();
+  court.dispatch('pointerdown', at(0, 0));
+  check('empty court still turns it', court.classList.contains('turning'));
+  court.dispatch('pointerup', at(0, 0));
+  el('dragMode').dispatch('click');
+  el('dragMode').dispatch('click');
+  check('then Move, then back to Turn', el('dragMode').textContent === 'Drag: Turn',
+    el('dragMode').textContent);
+
+  // Undoing the tilt: a floor point projected by a matrix comes back out.
+  // The matrix is arbitrary but has a real perspective row, like the court's.
+  const m = { m11: 0.7, m12: 0.2, m14: -0.0003, m21: -0.3, m22: 0.45, m24: -0.0006,
+    m41: 4, m42: -3, m44: 1 };
+  const project = (x, y) => {
+    const w = m.m14 * x + m.m24 * y + m.m44;
+    return [(m.m11 * x + m.m21 * y + m.m41) / w, (m.m12 * x + m.m22 * y + m.m42) / w];
+  };
+  check('a floor point comes back from the screen', [[0, 0], [120, -80], [-150, 150], [175, 175]]
+    .every(([x, y]) => {
+      const [sx, sy] = project(x, y);
+      const back = app.call.unproject(m, sx, sy);
+      return Math.abs(back.x - x) < 1e-6 && Math.abs(back.y - y) < 1e-6;
+    }));
+
+  // Off and back on starts straight on again, and leaves Turn behind.
+  court.dispatch('pointerdown', at(0, 0));
+  court.dispatch('pointermove', at(120, 0));
+  court.dispatch('pointerup', at(120, 0));
+  el('toggle3d').dispatch('click');
+  check('3D off lays it flat', !court.classList.contains('three-d')
+    && el('recenterView').hidden === true && app.peek().store.threeD === false);
+  check('and Drag leaves Turn for Swap', el('dragMode').textContent === 'Drag: Swap');
+  const flatRotation = app.peek().currentRotation;
+  court.dispatch('pointerdown', at(300, 100));
+  court.dispatch('pointerup', at(100, 100));
+  check('flat, a swipe changes the rotation again', app.peek().currentRotation !== flatRotation,
+    String(app.peek().currentRotation));
+  el('toggle3d').dispatch('click');
+  check('back on, it starts straight on', angle('orbit') === '0deg' && angle('tilt') === '50deg');
+  app.call.setDragMode('move');
+  el('toggle3d').dispatch('click');
+  check('off from Move stays in Move', el('dragMode').textContent === 'Drag: Move');
+
+  // During a quiz the court is an answer grid.
+  el('toggle3d').dispatch('click');
+  app.call.startQuiz();
+  court.dispatch('pointerdown', at(0, 0));
+  check('a quiz press doesn’t turn the view', !court.classList.contains('turning'));
+  app.call.endQuiz();
+
+  // Saves from before v0.57, and nonsense.
+  check('an old save opens flat', boot(JSON.stringify({ version: 2, lineups: {} })).peek().store.threeD === false);
+  check('so does a junk value', boot(JSON.stringify({ version: 2, threeD: 'yes' })).peek().store.threeD === false);
+
+  // The CSS that does the work.
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  const rule = (selector) => (css.match(new RegExp(`${selector.replace(/\./g, '\\.')}\\s*\\{[^}]*\\}`)) || [''])[0];
+  const courtRule = rule('.court.three-d');
+  check('the court is tilted and turned by the angles script.js sets',
+    /rotateX\(var\(--tilt/.test(courtRule) && /rotateZ\(var\(--orbit/.test(courtRule)
+    && /perspective\(var\(--depth/.test(courtRule) && /preserve-3d/.test(courtRule));
+  check('and takes every direction of a swipe for itself', /touch-action:\s*none/.test(courtRule));
+  check('and a mouse drag across it selects no text', /user-select:\s*none/.test(courtRule));
+  const playerRule = rule('.court.three-d .player');
+  check('players stand up facing you, undoing turn then tilt',
+    /rotateZ\(calc\(-1 \* var\(--orbit/.test(playerRule)
+    && /rotateX\(calc\(-1 \* var\(--tilt/.test(playerRule)
+    && playerRule.indexOf('rotateZ') < playerRule.indexOf('rotateX'));
+  check('feet on their spot, lifted so badges clear the floor',
+    /translate3d\(-50%, -100%, var\(--lift/.test(playerRule)
+    && /transform-origin:\s*50% 100%/.test(playerRule) && /--lift:\s*0\.6rem/.test(courtRule));
+  check('and the shadow dropped back down onto it',
+    /translateZ\(calc\(-1 \* var\(--lift/.test(rule('.court.three-d .player::after')));
+  check('the net stands up', /rotateX\(-90deg\)/.test(rule('.court.three-d .net')));
+  check('in a quiz, taps reach the zones through a standing player',
+    /pointer-events:\s*none/.test(rule('body.quizzing .court.three-d .player')));
+
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  check('Recenter sits outside the court, so it doesn’t tilt with it',
+    /<\/div>\s*<!--[\s\S]*?-->\s*<button class="recenter" id="recenterView" hidden>Recenter<\/button>/.test(html));
+  check('spelled Recenter everywhere', !/[Rr]ecentre/.test(html));
 }
 
 Promise.all(pendingChecks).then(() => {

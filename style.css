@@ -563,6 +563,123 @@ body.swapping .player {
   z-index: 6;
 }
 
+/* --- 3D view (v0.57) ------------------------------------------------- */
+
+/* The court tilted back as if seen from behind your own baseline, net at the
+   far end. All the numbers come from script.js as custom properties: --tilt
+   and --orbit are the angle a swipe sets, --fit shrinks the court so its near
+   edge stays on screen as it turns, and --depth is how far away the eye is.
+
+   Transforms are listed right to left: turn the court on the floor (orbit),
+   lean it back (tilt), project it (perspective), then shrink the result. */
+.court.three-d {
+  transform: scale(var(--fit, 0.82)) perspective(var(--depth, 860px))
+    rotateX(var(--tilt, 50deg)) rotateZ(var(--orbit, 0deg));
+  transform-style: preserve-3d;
+  transition: transform 350ms cubic-bezier(0.4, 0, 0.2, 1);
+  /* Every direction is a turn of the view here, so the browser mustn't take
+     the vertical ones for scrolling. The court is shorter on screen in 3D,
+     which leaves more page around it to scroll from. */
+  touch-action: none;
+  cursor: grab;
+  /* A mouse drag that turns the court would otherwise also select text, and
+     the Recenter row below lit up blue as the pointer crossed it. */
+  user-select: none;
+  -webkit-user-select: none;
+  /* How far each player stands above the floor. Their Server and Next in
+     badges hang below the disc, and with the disc's foot on the floor the
+     badge went through it and was cut off by the court. */
+  --lift: 0.6rem;
+  /* A tilted court is shorter on screen than the square it's laid out in.
+     These hand most of the empty space back, so the controls stay close. */
+  margin-top: -12%;
+  margin-bottom: -18%;
+  /* Standing up, a disc this size hides the one behind it. */
+  --player-size: 19%;
+}
+
+/* The bench lies on the floor in front of the court, so it's foreshortened
+   with it and needs far less than the flat view's 24%. */
+.court.three-d.has-bench {
+  margin-bottom: -4%;
+}
+
+/* Following a finger: no easing, or the court lags behind it. */
+.court.three-d.turning {
+  transition: none;
+  cursor: grabbing;
+}
+
+/* Each player stands up, feet on their spot. The bottom of the disc is put on
+   the spot rather than its middle, then the court's own turn and tilt are
+   undone in reverse so the disc faces you whatever the angle. */
+.court.three-d .player {
+  transform-origin: 50% 100%;
+  transform: translate3d(-50%, -100%, var(--lift, 0.6rem))
+    rotateZ(calc(-1 * var(--orbit, 0deg))) rotateX(calc(-1 * var(--tilt, 50deg)));
+  transform-style: preserve-3d;
+  cursor: inherit;
+}
+
+/* A shadow on the floor where each one stands, which is what says where they
+   are once they're standing up. Turned back down flat by undoing the player's
+   own turn. */
+.court.three-d .player::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 0;
+  width: 70%;
+  aspect-ratio: 1 / 1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(0, 0, 0, 0.45), rgba(0, 0, 0, 0));
+  /* The last step drops it back down by the player's lift, onto the floor. */
+  transform: translate(-50%, 50%) rotateX(var(--tilt, 50deg)) rotateZ(var(--orbit, 0deg))
+    translateZ(calc(-1 * var(--lift, 0.6rem)));
+  pointer-events: none;
+}
+
+/* The net stands up along the far edge instead of lying flat on it: hinged
+   at its foot and swung up through 90 degrees. A mesh of the court's own ink,
+   with a solid tape along the top like the real thing. */
+.court.three-d .net {
+  top: auto;
+  bottom: 100%;
+  height: 14%;
+  transform-origin: 50% 100%;
+  transform: rotateX(-90deg);
+  border-radius: 0;
+  border-top: 4px solid var(--line);
+  background:
+    repeating-linear-gradient(90deg, var(--line-soft) 0 1px, transparent 1px 7px),
+    repeating-linear-gradient(0deg, var(--line-soft) 0 1px, transparent 1px 7px);
+}
+
+/* In a quiz the zones are the answers, and the server stays standing as a
+   reference. Flat, the zone buttons sit above the players by z-index; in 3D
+   the browser stacks by depth instead and ignores z-index, so the server's
+   disc covered zone 1's button. Taps go through the players instead. */
+body.quizzing .court.three-d .player {
+  pointer-events: none;
+}
+
+.recenter {
+  display: block;
+  margin: 0 0 0 auto;
+  padding: 0.35rem 0.8rem;
+  font-size: 0.8rem;
+}
+
+.recenter[hidden] {
+  display: none;
+}
+
+/* Straight on already: nothing to recenter, but the space is kept so the
+   page doesn't jump when the first swipe makes it needed. */
+.recenter.idle {
+  visibility: hidden;
+}
+
 /* --- Colour by role --------------------------------------------------- */
 
 /* Bright fills with near-black text. This direction gets *more* contrast than

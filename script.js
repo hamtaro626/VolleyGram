@@ -395,6 +395,7 @@ let store = {
   activeId: 'first',
   lineups: { first: newLineup('My team') },
   showLabels: true,
+  threeD: false,         // the tilted court (v0.57), a display preference like Labels
   roleScope: 'all',      // whether a role edit hits every rotation or just this one
   transparentExport: false,
   checkOverlap: false,   // flag base positions that break rotational order
@@ -1025,6 +1026,8 @@ function load() {
       activeId: lineups[activeId] ? activeId : ids[0],
       lineups,
       showLabels: parsed.showLabels !== false,
+      // Added in v0.57. Defaults off, so an older save needs no version bump.
+      threeD: parsed.threeD === true,
       roleScope: parsed.roleScope === 'rotation' ? 'rotation' : 'all',
       transparentExport: parsed.transparentExport === true,
       // Added in v0.19. Defaults off, so an older save needs no version bump.
@@ -1997,6 +2000,7 @@ function step(delta) {
 let dragTarget = null;
 let grabOffsetX = 0;
 let grabOffsetY = 0;
+let floorGrab = { x: 0, y: 0 }; // the same, on a tilted court's floor (v0.57)
 
 // Where the pointer went down, and whether it has since travelled far enough to
 // count as a drag. Both exist so that a tap can be told apart from a drag.
@@ -2101,8 +2105,13 @@ function setSittingOut(id, out) {
 // for positioning, is one tap away on the Drag button.
 //
 // Not stored. Every open starts in Swap, so nobody comes back to a mode they
-// forgot they left on.
+// forgot they left on -- or in Turn, if the court opens in 3D (v0.57).
+//
+// v0.57 added a third, Turn, offered only in 3D: a drag turns the view rather
+// than doing anything to a player. dragMode is the mode; swapMode stays as the
+// one question most of the code asks.
 
+let dragMode = 'swap';
 let swapMode = true;
 let swapPicked = null;  // tap-to-swap: the first player tapped, by id
 let swapTarget = null;  // whoever a swap drag is hovering over right now
@@ -2111,8 +2120,12 @@ let swapTarget = null;  // whoever a swap drag is hovering over right now
 // than most of a circle's width, so brushing a neighbour doesn't count but
 // covering them does. Nearest wins when two are in reach.
 function swapTargetUnder(el) {
-  const courtRect = court.getBoundingClientRect();
-  const reach = el.getBoundingClientRect().width * 0.7;
+  // In laid-out sizes rather than on-screen ones: tilted, the court's box on
+  // screen is squashed and a standing disc's isn't, and the distances drifted.
+  // Flat, the two are the same.
+  const rect = court.getBoundingClientRect();
+  const courtRect = { width: court.clientWidth || rect.width, height: court.clientHeight || rect.height };
+  const reach = (el.offsetWidth || el.getBoundingClientRect().width) * 0.7;
   const x = (parseFloat(el.style.left) / 100) * courtRect.width;
   const y = (parseFloat(el.style.top) / 100) * courtRect.height;
   const layout = positionsFor(currentFormation, currentRotation);
@@ -2196,17 +2209,34 @@ function pickForSwap(id) {
   render();
 }
 
-function setSwapMode(on) {
-  swapMode = on;
+const DRAG_MODE_LABELS = { swap: 'Swap', move: 'Move', turn: 'Turn' };
+
+function setDragMode(mode) {
+  if (!DRAG_MODE_LABELS[mode]) return;
+  // Turn only means something on a tilted court.
+  if (mode === 'turn' && !store.threeD) mode = 'swap';
+  dragMode = mode;
+  swapMode = mode === 'swap';
   swapPicked = null;
   markSwapTarget(null);
-  document.body.classList.toggle('swapping', on);
+  document.body.classList.toggle('swapping', swapMode);
   syncDragModeButton();
   render();
 }
 
+// Kept by name: the tests and the Drag button's history both use it.
+function setSwapMode(on) {
+  setDragMode(on ? 'swap' : 'move');
+}
+
+// Swap, Move, and in 3D Turn, round in that order.
+function nextDragMode() {
+  const order = store.threeD ? ['swap', 'move', 'turn'] : ['swap', 'move'];
+  return order[(order.indexOf(dragMode) + 1) % order.length];
+}
+
 function syncDragModeButton() {
-  dragModeButton.textContent = `Drag: ${swapMode ? 'Swap' : 'Move'}`;
+  dragModeButton.textContent = `Drag: ${DRAG_MODE_LABELS[dragMode]}`;
   dragModeButton.setAttribute('aria-pressed', String(swapMode));
 }
 
@@ -2233,6 +2263,9 @@ function finishSwapDrag() {
 }
 
 function startDrag(event) {
+  // Drag: Turn (v0.57, 3D only): the press turns the view instead, and the
+  // court's own listener picks it up.
+  if (dragMode === 'turn' && !quiz) return;
   dragTarget = event.currentTarget;
   dragFrom = { x: event.clientX, y: event.clientY };
   dragMoved = false;
@@ -2244,6 +2277,17 @@ function startDrag(event) {
   // jump to sit under the fingertip the moment you touch it.
   grabOffsetX = event.clientX - (rect.left + rect.width / 2);
   grabOffsetY = event.clientY - (rect.top + rect.height / 2);
+  // Tilted, the offset is kept on the floor instead: how far the floor point
+  // under the finger is from the player's spot. A finger on a standing disc is
+  // over a floor point well behind their feet, and this keeps them from
+  // jumping back to meet it.
+  if (store.threeD) {
+    const floor = courtPointAt(event.clientX, event.clientY);
+    floorGrab = {
+      x: floor.x - parseFloat(dragTarget.style.left),
+      y: floor.y - parseFloat(dragTarget.style.top),
+    };
+  }
 
   // Routes every later pointer event to this element, even if the finger
   // slides off it. Without this, fast drags drop the player.
@@ -2268,9 +2312,17 @@ function onDrag(event) {
     if (!swapMode) pushHistory();
   }
 
-  const courtRect = court.getBoundingClientRect();
-  const x = ((event.clientX - grabOffsetX - courtRect.left) / courtRect.width) * 100;
-  const y = ((event.clientY - grabOffsetY - courtRect.top) / courtRect.height) * 100;
+  let x;
+  let y;
+  if (store.threeD) {
+    const floor = courtPointAt(event.clientX, event.clientY);
+    x = floor.x - floorGrab.x;
+    y = floor.y - floorGrab.y;
+  } else {
+    const courtRect = court.getBoundingClientRect();
+    x = ((event.clientX - grabOffsetX - courtRect.left) / courtRect.width) * 100;
+    y = ((event.clientY - grabOffsetY - courtRect.top) / courtRect.height) * 100;
+  }
 
   const lowestY = rosterSize() > COURT_SPOTS ? MAX_DRAG_Y : 100;
   dragTarget.style.left = `${clamp(x, 0, 100)}%`;
@@ -3317,7 +3369,7 @@ document.getElementById('shareLink').addEventListener('click', shareCurrent);
 document.getElementById('startQuiz').addEventListener('click', startQuiz);
 
 const dragModeButton = document.getElementById('dragMode');
-dragModeButton.addEventListener('click', () => setSwapMode(!swapMode));
+dragModeButton.addEventListener('click', () => setDragMode(nextDragMode()));
 document.getElementById('endQuiz').addEventListener('click', endQuiz);
 document.getElementById('quizNext').addEventListener('click', nextQuizQuestion);
 
@@ -3365,11 +3417,21 @@ let swipeFrom = null;
 
 court.addEventListener('pointerdown', (event) => {
   const onPlayer = event.target.closest && event.target.closest('.player');
+  // 3D: empty court turns the view, and so does anywhere in Drag: Turn. A press
+  // on a player in Swap or Move is that player's drag, already started.
+  if (store.threeD && !quiz) {
+    if (!onPlayer || dragMode === 'turn') startViewTurn(event);
+    return;
+  }
   // During a quiz the court is an answer grid, not a rotation carousel.
   swipeFrom = (onPlayer || quiz) ? null : { x: event.clientX, y: event.clientY };
 });
 
 court.addEventListener('pointerup', (event) => {
+  if (viewFrom) {
+    endViewTurn();
+    return;
+  }
   if (!swipeFrom) return;
   const dx = event.clientX - swipeFrom.x;
   const dy = event.clientY - swipeFrom.y;
@@ -3379,7 +3441,11 @@ court.addEventListener('pointerup', (event) => {
   step(dx < 0 ? 1 : -1);
 });
 
-court.addEventListener('pointercancel', () => { swipeFrom = null; });
+court.addEventListener('pointercancel', () => {
+  swipeFrom = null;
+  endViewTurn();
+});
+court.addEventListener('pointermove', turnView);
 
 document.addEventListener('keydown', (event) => {
   // Don't hijack the arrows while someone's typing a name or in a dropdown.
@@ -3459,6 +3525,221 @@ function syncRosterButton() {
   rosterButton.textContent = open ? 'Hide roster' : 'Show roster';
   rosterButton.setAttribute('aria-expanded', String(open));
 }
+
+// --- 3D view (v0.57) --------------------------------------------------
+//
+// The same court, tilted back as if seen from behind your own baseline, with
+// the players standing up on it. It's done by the browser's own 3D transforms
+// on the page elements already there, so there's no 3D library, no models and
+// nothing extra to download -- and the players still slide between rotations,
+// which is the part a flat diagram is worst at showing.
+//
+// A swipe turns it: side to side spins the court like a turntable, all the way
+// round, so you can look from behind the other team's baseline too. Up and down
+// raises or lowers the eye. There's no roll, the third axis: rolling only tips
+// the court like a crooked photo, and shows nothing the other two don't.
+//
+// Drag: Turn makes a press anywhere turn the view, players included. In Swap
+// or Move, a press on a player drags them as it does flat, and a press on
+// empty court turns the view. Turn is only offered in 3D, and switching 3D on
+// selects it, since looking round is what 3D is for.
+
+const VIEW_TILT = 50; // degrees the court leans back from facing you
+// 30 degrees of range. Past 60 the far row of players stack up behind the
+// near one and hide it; under 30 it's nearly the flat view again.
+const VIEW_TILT_MIN = 30;
+const VIEW_TILT_MAX = 60;
+// A swipe across the whole court turns it this far.
+const VIEW_TURN_PER_WIDTH = 180;
+// The most of the page's width the turned, tilted court may cover.
+const VIEW_FIT = 0.82;
+// How far away the eye is, in court widths. Nearer exaggerates the
+// perspective; further flattens it towards a plain tilt.
+const VIEW_DEPTH = 2.4;
+
+let view = { tilt: VIEW_TILT, orbit: 0 };
+let viewFrom = null;
+const toggle3dButton = document.getElementById('toggle3d');
+const recenterButton = document.getElementById('recenterView');
+
+function viewCentred() {
+  return view.tilt === VIEW_TILT && view.orbit === 0;
+}
+
+// Any angle, folded into -180..180, so a court spun round twice reads the
+// same as one spun round not at all.
+function wrapDegrees(degrees) {
+  const wrapped = ((((degrees + 180) % 360) + 360) % 360) - 180;
+  return wrapped === -180 ? 180 : wrapped;
+}
+
+// How much to shrink the court so its widest point stays inside the space it
+// was laid out in. Works out where the four corners land on screen -- turned,
+// leaned back, then put in perspective, the same steps the CSS takes -- and
+// scales so the furthest one sits at VIEW_FIT of the half-width. A sum of
+// sines and cosines did this up to 30 degrees, but a court turned side-on
+// isn't foreshortened the way a straight one is, and it fell apart.
+function viewFit(tilt, orbit) {
+  const t = (tilt * Math.PI) / 180;
+  const o = (orbit * Math.PI) / 180;
+  let widest = 0;
+  [[-1, -1], [1, -1], [1, 1], [-1, 1]].forEach(([cx, cy]) => {
+    // Corners at ±0.5 of a court width. Turned on the floor (rotateZ)...
+    const x = 0.5 * (cx * Math.cos(o) - cy * Math.sin(o));
+    const y = 0.5 * (cx * Math.sin(o) + cy * Math.cos(o));
+    // ...leaned back (rotateX: the near edge comes towards you)...
+    const z = y * Math.sin(t);
+    // ...and seen from VIEW_DEPTH court widths away.
+    const along = Math.abs(x) * (VIEW_DEPTH / (VIEW_DEPTH - z));
+    widest = Math.max(widest, along);
+  });
+  return Math.min(1, (0.5 * VIEW_FIT) / widest);
+}
+
+function applyView() {
+  const on = store.threeD;
+  court.classList.toggle('three-d', on);
+  const style = court.style;
+  if (style.setProperty) {
+    // clientWidth is the laid-out width, which the transform doesn't change.
+    const depth = (court.clientWidth || 360) * VIEW_DEPTH;
+    style.setProperty('--tilt', `${view.tilt}deg`);
+    style.setProperty('--orbit', `${view.orbit}deg`);
+    style.setProperty('--fit', viewFit(view.tilt, view.orbit).toFixed(3));
+    style.setProperty('--depth', `${Math.round(depth)}px`);
+  }
+  toggle3dButton.textContent = `3D: ${on ? 'on' : 'off'}`;
+  toggle3dButton.setAttribute('aria-pressed', String(on));
+  recenterButton.hidden = !on;
+  // Not while a finger is turning it: the angle passes through straight-on on
+  // its way round, and the button flickered in and out each time it did.
+  if (!viewFrom) recenterButton.classList.toggle('idle', viewCentred());
+}
+
+function resetView() {
+  view = { tilt: VIEW_TILT, orbit: 0 };
+  applyView();
+}
+
+// Where on the court floor a point on the screen is, in the same percentages
+// a player's left and top use. Flat, that's a straight proportion of the
+// court's box. Tilted, the box on screen is a projection of the floor, so the
+// projection is undone: the court's own transform matrix, solved backwards for
+// the one point on the floor that lands under the finger.
+function courtPointAt(clientX, clientY) {
+  if (!store.threeD || typeof getComputedStyle !== 'function' || typeof DOMMatrix !== 'function') {
+    const rect = court.getBoundingClientRect();
+    return {
+      x: ((clientX - rect.left) / rect.width) * 100,
+      y: ((clientY - rect.top) / rect.height) * 100,
+    };
+  }
+  const width = court.clientWidth;
+  const height = court.clientHeight;
+  const centre = courtLayoutCentre();
+  const m = new DOMMatrix(getComputedStyle(court).transform);
+  const floor = unproject(m, clientX - centre.x, clientY - centre.y);
+  return {
+    x: ((floor.x + width / 2) / width) * 100,
+    y: ((floor.y + height / 2) / height) * 100,
+  };
+}
+
+// The middle of the court's box as laid out, before the transform -- which is
+// also the point the transform turns about. getBoundingClientRect() can't give
+// it: that's the box around the tilted shape.
+function courtLayoutCentre() {
+  const parent = court.offsetParent;
+  let left = court.offsetLeft;
+  let top = court.offsetTop;
+  if (parent && parent !== document.body) {
+    const rect = parent.getBoundingClientRect();
+    left += rect.left + parent.clientLeft;
+    top += rect.top + parent.clientTop;
+  } else {
+    left -= window.scrollX || 0;
+    top -= window.scrollY || 0;
+  }
+  return { x: left + court.offsetWidth / 2, y: top + court.offsetHeight / 2 };
+}
+
+// The point (x, y) on the floor -- measured from the court's middle -- that
+// the matrix m puts at screen offset (sx, sy). A point on the floor has z = 0,
+// so m projects it as
+//   sx = (a x + c y + e) / (p x + q y + s),  sy = (b x + d y + f) / (same)
+// and multiplying out gives two straight-line equations in x and y.
+function unproject(m, sx, sy) {
+  const a1 = m.m11 - sx * m.m14;
+  const b1 = m.m21 - sx * m.m24;
+  const c1 = sx * m.m44 - m.m41;
+  const a2 = m.m12 - sy * m.m14;
+  const b2 = m.m22 - sy * m.m24;
+  const c2 = sy * m.m44 - m.m42;
+  const det = a1 * b2 - a2 * b1;
+  if (Math.abs(det) < 1e-9) return { x: 0, y: 0 };
+  return { x: (c1 * b2 - c2 * b1) / det, y: (a1 * c2 - a2 * c1) / det };
+}
+
+function startViewTurn(event) {
+  if (event.button > 0) return; // a mouse's right or middle button
+  // A mouse drag would otherwise start selecting text -- the Recenter button's
+  // row lit up blue as the pointer crossed it. A finger doesn't select, and
+  // preventing a touch's default can swallow the tap that follows.
+  if (event.pointerType === 'mouse' && event.preventDefault) event.preventDefault();
+  viewFrom = {
+    x: event.clientX,
+    y: event.clientY,
+    tilt: view.tilt,
+    orbit: view.orbit,
+    width: court.clientWidth || 360,
+  };
+  // Keeps the turn going if the finger slides off the court.
+  if (event.pointerId !== undefined && court.setPointerCapture) {
+    court.setPointerCapture(event.pointerId);
+  }
+  // Follows the finger directly rather than easing after it.
+  court.classList.add('turning');
+}
+
+function turnView(event) {
+  if (!viewFrom) return;
+  const dx = event.clientX - viewFrom.x;
+  const dy = event.clientY - viewFrom.y;
+  // Dragging right brings the near edge with the finger, which turns the
+  // court anticlockwise. Up pushes the far edge away: more tilt.
+  const across = (dx / viewFrom.width) * VIEW_TURN_PER_WIDTH;
+  const up = (-dy / viewFrom.width) * (VIEW_TILT_MAX - VIEW_TILT_MIN) * 2;
+  view.orbit = wrapDegrees(Math.round(viewFrom.orbit - across));
+  view.tilt = Math.round(clamp(viewFrom.tilt + up, VIEW_TILT_MIN, VIEW_TILT_MAX));
+  applyView();
+}
+
+function endViewTurn() {
+  if (!viewFrom) return;
+  viewFrom = null;
+  court.classList.remove('turning');
+  applyView();
+}
+
+function toggle3d() {
+  store.threeD = !store.threeD;
+  // Each time it's switched on, it starts from the straight-on angle.
+  view = { tilt: VIEW_TILT, orbit: 0 };
+  endViewTurn();
+  save();
+  applyView();
+  // On, a drag turns the view; off, Turn has nothing to turn, so it's Swap.
+  if (store.threeD) setDragMode('turn');
+  else if (dragMode === 'turn') setDragMode('swap');
+}
+
+toggle3dButton.addEventListener('click', toggle3d);
+recenterButton.addEventListener('click', resetView);
+// The eye's distance is measured in court widths, so a resize (or a phone
+// turned sideways) moves it.
+window.addEventListener('resize', () => {
+  if (store.threeD) applyView();
+});
 
 // --- What's new (v0.52) ------------------------------------------------
 //
@@ -3926,6 +4207,11 @@ load();
 importFromUrl();
 document.getElementById('version').textContent = `v${APP_VERSION}`;
 syncLabelsButton();
+// Already in 3D from last time: start tilted, rather than tilting in from flat
+// as the button does. 'turning' is the no-easing state a swipe uses.
+court.classList.add('turning');
+applyView();
+requestAnimationFrame(() => court.classList.remove('turning'));
 syncDragModeButton();
 syncChangelogButton();
 syncInstallButton();
@@ -3945,6 +4231,9 @@ overlapToggle.checked = store.checkOverlap;
 // Every load, and never in front of someone who asked for less motion.
 const introducing = motionAllowed();
 rebuild(introducing);
+// Opening in 3D opens in Drag: Turn, as switching it on does. After rebuild(),
+// since setDragMode() redraws the players and they don't exist before it.
+if (store.threeD) setDragMode('turn');
 renderScoreboard();
 
 // Write straight back after loading, so data saved by an older version gets

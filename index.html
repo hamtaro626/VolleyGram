@@ -17,9 +17,9 @@
        purpose rather than arrived at by accident. The maskable one is a
        separate file because Android crops to a circle of 80% diameter, which
        would take the ends off a wordmark drawn to the edges. -->
-  <link rel="icon" href="assets/favicon-32.png?v=0.56" sizes="32x32" type="image/png">
-  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.56">
-  <link rel="manifest" href="manifest.webmanifest?v=0.56">
+  <link rel="icon" href="assets/favicon-32.png?v=0.57" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.57">
+  <link rel="manifest" href="manifest.webmanifest?v=0.57">
 
   <!-- Link previews. The share feature sends URLs to team-mates by text, so
        these are what a chat app draws in the bubble. og:image has to be
@@ -32,13 +32,13 @@
   <meta property="og:type" content="website">
   <meta property="og:title" content="VolleyGram">
   <meta property="og:description" content="A volleyball rotation reference. See where everyone stands in every rotation.">
-  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.56">
+  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.57">
   <meta name="twitter:card" content="summary_large_image">
   <!-- The ?v= query is cache busting. A browser caches by URL, so changing the
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.56">
+  <link rel="stylesheet" href="style.css?v=0.57">
 </head>
 <body>
   <main>
@@ -60,7 +60,7 @@
     <h1 class="masthead">
       <button type="button" id="replayIntro" class="title-replay"
         title="Replay the intro" aria-label="VolleyGram. Replay the intro."
-        ><img class="logo" src="assets/logo.webp?v=0.56" width="179" height="200"
+        ><img class="logo" src="assets/logo.webp?v=0.57" width="179" height="200"
           alt="VolleyGram"></button>
       <span class="tagline">A Volleyball Rotation Reference</span>
     </h1>
@@ -91,6 +91,11 @@
       <!-- Tappable zone cells, only live during a quiz -->
       <div class="zone-targets" id="zoneTargets"></div>
     </div>
+
+    <!-- 3D view only (v0.57): back to the straight-on angle after a swipe.
+         Outside the court, or it would tilt with it. Its space is held while
+         3D is on, so it appearing doesn't push everything below it down. -->
+    <button class="recenter" id="recenterView" hidden>Recenter</button>
 
     <!-- polite: announce the new rotation after the tap, not over it -->
     <p class="status" id="status" aria-live="polite"></p>
@@ -131,13 +136,14 @@
 
     <!-- The three that act on the diagram itself. Drag says what a drag on the
          court does: Swap trades two players' places in the lineup (the
-         default, v0.49), Move positions one in this rotation. Compact so three
+         default, v0.49), Move positions one in this rotation, and in 3D Turn
+         turns the view (v0.57). Compact so three
          fit across at 320px, the same as the share row. -->
     <div class="actions compact">
       <button id="undo" disabled>Undo</button>
       <button id="reset">Reset</button>
       <button id="dragMode" aria-pressed="true"
-        title="What dragging a player does. Swap trades two players' places in the lineup; Move positions one in this rotation.">Drag: Swap</button>
+        title="What dragging does. Swap trades two players' places in the lineup; Move positions one in this rotation; in 3D, Turn turns the court.">Drag: Swap</button>
     </div>
 
     <div class="rotations" id="rotationButtons">
@@ -152,10 +158,12 @@
       <button id="startQuiz">Quiz Mode</button>
     </div>
 
-    <!-- A display toggle, and the drawer for handing the diagram to something
-         else. One job each, so both say what they are. -->
-    <div class="actions two">
+    <!-- Two display toggles, and the drawer for handing the diagram to
+         something else. One job each, so all three say what they are. Compact
+         so three fit across at 320px, like the rows above. -->
+    <div class="actions compact">
       <button id="toggleLabels" aria-pressed="true">Labels: on</button>
+      <button id="toggle3d" aria-pressed="false">3D: off</button>
       <button id="toggleShare" aria-expanded="false" aria-controls="shareMenu">Share&hellip;</button>
     </div>
 
@@ -335,6 +343,14 @@
       <button id="closeChangelog">Done</button>
     </div>
     <ol class="cl-list">
+      <li data-version="0.57">
+        <h3>v0.57</h3>
+        <ul>
+          <li><strong>3D view</strong>, next to Labels: the court tilts back as if you're standing behind your own baseline, with the net standing up and the players standing on their spots. They still slide into place when you change rotation.</li>
+          <li>Swipe on the court to look from a different angle: side to side turns it all the way round, up and down raises or lowers your view. <em>Recenter</em> puts it back.</li>
+          <li><strong>Drag: Turn</strong>, in 3D: a drag anywhere turns the court. Tap Drag for Swap or Move to drag players in 3D too.</li>
+        </ul>
+      </li>
       <li data-version="0.56">
         <h3>v0.56</h3>
         <ul>
@@ -727,6 +743,6 @@
        button: it floats over the page, so it must never swallow a tap. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.56"></script>
+  <script src="script.js?v=0.57"></script>
 </body>
 </html>

@@ -3255,14 +3255,179 @@ and every official signal and flag on the page exactly once. `§49` now expects
 Referee between Scoreboard and Quiz Mode. The new checks were each broken on
 purpose once to confirm they fail.
 
+## v0.57 — a 3D view (2026-11-26)
+
+A **3D: off/on** switch beside Labels. On, the court tilts back as if seen from
+behind your own baseline: the net stands up along the far edge, each player
+stands upright on their spot with a shadow under them, and they still slide
+into place when the rotation changes. The idea is that some players read a
+rotation more easily from roughly where they'd stand than from above.
+
+### Why a tilt, not a 3D engine or models
+
+Three ways were weighed (2026-11-26):
+
+1. **Tilt the court that's already there** with the browser's own CSS 3D
+   transforms. No new files, nothing downloaded, offline unaffected, no
+   dependency.
+2. **A real 3D scene** with Three.js and simple shapes (cylinders for players).
+   ~600 KB vendored into the repo, and the first time the app would depend on
+   someone else's code.
+3. **Downloaded character models** on top of 2. Free sources exist (Kenney and
+   Quaternius are CC0; Poly Pizza is per-model licences; Mixamo's terms are
+   unclear for shipping the files in a public app). Each is hundreds of KB to a
+   few MB, needs recolouring by role, and a realistic figure is harder to tell
+   apart at a glance than a coloured disc with a name on it.
+
+1 was built first, to find out whether a 3D angle helps at all before paying
+for 2. Models only if plain shapes turn out not to be enough.
+
+### How it's built
+
+The court element gets `transform: scale(fit) perspective(depth) rotateX(tilt)
+rotateZ(orbit)` with `transform-style: preserve-3d`. Each player undoes the
+court's turn and tilt in reverse, `rotateZ(-orbit) rotateX(-tilt)`, pivoting at
+the bottom of the disc, which is put on the spot instead of its middle. That's
+what makes them stand up and face you at every angle. Each player's shadow
+(`::after`) applies the tilt and turn again to lie back down flat. The net is
+hinged at its foot and swung up 90°. With `preserve-3d` the browser sorts what's
+in front, so nearer players cover further ones without any z-index.
+
+The angles come from script.js as custom properties (`--tilt`, `--orbit`,
+`--fit`, `--depth`), so CSS holds the shape of the transform and the script only
+holds numbers.
+
+- **Eye distance** (`--depth`) is 2.4 court widths, worked out from the court's
+  laid-out width (`clientWidth`, which the transform doesn't change) so a phone
+  and an iPad get the same amount of perspective. Recalculated on resize.
+- **Fit.** `viewFit()` works out where the four corners land on screen,
+  turned, leaned back and put in perspective as the CSS does, and scales so
+  the widest sits at 82% of the width. The first version used a sum of sines
+  and cosines tuned for ±30°; once the court could turn all the way round it
+  fell apart, because a court turned side-on isn't foreshortened the way a
+  straight one is.
+- **Space.** A tilted court is shorter on screen than the square it's laid out
+  in, so negative margins hand most of the gap back to the controls. Players are
+  19% of the court instead of 23%, since standing up, a full-size disc hides
+  the one behind it.
+- **Lifted off the floor.** Players stand 0.6rem above it (`--lift`), and
+  their shadows are dropped back down by the same. With the disc's foot on the
+  floor, the Server and Next in badges, which hang below the disc, went through
+  the floor and were cut off by it.
+- **Opening the app already in 3D** starts tilted; only the switch animates the
+  tilt in. (A screenshot caught a fresh load mid-animation, looking flat.)
+
+### Swiping
+
+- **Side to side turns the court like a turntable, all the way round.** A
+  swipe across the whole court is half a turn, so you can look from behind the
+  other team's baseline. It keeps going, folded into -180..180. The first build
+  stopped at 30° either way. The ask after trying it was "180 degrees", meant
+  as a smaller range than a full turn; it was built as a full turn, and kept.
+  `VIEW_TURN_PER_WIDTH` and `wrapDegrees()` are where to change that.
+- **Up and down raises or lowers the eye**, a 30° range from 30° to 60° of
+  lean, starting at 50°. 65° was tried as the top first: the far row stacked up
+  behind the near one and hid it. Under 30° it's close to the flat view again.
+- **No roll, the third axis.** It only tips the court like a crooked photo,
+  and shows nothing the other two don't.
+
+The angle stays where you leave it. **Recenter**, under the court on the right,
+puts it back. Its space is held while 3D is on (hidden, not removed) so the page
+doesn't jump when the first swipe makes it needed, and it only changes once the
+finger lifts: while turning, the angle passes through straight-on on its way
+round, and the button flickered in and out each time it did. Switching 3D off
+and on starts straight on again. The angle isn't saved; 3D on or off is.
+
+**A mouse drag selected text.** On a computer, turning the court with the mouse
+also started a text selection, and the Recenter row lit up blue as the pointer
+crossed it. The court is `user-select: none` in 3D, and a mouse press that
+starts a turn has its default prevented. A touch press doesn't, since that can
+swallow the tap that follows, and fingers don't select by dragging anyway.
+Checked by driving real mouse input into Chrome over its debugging protocol:
+the earlier build left a selection behind, this one leaves none.
+
+### Drag: Swap, Move, and Turn
+
+The Drag button gained a third mode, **Turn**, offered only in 3D: a drag
+anywhere, players included, turns the view. It cycles Swap → Move → Turn in 3D
+and Swap → Move flat. Switching 3D on selects Turn, since looking round is what
+3D is for; switching it off from Turn goes back to Swap, and from Swap or Move
+leaves them be. Opening the app already in 3D opens in Turn. "Turn" rather than
+"Rotate": in this app a rotation is the lineup going round, and the Drag button
+sits right above the rotation numbers.
+
+**Swap and Move now work in 3D.** The first build made 3D look-only, because a
+finger's movement across a tilted floor isn't the player's movement on the
+court. It is now undone: `courtPointAt()` reads the court's own transform
+matrix and solves it backwards for the one point on the floor that lands under
+the finger (`unproject()`: a floor point has z = 0, so the projection is two
+straight-line equations in x and y). A finger on a standing disc is over a
+floor point well behind their feet, so the grab is kept as an offset on the
+floor, and the player moves with the finger without first jumping back to meet
+it. Swap targets are measured in laid-out sizes, not on-screen ones, since
+tilted the court's box on screen is squashed and a standing disc's isn't. In
+Swap or Move, a press on empty court still turns the view.
+
+Checked in Chrome: small markers placed at each zone's spot, found on screen and
+converted back, came out within 0.01% of the court at 120°/40°, -75°/30° and
+180°/60°. A real mouse drag of one player onto another, with the court tilted,
+marked the target and swapped them in the lineup, and didn't turn the view.
+
+### What else changes in 3D
+
+- **Swiping no longer changes the rotation** in 3D; the arrows and numbers do.
+- **The court takes vertical swipes too** (`touch-action: none`), so the page
+  can't be scrolled by starting on the court. The flat view hands vertical
+  swipes back to the page (`pan-y`); in 3D that would cost the up-and-down
+  turn. The court is shorter on screen in 3D, which leaves more page around it.
+- **Quiz Mode** still works in 3D: zone taps answer as before, and don't turn
+  the view. Checked in Chrome by hit-testing each zone's centre, which found
+  zone 1 covered: the server stays visible during a question, and standing up
+  their disc sat over the button. Flat, z-index keeps the zone buttons on top;
+  in 3D the browser stacks by depth and ignores z-index. So during a quiz in
+  3D, players let taps through (`pointer-events: none`). All six hit after.
+- **Saved images and share links are unchanged.** They're drawn flat.
+
+`store.threeD`, top level beside `showLabels` since it's a display preference
+and not a fact about a team. Absent in older saves, so they open flat without a
+version bump. The drag mode still isn't saved.
+
+### Passers default to 3, already
+
+Asked for in the same round: serve receive defaulting to 3 passers. It already
+does, and always has since passer counts arrived in v0.11.1
+(`DEFAULT_PASSERS = 3`); a fresh install was checked in Chrome and shows 3. The
+count is saved per team, so a team showing another number had it changed at
+some point, and setting it back to 3 once on that team keeps it. Existing teams
+weren't reset, since that would overwrite anyone's deliberate choice.
+
+### Not doing (yet)
+
+- **A free camera** (zoom, roll, looking from courtside). That's option 2.
+- **The 3D view in saved images.** The export redraws the court on a canvas.
+
+`§73` covers the switch and its memory, the Drag cycle flat and in 3D and Turn
+following 3D on and off, the start angle, a quarter-width and a full-width
+swipe, turning past half a turn, the lean's limits, Recenter not changing
+mid-turn and lighting on release, the fit at every angle, letting go, a
+cancelled press, a right-click, a mouse press not selecting and a touch press
+left alone, Recenter, Turn not picking a player up, Swap picking one up in 3D
+while empty court still turns, the floor conversion round-tripping, swiping
+changing the rotation again once flat, Quiz Mode, old and junk saves, the CSS
+(tilt, turn, no selection, standing up, the lift and the dropped shadow, the
+net, quiz taps), Recenter's place and spelling. `§49` expects 3D between Labels
+and Share. Each new check was broken on purpose once to confirm it fails.
+Checked in Chrome at 390 and 820 wide, at 0°, 45°, 90° and 180°, with a
+seven-player bench, and with real mouse input for the selection and swap.
+
 ## Tests
 
 ```
-node test/migration.js    # 1008 checks — storage, migration, roles, formations,
+node test/migration.js    # 1072 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,
-                          #   roster reordering, referee
+                          #   roster reordering, referee, 3D view
 node test/contrast.js     # colour contrast, hue separation, and every role
                           #   against every court surface
 ```
