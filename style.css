@@ -930,6 +930,138 @@ body.reading > .version {
   font-size: 0.85rem;
 }
 
+/* --- Referee (v0.56) ------------------------------------------------- */
+
+/* The whistles ride along at the top while the signals scroll under them: the
+   whistle is the thing needed in a hurry. */
+.ref-top {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding-bottom: 0.75rem;
+  border-bottom: 1px solid #3a4152;
+  background: #16181d;
+}
+
+/* Already inside a sticky block, so the title row doesn't need to be one. */
+.ref-top .cl-head {
+  position: static;
+}
+
+/* The one filled button on the page, the same light fill Install uses, so it
+   reads as the main thing here. */
+.ref-whistle {
+  display: block;
+  width: 100%;
+  padding: 1.4rem 1rem;
+  font-size: 1.2rem;
+  background: #f2f4f8;
+  border-color: #f2f4f8;
+  color: #16181d;
+  /* A held press that drifts would otherwise turn into a scroll, and the
+     browser cancels the press -- cutting the whistle off mid-blast. */
+  touch-action: none;
+}
+
+.ref-whistle.blowing {
+  filter: brightness(0.8);
+}
+
+.ref-calls-label {
+  margin: 0.8rem 0 0;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #a9b2c6;
+}
+
+/* The one being read. An outline rather than a fill, so nothing here looks
+   like the whistle except the whistle. */
+.ref-calls button[aria-pressed="true"] {
+  border-color: #f2f4f8;
+}
+
+/* Two by two on a phone: "Time-out / sub" doesn't fit a quarter of one. */
+.ref-calls {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.4rem;
+  margin-top: 0.3rem;
+}
+
+@media (min-width: 560px) {
+  .ref-calls {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+/* Room for two lines held open, so the buttons above don't jump when the
+   first call fills it. */
+.ref-next {
+  margin: 0.6rem 0 0;
+  min-height: 2.7em;
+  font-size: 0.9rem;
+  color: #a9b2c6;
+}
+
+.ref-nosound {
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+  color: #ff9f9f;
+}
+
+.ref-nosound[hidden] {
+  display: none;
+}
+
+.ref-lead,
+.ref-source {
+  font-size: 0.9rem;
+  color: #a9b2c6;
+}
+
+.ref-group h3 {
+  margin: 1.4rem 0 0.2rem;
+  font-size: 1.05rem;
+}
+
+.ref-signals {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.ref-signals li {
+  padding: 0.7rem 0;
+  border-top: 1px solid #3a4152;
+}
+
+.ref-signals h4 {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.75rem;
+  margin: 0 0 0.2rem;
+  font-size: 0.95rem;
+}
+
+.ref-signals p {
+  margin: 0;
+  color: #c9cfdc;
+}
+
+/* The rulebook's own number, so a signal can be looked up there. */
+.ref-num {
+  flex: 0 0 auto;
+  padding: 0.05rem 0.45rem;
+  border: 1px solid #3a4152;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #a9b2c6;
+  font-variant-numeric: tabular-nums;
+}
+
 .scoreboard {
   position: fixed;
   inset: 0;
@@ -968,9 +1100,28 @@ body.reading > .version {
 }
 
 .sb-close,
-.sb-end {
+.sb-end,
+.sb-whistle {
   flex: 0 0 auto;
   padding: 0.6rem 1.2rem;
+}
+
+/* The one filled button in the bar, like the Referee page's whistle: it's the
+   thing reached for in a hurry. Held rather than tapped, so a drifting thumb
+   mustn't turn into a scroll that cancels it mid-blast. */
+.sb-whistle {
+  background: #f2f4f8;
+  border-color: #f2f4f8;
+  color: #16181d;
+  touch-action: none;
+}
+
+.sb-whistle.blowing {
+  filter: brightness(0.8);
+}
+
+.sb-whistle[hidden] {
+  display: none;
 }
 
 /* Game time and time of day: a small label over the number, so the pair stays
@@ -1002,20 +1153,43 @@ body.reading > .version {
   color: #aab2c0;
 }
 
-/* A phone held upright can't fit all five across: the game line was cut down
-   to "G..." and lost the one number it exists to show. So it takes a row of its
-   own, and the times and buttons share the row under it. Portrait has height
-   to spare, which is exactly what it doesn't have sideways. */
+/* A phone held upright can't fit them all across: the game line was cut down
+   to "G..." and lost the one number it exists to show (v0.48). So it's two
+   rows: the game line and the times, then the whistle stretched wide beside
+   End game and Done.
+
+   The break is an element that takes a whole row's width and no height,
+   rather than left to wherever the buttons happen to run out of room. That
+   moved with the phone's width: a whistle beside the game line on one phone,
+   Done alone on a third row on another. Tried first as a grid, which at 360px
+   either cut the games tally off or squeezed End game onto two lines. */
+.sb-break {
+  display: none;
+}
+
 @media (max-width: 480px) {
   .sb-head {
     flex-wrap: wrap;
     row-gap: 0.4rem;
   }
 
-  .sb-game {
+  .sb-break {
+    display: block;
     flex-basis: 100%;
+    height: 0;
   }
 
+  .sb-whistle {
+    flex: 1 1 auto;
+  }
+
+  .sb-close,
+  .sb-end,
+  .sb-whistle {
+    padding: 0.6rem 0.9rem;
+  }
+
+  /* With no whistle (no Web Audio), End game and Done keep to the right. */
   .sb-end {
     margin-left: auto;
   }

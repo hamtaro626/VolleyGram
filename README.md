@@ -40,6 +40,9 @@ Built to use on mobile devices courtside
 - **Scoreboard** — a standalone, read-it-from-across-the-gym score counter for
   two named teams in red and blue, with a per-game match record, a game
   timer and the time of day
+- **Referee** — a whistle that sounds for as long as you hold it (also on the
+  scoreboard), when the rules say to whistle and what to signal after, and a
+  cheat sheet of every official hand signal and line judge flag
 - **Playing surface** per lineup — indoor clay, grass green or off-white sand,
   contrast-checked against every role
 
@@ -64,9 +67,9 @@ dev/
   preview.html  the real app in live iframes at real device widths, for the
                 layout questions a stubbed DOM cannot answer
 test/
-  migration.js  951 checks: storage, migration, roles, formations, quiz,
+  migration.js  1008 checks: storage, migration, roles, formations, quiz,
                 sharing, dragging, swapping, sitting out, short-handed rosters, playing
-                surface, scoreboard
+                surface, scoreboard, referee
   contrast.js   contrast, hue separation, every role against all three court
                 surfaces, and the scoreboard team colours — all parsed out
                 of style.css
@@ -103,7 +106,7 @@ scrolling, dragging a player still need a real device.
 ## Tests
 
 ```sh
-node test/migration.js    # 951 checks across 71 groups
+node test/migration.js    # 1008 checks across 72 groups
 node test/contrast.js     # contrast, hue separation, courts, team colours
 ```
 
@@ -194,7 +197,7 @@ This file records what was built, including things that were tried and removed, 
 
 ## Status
 
-v0.55. Working title, actively developed, no issues or PRs open yet.
+v0.56. Working title, actively developed, no issues or PRs open yet.
 
 ## License
 

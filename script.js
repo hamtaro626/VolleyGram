@@ -2743,9 +2743,10 @@ async function keepAwake(want) {
 // this, coming back to an open scoreboard silently loses screen-sleep
 // protection for the rest of the match: the release listener has nulled
 // `wakeLock`, and nothing asked again. So ask again, every time the page comes
-// back while the scoreboard is up.
+// back while the scoreboard (or, since v0.56, the Referee page) is up.
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden && scorePanel && !scorePanel.hidden) keepAwake(true);
+  if (document.hidden) return;
+  if ((scorePanel && !scorePanel.hidden) || openSheet === refereePanel) keepAwake(true);
 });
 
 function openScoreboard() {
@@ -2757,6 +2758,9 @@ function openScoreboard() {
   renderScoreboard();
   keepAwake(true);
   if (!timeTicker) timeTicker = setInterval(() => renderTimes(), 1000);
+  // Sound is set up inside this tap so the first whistle isn't lost; with no
+  // Web Audio at all, the whistle button goes rather than sit there silent.
+  scoreWhistle.hidden = !whistleContext();
 }
 
 function closeScoreboard() {
@@ -2766,6 +2770,7 @@ function closeScoreboard() {
   keepAwake(false);
   clearInterval(timeTicker);
   timeTicker = null;
+  sleepWhistle();
 }
 
 
@@ -3385,7 +3390,7 @@ document.addEventListener('keydown', (event) => {
   // arrows would change the rotation invisibly, and the scoreboard's own
   // rotation line would go stale, since step() doesn't redraw the scoreboard.
   if (!scorePanel.hidden) return;
-  // Same while reading What's new or Add to Home Screen: the court is hidden.
+  // Same while on What's new, Add to Home Screen or Referee: the court is hidden.
   if (openSheet) return;
   if (event.key === 'ArrowLeft') {
     step(-1);
@@ -3477,7 +3482,7 @@ function syncChangelogButton() {
   changelogButton.setAttribute('aria-expanded', String(!changelogPanel.hidden));
 }
 
-// --- Full-screen pages: What's new and Add to Home Screen --------------
+// --- Full-screen pages: What's new, Add to Home Screen, Referee --------
 //
 // Both take the page's place rather than floating over it, so they inherit its
 // scroll: open one from the bottom of the page and it opened on its own last
@@ -3499,6 +3504,7 @@ function showSheet(panel) {
 
 function hideSheet() {
   if (!openSheet) return;
+  if (openSheet === refereePanel) leaveReferee();
   openSheet.hidden = true;
   openSheet = null;
   document.body.classList.remove('reading');
@@ -3645,6 +3651,274 @@ function syncLabelsButton() {
   labelsButton.textContent = `Labels: ${store.showLabels ? 'on' : 'off'}`;
   labelsButton.setAttribute('aria-pressed', String(store.showLabels));
 }
+
+// --- Whistle (v0.56) --------------------------------------------------
+//
+// One whistle, held for as long as it should sound, on two screens: the
+// Referee page and the scoreboard.
+//
+// The sound is made, not played from a file: a recording would be another
+// file to cache for offline use and would only ever be one length. A pea
+// whistle is a high tone (around 3kHz, where both phone speakers and ears are
+// at their strongest) that the pea inside makes warble about 30 times a second,
+// with some breath noise around it. Those three parts are built below.
+
+const WHISTLE_PITCH = 3000; // Hz
+const WHISTLE_TRILL = 30; // warbles a second
+const WHISTLE_ATTACK = 0.012; // seconds
+const WHISTLE_RELEASE = 0.04;
+// A key can't be held the way a finger can, so a keyboard press gets one
+// short blast of this length.
+const WHISTLE_KEY_MS = 350;
+
+let whistleAudio = null;
+let heldBlast = null;
+let heldButton = null;
+
+// Set up from inside the tap that opens a screen with a whistle on it:
+// browsers refuse to start sound the person didn't ask for, and on iOS the
+// first whistle would otherwise be the one swallowed waiting for permission.
+// Returns null where there's no Web Audio at all.
+function whistleContext() {
+  if (whistleAudio) {
+    if (whistleAudio.ctx.state === 'suspended') whistleAudio.ctx.resume();
+    return whistleAudio;
+  }
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+
+  const ctx = new AC();
+  // Squeezes the peaks down so the whole blast can sit louder without the
+  // speaker crackling. A whistle is meant to be loud.
+  const out = ctx.createDynamicsCompressor();
+  out.threshold.value = -18;
+  out.knee.value = 6;
+  out.ratio.value = 8;
+  out.attack.value = 0.002;
+  out.release.value = 0.1;
+  // Then brings the squeezed blast back up to just under full scale. Measured
+  // in Chrome: peaks land between 0.9 and 0.95 of the most a speaker can take.
+  const level = ctx.createGain();
+  level.gain.value = 1.6;
+  out.connect(level).connect(ctx.destination);
+
+  // One second of white noise, looped, for the breath.
+  const noise = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
+  const samples = noise.getChannelData(0);
+  for (let i = 0; i < samples.length; i++) samples[i] = Math.random() * 2 - 1;
+
+  whistleAudio = { ctx, out, noise };
+  return whistleAudio;
+}
+
+// iPhones mute web audio when the ring switch is on silent. A whistle the
+// silent switch can turn off is no whistle at all, and 'playback' is how a
+// page says it's the thing you're meant to hear (Safari 16.4+; elsewhere the
+// property doesn't exist and this does nothing).
+//
+// Set on the first blow rather than on opening a screen, because 'playback'
+// also pauses music playing from another app. Opening the scoreboard
+// shouldn't stop someone's music; whistling can.
+function loudAudioSession() {
+  try {
+    if (navigator.audioSession && navigator.audioSession.type !== 'playback') {
+      navigator.audioSession.type = 'playback';
+    }
+  } catch (error) { /* not supported */ }
+}
+
+// Starts one blast at `at` (in the audio clock's seconds) and hands back a way
+// to end it.
+function startBlast(audio, at) {
+  const { ctx } = audio;
+
+  const envelope = ctx.createGain();
+  envelope.gain.setValueAtTime(0, at);
+  envelope.gain.linearRampToValueAtTime(1, at + WHISTLE_ATTACK);
+  envelope.connect(audio.out);
+
+  // The pea: one slow oscillator wobbling both the pitch and the loudness.
+  const trem = ctx.createGain();
+  trem.gain.value = 0.7;
+  trem.connect(envelope);
+  const pea = ctx.createOscillator();
+  pea.frequency.value = WHISTLE_TRILL;
+  const wobbleLoud = ctx.createGain();
+  wobbleLoud.gain.value = 0.3;
+  pea.connect(wobbleLoud).connect(trem.gain);
+
+  const tone = ctx.createOscillator();
+  // Blown, a whistle scoops up into its note rather than starting on it.
+  tone.frequency.setValueAtTime(WHISTLE_PITCH * 0.88, at);
+  tone.frequency.exponentialRampToValueAtTime(WHISTLE_PITCH, at + 0.035);
+  const wobblePitch = ctx.createGain();
+  wobblePitch.gain.value = 120;
+  pea.connect(wobblePitch).connect(tone.frequency);
+  const toneLevel = ctx.createGain();
+  toneLevel.gain.value = 0.75;
+  tone.connect(toneLevel).connect(trem);
+
+  // A quiet octave above gives it the edge a pure tone doesn't have.
+  const edge = ctx.createOscillator();
+  edge.frequency.setValueAtTime(WHISTLE_PITCH * 2 * 0.88, at);
+  edge.frequency.exponentialRampToValueAtTime(WHISTLE_PITCH * 2, at + 0.035);
+  const wobbleEdge = ctx.createGain();
+  wobbleEdge.gain.value = 240;
+  pea.connect(wobbleEdge).connect(edge.frequency);
+  const edgeLevel = ctx.createGain();
+  edgeLevel.gain.value = 0.12;
+  edge.connect(edgeLevel).connect(trem);
+
+  const breath = ctx.createBufferSource();
+  breath.buffer = audio.noise;
+  breath.loop = true;
+  const band = ctx.createBiquadFilter();
+  band.type = 'bandpass';
+  band.frequency.value = WHISTLE_PITCH;
+  band.Q.value = 3;
+  const breathLevel = ctx.createGain();
+  breathLevel.gain.value = 0.25;
+  breath.connect(band).connect(breathLevel).connect(trem);
+
+  const sources = [pea, tone, edge, breath];
+  sources.forEach((source) => source.start(at));
+
+  return {
+    stop(when) {
+      const end = Math.max(when, at + WHISTLE_ATTACK);
+      const gain = envelope.gain;
+      if (gain.cancelAndHoldAtTime) gain.cancelAndHoldAtTime(end);
+      else {
+        gain.cancelScheduledValues(end);
+        gain.setValueAtTime(1, end);
+      }
+      // A short fade rather than a cut, which would click.
+      gain.linearRampToValueAtTime(0, end + WHISTLE_RELEASE);
+      sources.forEach((source) => source.stop(end + WHISTLE_RELEASE + 0.02));
+    },
+  };
+}
+
+// One whistle at a time, whichever button it came from.
+function startHeldWhistle(button) {
+  if (heldBlast) return;
+  const audio = whistleContext();
+  if (!audio) return;
+  loudAudioSession();
+  heldBlast = startBlast(audio, audio.ctx.currentTime);
+  heldButton = button;
+  button.classList.add('blowing');
+}
+
+function stopHeldWhistle() {
+  if (!heldBlast) return;
+  heldBlast.stop(whistleAudio.ctx.currentTime);
+  heldBlast = null;
+  heldButton.classList.remove('blowing');
+  heldButton = null;
+}
+
+// Leaving a screen with a whistle on it: silence anything held, and let the
+// audio sleep until a whistle is on screen again.
+function sleepWhistle() {
+  stopHeldWhistle();
+  if (whistleAudio && whistleAudio.ctx.state === 'running') whistleAudio.ctx.suspend();
+}
+
+// Makes a button a whistle: it sounds from press to release.
+function bindWhistle(button) {
+  button.addEventListener('pointerdown', (event) => {
+    // Keeps the pointer even if a thumb slides off the button, so the release
+    // still arrives here and the whistle can't get stuck on.
+    if (event.pointerId !== undefined && button.setPointerCapture) {
+      button.setPointerCapture(event.pointerId);
+    }
+    startHeldWhistle(button);
+  });
+  ['pointerup', 'pointercancel', 'lostpointercapture'].forEach((type) => {
+    button.addEventListener(type, stopHeldWhistle);
+  });
+  // Enter or Space on a keyboard arrives as a click with no pointer behind it
+  // (detail 0). A tap's own click, after the release, is ignored.
+  button.addEventListener('click', (event) => {
+    if (event.detail !== 0 || heldBlast) return;
+    const audio = whistleContext();
+    if (!audio) return;
+    loudAudioSession();
+    const now = audio.ctx.currentTime;
+    startBlast(audio, now).stop(now + WHISTLE_KEY_MS / 1000);
+  });
+  // A long press is the whole point of this button. Android would otherwise
+  // open a context menu partway through it.
+  button.addEventListener('contextmenu', (event) => event.preventDefault());
+}
+
+// A phone locked mid-blast must not come back still whistling.
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) stopHeldWhistle();
+});
+
+const scoreWhistle = document.getElementById('sbWhistle');
+bindWhistle(scoreWhistle);
+
+// --- Referee (v0.56) --------------------------------------------------
+//
+// The whistle, and a cheat sheet of the official signals. The cheat sheet is
+// plain markup in index.html.
+//
+// The rules set no length or number of blasts for anything -- one whistle
+// starts or stops play, and the hand signal after it says why (FIVB 22.2). So
+// there's one whistle, and the four moments below are a lookup, not four
+// sounds: each shows when the rules say to whistle and what to signal after.
+
+const REFEREE_MOMENTS = {
+  serve: '1st referee. Then signal 1, authorisation to serve: move the hand '
+    + 'toward the direction of service. The server has 8 seconds from the whistle.',
+  rally: 'Whichever referee saw the fault, once sure what it was. Then the team '
+    + 'to serve (signal 2), the fault, and the player at fault if needed.',
+  request: '2nd referee, with the ball out of play, to grant a team’s request. '
+    + 'Then the time-out (4) or substitution (5) signal, toward that team.',
+  courts: '1st referee, in the deciding set once the leading team reaches 8. '
+    + 'Then signal 3, change of courts. Positions stay as they were.',
+};
+
+const refereePanel = document.getElementById('referee');
+const refereeWhistle = document.getElementById('refWhistle');
+const refNext = document.getElementById('refNext');
+
+function showMoment(name) {
+  if (!REFEREE_MOMENTS[name]) return;
+  refNext.textContent = REFEREE_MOMENTS[name];
+  ['serve', 'rally', 'request', 'courts'].forEach((other) => {
+    const button = document.getElementById(`refCall${other[0].toUpperCase()}${other.slice(1)}`);
+    button.setAttribute('aria-pressed', String(other === name));
+  });
+}
+
+function openReferee() {
+  showSheet(refereePanel);
+  const audio = whistleContext();
+  document.getElementById('refNoSound').hidden = Boolean(audio);
+  // A referee holds the phone the whole set; a screen that sleeps hides the
+  // whistle.
+  keepAwake(true);
+}
+
+// Run by hideSheet, so Done, Escape and anything else that closes the page all
+// silence it.
+function leaveReferee() {
+  sleepWhistle();
+  keepAwake(false);
+}
+
+document.getElementById('openReferee').addEventListener('click', openReferee);
+document.getElementById('closeReferee').addEventListener('click', hideSheet);
+bindWhistle(refereeWhistle);
+
+Object.keys(REFEREE_MOMENTS).forEach((name) => {
+  const id = `refCall${name[0].toUpperCase()}${name.slice(1)}`;
+  document.getElementById(id).addEventListener('click', () => showMoment(name));
+});
 
 // --- Start it up ------------------------------------------------------
 

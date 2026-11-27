@@ -3120,14 +3120,149 @@ The test stub's `window` learned events (`addEventListener` and a
 warning, opening at the top, swapping to What's new and back, the Install
 button's whole life, standalone both ways, and platform detection.
 
+## v0.56 — Referee: a whistle and the signals, and a whistle on the scoreboard (2026-11-26)
+
+A third page that replaces the app, beside Scoreboard and Quiz Mode: a whistle
+pinned to the top, and under it a cheat sheet of every official signal. The
+same whistle is on the scoreboard too.
+
+### What the rules actually say about whistles
+
+Checked against the **FIVB Official Volleyball Rules 2025–2028** and the **USA
+Volleyball 2025–27 Indoor Casebook**, not from memory. Neither sets a length
+or a number of blasts for anything. The rules say *when* a referee whistles:
+
+| When | Who | Source |
+|---|---|---|
+| To authorise the serve that starts a rally | 1st referee | FIVB 22.2.1.1, 12.3 |
+| To end a rally, once sure of the fault and what it was | 1st or 2nd | FIVB 22.2.1.2, 8.2 |
+| With the ball out of play, to grant or reject a team request (time-out, substitution) | usually 2nd | FIVB 22.2.2, 15.10.3.3, 24.2.6 |
+| Before the next serve, to change courts in the deciding set at 8 | 1st | FIVB 18.2.2; USAV casebook 6.05 |
+
+After each one, the **hand signal** says what the whistle was for (FIVB 22.2.3).
+The casebook adds that faults should be whistled "loudly and immediately" (6.04).
+
+### One whistle, held
+
+So there's one whistle, and it sounds for exactly as long as it's held. Below
+it, **Serve**, **Rally over**, **Time-out / sub** and **Switch ends** are the
+four moments in the table. They make **no sound**. Each shows who whistles and
+what to signal after, under a *When to whistle* label, and the one being read
+is outlined.
+
+The first build had each of the four play a blast of its own length (350ms to
+800ms), on the reasoning that a gym could tell a serve from a fault by length.
+That was taken out the same day: those lengths were this app's invention, not
+the rulebook's, and tapping to read what comes next shouldn't make a noise in a
+gym. The hold button already covers every length.
+
+Four ways a held whistle could get stuck on are each handled: lifting the
+finger, the browser cancelling the touch, the pointer being lost, and the phone
+being locked mid-blast. Both whistle buttons have `touch-action: none`, because
+a held thumb that drifts would otherwise turn into a scroll, and the browser
+cancels a press that becomes a scroll. A long press doesn't raise Android's
+context menu. Enter or Space on a keyboard gives a 350ms blast, since a key
+can't be held the same way. Only one whistle sounds at a time, whichever
+button it came from.
+
+### On the scoreboard
+
+A **Whistle** button in the top bar, the one filled button there, the same
+fill as the Referee page's whistle. It's the same whistle with the same code
+behind it (`bindWhistle`), and it doesn't touch the score.
+
+- **Sideways and on an iPad**, it sits in the one row, before End game and
+  Done.
+- **On a phone held upright**, the bar is two rows: the game line and the
+  times, then the whistle stretched wide beside End game and Done. The break
+  between the rows is an element (`.sb-break`) that's only shown below 480px,
+  not left to wherever the buttons run out of room. Leaving it to the
+  buttons put the whistle beside the game line on one phone and Done alone on
+  a third row on another. A grid was tried first; at 360px it either cut the
+  games tally off the game line or squeezed End game onto two lines. Checked
+  at 320, 360, 390, 412 and 480 wide, and 844×390 and 1180×820 sideways.
+- **With no Web Audio at all**, the button isn't shown, rather than sit there
+  silent.
+
+Closing the scoreboard silences a held whistle and puts the audio to sleep.
+
+### The sound is made, not played
+
+There's no audio file. A recording would be one more thing to cache for
+offline use and would only ever be one length. A pea whistle is a high tone
+that the pea makes warble, plus breath, so that's what's built with Web Audio:
+
+- a tone at **3 kHz**, where phone speakers and ears are both strongest, that
+  scoops up into its note the way a blown whistle does;
+- a quiet octave above it, for edge;
+- band-passed noise around the same pitch, for breath;
+- a **30 Hz wobble** in both pitch and loudness, which is the pea;
+- a compressor and then a boost, so it's as loud as the speaker allows. Rendered
+  in Chrome, peaks land at 0.91–0.92 of full scale, the pitch measures
+  3000 Hz, and it's silent after the release.
+
+**The iPhone silent switch.** iOS mutes web audio when the ring switch is on
+silent. A whistle the silent switch can turn off isn't a whistle, so the first
+blow sets `navigator.audioSession.type = 'playback'` (Safari 16.4+), which is
+how a page says it's audio you're meant to hear. Where that property doesn't
+exist, nothing happens. It waits for the first blow, not for opening a screen,
+because 'playback' also pauses music from other apps: opening the scoreboard
+shouldn't stop someone's music, but whistling can. **Not yet checked on a real
+iPhone with the switch on silent.** If the very first blow is still muted
+there, the fix is to set it on opening after all and accept the music pausing.
+
+**First tap.** Browsers won't start sound that wasn't asked for, and on iOS a
+first whistle can get swallowed while that's sorted out. So the audio is set up
+in the tap that *opens* the Referee page or the scoreboard, and the first
+whistle is already allowed. Leaving either puts it to sleep; coming back wakes
+the same one.
+
+The screen is kept awake while the Referee page is open, as the scoreboard
+already did, and asked again when the phone comes back from being locked.
+
+### The cheat sheet
+
+All 25 of the 1st and 2nd referees' hand signals (Diagram 11, with 6a and 6b
+as the rulebook numbers them) and the line judges' 5 flag signals (Diagram 12).
+The descriptions are the rulebook's, lightly plainer. They're grouped by job
+(starting and stopping play, in/out/touched, ball handling, the net and lines,
+attack/block/position, serving, cards, flags) rather than in rulebook order,
+because nobody courtside thinks "signal 14". The rulebook's numbers stay on
+each, so any of them can be looked up. The page says where they come from and
+that school and recreational rulebooks may differ.
+
+Text only. Drawings of each signal would make it faster to scan but are 30
+illustrations to draw and keep right; that's a later version if the text turns
+out not to be enough.
+
+### Not doing (yet)
+
+- **Pictures of the signals.** See above.
+- **A time-out countdown.** The rules give 30 seconds (FIVB 15.4.1). It belongs
+  with the scoreboard, and wasn't asked for.
+- **Different whistle sounds or set blast lengths.** One whistle, as in a real
+  gym. The rules don't set either.
+
+`§72` covers it with a stand-in for Web Audio that records what's scheduled:
+sound set up inside the opening tap, the silent-switch setting waiting for the
+first blow, the four moments showing the right signals and making no sound,
+holding and letting go, the three other ways a press ends, the phone locking
+mid-blast, a second finger, one whistle at a time across both buttons, the
+keyboard, the context menu, arrows, Escape and Done silencing a held whistle,
+reopening, the scoreboard's whistle (sound, silence on close, no effect on the
+score, its place in the bar), a browser with no sound at all on both screens,
+and every official signal and flag on the page exactly once. `§49` now expects
+Referee between Scoreboard and Quiz Mode. The new checks were each broken on
+purpose once to confirm they fail.
+
 ## Tests
 
 ```
-node test/migration.js    # 951 checks — storage, migration, roles, formations,
+node test/migration.js    # 1008 checks — storage, migration, roles, formations,
                           #   quiz, sharing, dragging, short-handed rosters,
                           #   playing surface, scoreboard, rotation order, entry zones,
                           #   touch handling, bench geometry, control layout,
-                          #   roster reordering
+                          #   roster reordering, referee
 node test/contrast.js     # colour contrast, hue separation, and every role
                           #   against every court surface
 ```

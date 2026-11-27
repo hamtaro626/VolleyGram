@@ -2113,10 +2113,13 @@ console.log('\n49. The control rows');
   // a display toggle and the export drawer share the next. Every label now
   // describes its own contents, which "Show options" could not -- it held a
   // toggle, a mode and the exports at once.
-  check('Scoreboard and Quiz Mode share the takeover row',
+  // v0.56 added Referee between them: a third page that replaces the app.
+  check('Scoreboard, Referee and Quiz Mode share the takeover row',
     JSON.stringify(find('openScoreboard').ids)
-      === JSON.stringify(['openScoreboard', 'startQuiz']),
+      === JSON.stringify(['openScoreboard', 'openReferee', 'startQuiz']),
     JSON.stringify(find('openScoreboard').ids));
+  check('compact, so three labels fit a 320px phone',
+    find('openScoreboard').classes === 'compact', find('openScoreboard').classes);
 
   check('Labels and the share drawer share the next row',
     JSON.stringify(find('toggleLabels').ids)
@@ -3259,7 +3262,7 @@ console.log('\n61. Scoreboard — subtract per side, and the game clock');
 
   // Layout: End game is up in the head beside Done, and Undo is gone.
   const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
-  const head = (html.match(/<div class="sb-head">[\s\S]*?<\/div>/) || [''])[0];
+  const head = (html.match(/<div class="sb-head"[^>]*>[\s\S]*?<\/div>/) || [''])[0];
   check('End game sits in the top bar with Done',
     /id="sbEndGame"/.test(head) && /id="closeScoreboard"/.test(head));
   check('and so do the timer and the clock',
@@ -4042,6 +4045,242 @@ console.log('\n71. Add to Home Screen');
   check('an iPad calling itself a Mac is iOS', platformOf('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)', 5) === 'ios');
   check('a real Mac is neither', platformOf('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15)', 0) === null);
   check('Android is Android', platformOf('Mozilla/5.0 (Linux; Android 14; Pixel 8)') === 'android');
+}
+
+console.log('\n72. Referee: the whistle and the cheat sheet');
+{
+  // A stand-in for Web Audio that records what gets scheduled, so the length of
+  // each blast can be read back. Times are in the audio clock's seconds.
+  function fakeAudio() {
+    const log = { contexts: [], starts: [], stops: [] };
+    const param = (value = 0) => ({
+      value, events: [],
+      setValueAtTime(v, t) { this.events.push(['set', v, t]); },
+      linearRampToValueAtTime(v, t) { this.events.push(['ramp', v, t]); },
+      exponentialRampToValueAtTime(v, t) { this.events.push(['exp', v, t]); },
+      cancelScheduledValues(t) { this.events.push(['cancel', t]); },
+      cancelAndHoldAtTime(t) { this.events.push(['hold', t]); },
+    });
+    const node = (extra) => ({ connect: (next) => next, ...extra });
+    const source = (kind) => node({
+      frequency: param(440),
+      start: (t) => log.starts.push([kind, t]),
+      stop: (t) => log.stops.push([kind, t]),
+    });
+    class AudioContext {
+      constructor() {
+        this.state = 'running';
+        this.currentTime = 10;
+        this.sampleRate = 8000;
+        this.destination = node({});
+        log.contexts.push(this);
+      }
+      resume() { this.state = 'running'; return Promise.resolve(); }
+      suspend() { this.state = 'suspended'; return Promise.resolve(); }
+      createDynamicsCompressor() {
+        return node({ threshold: param(), knee: param(), ratio: param(),
+          attack: param(), release: param() });
+      }
+      createBuffer(_channels, length) {
+        const data = new Float32Array(length);
+        return { getChannelData: () => data };
+      }
+      createGain() { return node({ gain: param(1) }); }
+      createOscillator() { return source('osc'); }
+      createBufferSource() { return source('noise'); }
+      createBiquadFilter() { return node({ frequency: param(), Q: param() }); }
+    }
+    return { AudioContext, log };
+  }
+
+  const audio = fakeAudio();
+  const session = { type: 'auto' };
+  let locks = 0;
+  const app = boot(undefined, undefined, {
+    AudioContext: audio.AudioContext,
+    navigator: {
+      audioSession: session,
+      wakeLock: { request() { locks += 1; return Promise.resolve({ addEventListener() {} }); } },
+    },
+  });
+  const el = (id) => app.document.getElementById(id);
+  const ctx = () => audio.log.contexts[0];
+  // When the last blast's sources were told to stop, relative to its start.
+  const lastLength = () => {
+    const stops = audio.log.stops.slice(-4).map(([, t]) => t);
+    const starts = audio.log.starts.slice(-4).map(([, t]) => t);
+    return Math.round((Math.max(...stops) - Math.min(...starts)) * 1000);
+  };
+
+  check('no sound is set up before the page opens', audio.log.contexts.length === 0);
+  el('openReferee').dispatch('click');
+  check('Referee opens as a full-screen page',
+    el('referee').hidden === false && app.document.body.classList.contains('reading'));
+  check('opening it sets up sound, inside that tap', audio.log.contexts.length === 1);
+  // 'playback' also pauses other apps' music, so it waits for a whistle.
+  check('but leaves the iPhone audio mode alone until someone whistles',
+    session.type === 'auto', session.type);
+  check('the no-sound note stays hidden when there is sound', el('refNoSound').hidden === true);
+  check('and the screen is kept awake', locks === 1, String(locks));
+
+  // The four moments are a lookup, not sounds.
+  el('refCallServe').dispatch('click');
+  check('Serve shows the serve signal', /signal 1/.test(el('refNext').textContent)
+    && /8 seconds/.test(el('refNext').textContent), el('refNext').textContent);
+  check('and is marked as the one being read', el('refCallServe').attrs['aria-pressed'] === 'true'
+    && el('refCallRally').attrs['aria-pressed'] === 'false');
+  el('refCallRally').dispatch('click');
+  check('Rally over shows the team to serve comes next',
+    /team\s+to serve/.test(el('refNext').textContent), el('refNext').textContent);
+  check('and the mark moves with it', el('refCallRally').attrs['aria-pressed'] === 'true'
+    && el('refCallServe').attrs['aria-pressed'] === 'false');
+  el('refCallRequest').dispatch('click');
+  check('Time-out / sub points to signals 4 and 5', /\(4\)/.test(el('refNext').textContent)
+    && /\(5\)/.test(el('refNext').textContent));
+  el('refCallCourts').dispatch('click');
+  check('Switch ends names the deciding set at 8', /deciding set/.test(el('refNext').textContent)
+    && /8/.test(el('refNext').textContent));
+  check('none of the four makes a sound', audio.log.starts.length === 0,
+    String(audio.log.starts.length));
+  check('or touches the iPhone audio mode', session.type === 'auto');
+
+  // Holding the big button.
+  const startsBefore = audio.log.starts.length;
+  const stopsBefore = audio.log.stops.length;
+  el('refWhistle').dispatch('pointerdown', { pointerId: 1 });
+  check('pressing the whistle starts it', audio.log.starts.length === startsBefore + 4);
+  check('with tone and breath, all four parts', audio.log.starts.slice(-4)
+    .filter(([k]) => k === 'noise').length === 1);
+  check('and asks to be heard past the iPhone silent switch', session.type === 'playback',
+    session.type);
+  check('with nothing scheduled to end it', audio.log.stops.length === stopsBefore);
+  check('and the button shows it is blowing', el('refWhistle').classList.contains('blowing'));
+  el('refWhistle').dispatch('pointerdown', { pointerId: 2 });
+  check('a second finger does not start a second whistle',
+    audio.log.starts.length === startsBefore + 4);
+  ctx().currentTime = 13.5;
+  el('refWhistle').dispatch('pointerup', { pointerId: 1 });
+  check('letting go ends it, from that moment', audio.log.stops.length === stopsBefore + 4
+    && audio.log.stops.slice(-4).every(([, t]) => Math.abs(t - 13.56) < 1e-9),
+    JSON.stringify(audio.log.stops.slice(-4)));
+  check('and the button goes back', !el('refWhistle').classList.contains('blowing'));
+
+  // Every way a press can end without a clean release.
+  for (const type of ['pointercancel', 'lostpointercapture']) {
+    const before = audio.log.stops.length;
+    el('refWhistle').dispatch('pointerdown', { pointerId: 1 });
+    el('refWhistle').dispatch(type, { pointerId: 1 });
+    check(`${type} ends it too`, audio.log.stops.length === before + 4);
+  }
+  const beforeHide = audio.log.stops.length;
+  el('refWhistle').dispatch('pointerdown', { pointerId: 1 });
+  app.document.hidden = true;
+  app.document.dispatch('visibilitychange', {});
+  app.document.hidden = false;
+  check('locking the phone mid-blast ends it', audio.log.stops.length === beforeHide + 4);
+
+  // Keyboard: Enter or Space is a click with no pointer (detail 0).
+  const beforeKey = audio.log.starts.length;
+  el('refWhistle').dispatch('click', { detail: 1 });
+  check('a tap’s own click adds no second blast', audio.log.starts.length === beforeKey);
+  el('refWhistle').dispatch('click', { detail: 0 });
+  check('a keyboard press gives a short blast', audio.log.starts.length === beforeKey + 4
+    && lastLength() === 350 + 60, String(lastLength()));
+  let menuBlocked = false;
+  el('refWhistle').dispatch('contextmenu', { preventDefault() { menuBlocked = true; } });
+  check('a long press doesn’t open a context menu', menuBlocked);
+
+  // Arrows don't move the hidden court.
+  const rotation = app.peek().currentRotation;
+  app.document.dispatch('keydown', { key: 'ArrowRight', target: { tagName: 'DIV' }, preventDefault() {} });
+  check('arrows leave the court alone while it is open', app.peek().currentRotation === rotation);
+
+  // Closing while the whistle is held.
+  const beforeClose = audio.log.stops.length;
+  el('refWhistle').dispatch('pointerdown', { pointerId: 1 });
+  app.document.dispatch('keydown', { key: 'Escape', target: {} });
+  check('Escape closes it', el('referee').hidden === true
+    && !app.document.body.classList.contains('reading'));
+  check('and silences a whistle still held', audio.log.stops.length === beforeClose + 4
+    && !el('refWhistle').classList.contains('blowing'));
+  check('and puts sound to sleep', ctx().state === 'suspended');
+  el('openReferee').dispatch('click');
+  check('reopening wakes the same sound, not a second one',
+    audio.log.contexts.length === 1 && ctx().state === 'running');
+  el('closeReferee').dispatch('click');
+  check('Done closes it too', el('referee').hidden === true);
+
+  // The scoreboard's whistle: the same whistle, in the top bar.
+  const stopsAtScore = audio.log.stops.length;
+  const startsAtScore = audio.log.starts.length;
+  app.call.openScoreboard();
+  check('the scoreboard shows its whistle when there is sound', el('sbWhistle').hidden === false);
+  check('and wakes the same sound rather than making another',
+    audio.log.contexts.length === 1 && ctx().state === 'running');
+  el('sbWhistle').dispatch('pointerdown', { pointerId: 1 });
+  check('holding it whistles', audio.log.starts.length === startsAtScore + 4
+    && el('sbWhistle').classList.contains('blowing'));
+  el('refWhistle').dispatch('pointerdown', { pointerId: 2 });
+  check('one whistle at a time, whichever button', audio.log.starts.length === startsAtScore + 4);
+  el('sbWhistle').dispatch('pointerup', { pointerId: 1 });
+  check('letting go stops it', audio.log.stops.length === stopsAtScore + 4
+    && !el('sbWhistle').classList.contains('blowing'));
+  el('sbWhistle').dispatch('click', { detail: 0 });
+  check('a keyboard press gives it a short blast', lastLength() === 350 + 60, String(lastLength()));
+  el('sbWhistle').dispatch('pointerdown', { pointerId: 1 });
+  app.call.closeScoreboard();
+  check('closing the scoreboard silences a held whistle', audio.log.stops.length === stopsAtScore + 12
+    && !el('sbWhistle').classList.contains('blowing'), String(audio.log.stops.length - stopsAtScore));
+  check('and puts sound to sleep', ctx().state === 'suspended');
+  const pointsBefore = app.peek().store.match.homeScore + app.peek().store.match.awayScore;
+  app.call.openScoreboard();
+  el('sbWhistle').dispatch('pointerdown', { pointerId: 1 });
+  el('sbWhistle').dispatch('pointerup', { pointerId: 1 });
+  check('whistling scores nothing',
+    app.peek().store.match.homeScore + app.peek().store.match.awayScore === pointsBefore);
+  app.call.closeScoreboard();
+
+  // A browser with no Web Audio at all.
+  const mute = boot();
+  const m = (id) => mute.document.getElementById(id);
+  m('openReferee').dispatch('click');
+  check('with no sound available, it says so', m('refNoSound').hidden === false);
+  m('refCallRally').dispatch('click');
+  m('refWhistle').dispatch('pointerdown', { pointerId: 1 });
+  m('refWhistle').dispatch('pointerup', { pointerId: 1 });
+  check('and the moments still show what comes next', /team\s+to serve/.test(m('refNext').textContent));
+  mute.call.openScoreboard();
+  check('the scoreboard drops its whistle rather than show a silent one',
+    m('sbWhistle').hidden === true);
+  m('sbWhistle').dispatch('pointerdown', { pointerId: 1 });
+  check('and nothing breaks if it is pressed anyway', !m('sbWhistle').classList.contains('blowing'));
+
+  // The page itself.
+  const html = fs.readFileSync(path.join(__dirname, '..', 'index.html'), 'utf8');
+  const page = (html.match(/<section class="sheet referee"[\s\S]*?<p class="ref-source">/) || [''])[0];
+  check('the page starts closed', /<section class="sheet referee" id="referee" hidden/.test(html));
+  const numbers = [...page.matchAll(/<span class="ref-num">([^<]+)<\/span>/g)].map((x) => x[1]);
+  const official = ['1', '2', '3', '4', '5', '6a', '6b', '7', '8', '9', '10', '11', '12', '13',
+    '14', '15', '16', '17', '18', '19', '20', '21', '22', '23', '24', '25'];
+  check('every official hand signal is on it, once',
+    official.every((n) => numbers.filter((x) => x === n).length === 1), numbers.join(' '));
+  check('and all five line judge flags',
+    ['F1', 'F2', 'F3', 'F4', 'F5'].every((n) => numbers.includes(n)));
+  check('and nothing else', numbers.length === official.length + 5, String(numbers.length));
+  const top = (page.match(/<div class="ref-top">[\s\S]*?<p class="ref-lead">/) || [''])[0];
+  const scoreHead = (html.match(/<div class="sb-head"[^>]*>[\s\S]*?<\/div>/) || [''])[0];
+  check('the scoreboard\u2019s whistle is in its top bar', /id="sbWhistle"/.test(scoreHead));
+  // On a phone the whistle starts the second row of the bar, after the times.
+  check('a phone-width break comes just before it',
+    /class="sb-break"[^>]*><\/span>\s*(<!--[\s\S]*?-->\s*)?<button id="sbWhistle"/.test(scoreHead));
+  check('the whistles sit in the pinned top, above the signals',
+    ['refWhistle', 'refCallServe', 'refCallRally', 'refCallRequest', 'refCallCourts', 'closeReferee']
+      .every((id) => top.includes(`id="${id}"`)));
+  check('it says where the signals come from', /FIVB Official Volleyball Rules 2025/.test(html));
+  const css = fs.readFileSync(path.join(__dirname, '..', 'style.css'), 'utf8');
+  check('a drifting thumb can’t turn a held whistle into a scroll',
+    /\.ref-whistle\s*\{[^}]*touch-action:\s*none/.test(css)
+    && /\.sb-whistle\s*\{[^}]*touch-action:\s*none/.test(css));
 }
 
 Promise.all(pendingChecks).then(() => {

@@ -12,7 +12,7 @@
 
 // Must match the ?v= in index.html. test/migration.js §70 checks that, and that
 // every versioned file index.html loads is listed below at that version.
-const VERSION = '0.55';
+const VERSION = '0.56';
 const CACHE = `volleygram-v${VERSION}`;
 const NETWORK_WAIT_MS = 3000;
 

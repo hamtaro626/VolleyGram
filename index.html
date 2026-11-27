@@ -17,9 +17,9 @@
        purpose rather than arrived at by accident. The maskable one is a
        separate file because Android crops to a circle of 80% diameter, which
        would take the ends off a wordmark drawn to the edges. -->
-  <link rel="icon" href="assets/favicon-32.png?v=0.55" sizes="32x32" type="image/png">
-  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.55">
-  <link rel="manifest" href="manifest.webmanifest?v=0.55">
+  <link rel="icon" href="assets/favicon-32.png?v=0.56" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="assets/icon-180.png?v=0.56">
+  <link rel="manifest" href="manifest.webmanifest?v=0.56">
 
   <!-- Link previews. The share feature sends URLs to team-mates by text, so
        these are what a chat app draws in the bubble. og:image has to be
@@ -32,13 +32,13 @@
   <meta property="og:type" content="website">
   <meta property="og:title" content="VolleyGram">
   <meta property="og:description" content="A volleyball rotation reference. See where everyone stands in every rotation.">
-  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.55">
+  <meta property="og:image" content="https://hamtaro626.github.io/VolleyGram/assets/og.png?v=0.56">
   <meta name="twitter:card" content="summary_large_image">
   <!-- The ?v= query is cache busting. A browser caches by URL, so changing the
        query makes style.css a URL it has never seen and must fetch fresh.
        Bump this on any release that changes the CSS or JS, or phones will keep
        showing the old one. -->
-  <link rel="stylesheet" href="style.css?v=0.55">
+  <link rel="stylesheet" href="style.css?v=0.56">
 </head>
 <body>
   <main>
@@ -60,7 +60,7 @@
     <h1 class="masthead">
       <button type="button" id="replayIntro" class="title-replay"
         title="Replay the intro" aria-label="VolleyGram. Replay the intro."
-        ><img class="logo" src="assets/logo.webp?v=0.55" width="179" height="200"
+        ><img class="logo" src="assets/logo.webp?v=0.56" width="179" height="200"
           alt="VolleyGram"></button>
       <span class="tagline">A Volleyball Rotation Reference</span>
     </h1>
@@ -146,8 +146,9 @@
 
     <!-- The two screens that replace the app while you are in them. That is a
          real category, which is why this row can be read without a label. -->
-    <div class="actions two">
+    <div class="actions compact">
       <button id="openScoreboard">Scoreboard</button>
+      <button id="openReferee" aria-controls="referee">Referee</button>
       <button id="startQuiz">Quiz Mode</button>
     </div>
 
@@ -271,6 +272,11 @@
         <span class="sb-stat-label">Now</span>
         <span class="sb-stat-value" id="sbClock"></span>
       </span>
+      <!-- Only shown on a narrow screen, where it starts the second row. -->
+      <span class="sb-break" aria-hidden="true"></span>
+      <!-- Hold to whistle (v0.56): sounds from press to release, the same
+           whistle as on the Referee page. -->
+      <button id="sbWhistle" class="sb-whistle" aria-label="Whistle (hold)">Whistle</button>
       <button id="sbEndGame" class="sb-end">End game</button>
       <button id="closeScoreboard" class="sb-close">Done</button>
     </div>
@@ -329,6 +335,14 @@
       <button id="closeChangelog">Done</button>
     </div>
     <ol class="cl-list">
+      <li data-version="0.56">
+        <h3>v0.56</h3>
+        <ul>
+          <li><strong>Referee</strong>, next to Scoreboard: a whistle that sounds for as long as you hold it, and <em>Serve</em>, <em>Rally over</em>, <em>Time-out / sub</em> and <em>Switch ends</em> buttons that show who whistles and what to signal after.</li>
+          <li><strong>A whistle on the Scoreboard</strong> too, in the top bar. Hold it for as long as you want it to sound.</li>
+          <li>Under the whistles, a cheat sheet of every official hand signal and line judge flag, grouped by what they're for.</li>
+        </ul>
+      </li>
       <li data-version="0.55">
         <h3>v0.55</h3>
         <ul>
@@ -558,11 +572,161 @@
       signal. Your teams stay on your phone either way.</p>
   </section>
 
+  <!-- Referee (v0.56). The same kind of full-screen page as What's new, with
+       the whistles pinned to the top so they stay under a thumb while the
+       cheat sheet scrolls beneath them. The signals are the FIVB's own
+       (Official Volleyball Rules 2025-2028, Diagrams 11 and 12), numbered as
+       the rulebook numbers them so they can be looked up. -->
+  <section class="sheet referee" id="referee" hidden
+    role="dialog" aria-modal="true" aria-labelledby="refereeTitle">
+    <div class="ref-top">
+      <div class="cl-head">
+        <h2 id="refereeTitle">Referee</h2>
+        <button id="closeReferee">Done</button>
+      </div>
+
+      <!-- Sounds for as long as it's held, so any length of blast is one
+           press away. The four below make no sound: they're the moments the
+           rules say to whistle, and each shows what to signal after. -->
+      <button class="ref-whistle" id="refWhistle">Hold to whistle</button>
+      <p class="ref-calls-label">When to whistle</p>
+      <div class="ref-calls">
+        <button id="refCallServe" aria-pressed="false">Serve</button>
+        <button id="refCallRally" aria-pressed="false">Rally over</button>
+        <button id="refCallRequest" aria-pressed="false">Time-out / sub</button>
+        <button id="refCallCourts" aria-pressed="false">Switch ends</button>
+      </div>
+      <p class="ref-next" id="refNext" aria-live="polite">Tap one to see who
+        whistles, and what to signal after.</p>
+      <p class="ref-nosound" id="refNoSound" hidden>This browser can&rsquo;t
+        play sound, so the whistles are silent here.</p>
+    </div>
+
+    <p class="ref-lead">The rules don&rsquo;t set a length or a number of
+      blasts for any whistle. One whistle stops or starts play, and the hand
+      signal after it says why. If you hear nothing, turn the volume
+      up.</p>
+
+    <section class="ref-group">
+      <h3>Starting and stopping play</h3>
+      <ul class="ref-signals">
+        <li><h4>Authorisation to serve <span class="ref-num">1</span></h4>
+          <p>Move the hand to indicate the direction of service.</p></li>
+        <li><h4>Team to serve <span class="ref-num">2</span></h4>
+          <p>Extend the arm to the side of the team that will serve.</p></li>
+        <li><h4>Time-out <span class="ref-num">4</span></h4>
+          <p>Place the palm of one hand over the fingers of the other, held vertically (forming a T), then indicate the requesting team.</p></li>
+        <li><h4>Substitution <span class="ref-num">5</span></h4>
+          <p>Circular motion of the forearms around each other.</p></li>
+        <li><h4>Change of courts <span class="ref-num">3</span></h4>
+          <p>Raise the forearms front and back and twist them around the body.</p></li>
+        <li><h4>End of set (or match) <span class="ref-num">9</span></h4>
+          <p>Cross the forearms in front of the chest, hands open.</p></li>
+        <li><h4>Double fault and replay <span class="ref-num">23</span></h4>
+          <p>Raise both thumbs vertically.</p></li>
+      </ul>
+    </section>
+
+    <section class="ref-group">
+      <h3>In, out, touched</h3>
+      <ul class="ref-signals">
+        <li><h4>Ball &ldquo;in&rdquo; <span class="ref-num">14</span></h4>
+          <p>Point the arm and fingers toward the floor.</p></li>
+        <li><h4>Ball &ldquo;out&rdquo; <span class="ref-num">15</span></h4>
+          <p>Raise the forearms vertically, hands open, palms towards the body.</p></li>
+        <li><h4>Ball touched <span class="ref-num">24</span></h4>
+          <p>Brush the palm of one hand across the fingers of the other, held vertically.</p></li>
+      </ul>
+    </section>
+
+    <section class="ref-group">
+      <h3>Ball handling</h3>
+      <ul class="ref-signals">
+        <li><h4>Catch <span class="ref-num">16</span></h4>
+          <p>Slowly lift the forearm, palm of the hand facing upwards.</p></li>
+        <li><h4>Double contact <span class="ref-num">17</span></h4>
+          <p>Raise two fingers, spread open.</p></li>
+        <li><h4>Four hits <span class="ref-num">18</span></h4>
+          <p>Raise four fingers, spread open.</p></li>
+      </ul>
+    </section>
+
+    <section class="ref-group">
+      <h3>At the net and the lines</h3>
+      <ul class="ref-signals">
+        <li><h4>Net touched by a player, or a serve into the net that doesn&rsquo;t cross <span class="ref-num">19</span></h4>
+          <p>Indicate the relevant side of the net with the corresponding hand.</p></li>
+        <li><h4>Reaching beyond the net <span class="ref-num">20</span></h4>
+          <p>Place a hand above the net, palm facing downwards.</p></li>
+        <li><h4>Penetration into the opponent&rsquo;s court, ball under the net, or a foot fault at the serve <span class="ref-num">22</span></h4>
+          <p>Point to the center line or to the relevant line.</p></li>
+      </ul>
+    </section>
+
+    <section class="ref-group">
+      <h3>Attack, block and position</h3>
+      <ul class="ref-signals">
+        <li><h4>Attack hit fault <span class="ref-num">21</span></h4>
+          <p>Make a downward motion with the forearm, hand open.</p></li>
+        <li><h4>Blocking fault or screening <span class="ref-num">12</span></h4>
+          <p>Raise both arms vertically, palms forward.</p></li>
+        <li><h4>Positional or rotational fault <span class="ref-num">13</span></h4>
+          <p>Make a circular motion with the forefinger.</p></li>
+      </ul>
+    </section>
+
+    <section class="ref-group">
+      <h3>Serving</h3>
+      <ul class="ref-signals">
+        <li><h4>Ball not tossed or released at the service hit <span class="ref-num">10</span></h4>
+          <p>Lift the extended arm, the palm of the hand facing upwards.</p></li>
+        <li><h4>Delay in service (over 8 seconds) <span class="ref-num">11</span></h4>
+          <p>Raise eight fingers, spread open.</p></li>
+      </ul>
+    </section>
+
+    <section class="ref-group">
+      <h3>Cards</h3>
+      <ul class="ref-signals">
+        <li><h4>Misconduct warning <span class="ref-num">6a</span></h4>
+          <p>Show a yellow card.</p></li>
+        <li><h4>Misconduct penalty <span class="ref-num">6b</span></h4>
+          <p>Show a red card.</p></li>
+        <li><h4>Expulsion <span class="ref-num">7</span></h4>
+          <p>Show both cards together.</p></li>
+        <li><h4>Disqualification <span class="ref-num">8</span></h4>
+          <p>Show the red and yellow cards separately.</p></li>
+        <li><h4>Delay warning / delay penalty <span class="ref-num">25</span></h4>
+          <p>Cover the wrist with a yellow card (warning) or a red card (penalty).</p></li>
+      </ul>
+    </section>
+
+    <section class="ref-group">
+      <h3>Line judges&rsquo; flags</h3>
+      <ul class="ref-signals">
+        <li><h4>Ball &ldquo;in&rdquo; <span class="ref-num">F1</span></h4>
+          <p>Point down with the flag.</p></li>
+        <li><h4>Ball &ldquo;out&rdquo; <span class="ref-num">F2</span></h4>
+          <p>Raise the flag vertically.</p></li>
+        <li><h4>Ball touched <span class="ref-num">F3</span></h4>
+          <p>Raise the flag and touch the top with the palm of the free hand.</p></li>
+        <li><h4>Crossing space fault, ball touched an outside object, or a foot fault at the serve <span class="ref-num">F4</span></h4>
+          <p>Wave the flag over the head and point to the antenna or the line.</p></li>
+        <li><h4>Judgement impossible <span class="ref-num">F5</span></h4>
+          <p>Raise and cross both arms and hands in front of the chest.</p></li>
+      </ul>
+    </section>
+
+    <p class="ref-source">From the FIVB Official Volleyball Rules 2025&ndash;2028,
+      Diagrams 11 and 12. The numbers are the rulebook&rsquo;s. School and
+      recreational leagues play by their own rulebooks and may differ.</p>
+  </section>
+
   <!-- Which build you're actually looking at. Fixed in the corner so checking it
        never means scrolling, and filled by script.js from its own URL. Not a
        button: it floats over the page, so it must never swallow a tap. -->
   <p class="version" id="version"></p>
 
-  <script src="script.js?v=0.55"></script>
+  <script src="script.js?v=0.56"></script>
 </body>
 </html>
